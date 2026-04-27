@@ -42,7 +42,7 @@ If "no security impact," say so explicitly with a one-line justification. Don't 
 
 ## Performance impact
 - Big-O for any non-trivial loop.
-- DB changes: paste `EXPLAIN ANALYZE` (Postgres) / `.explain("executionStats")` (Mongo) / Convex index trace.
+- DB changes: paste `EXPLAIN ANALYZE` (Postgres) / `.explain("executionStats")` (Mongo) / platform-specific index trace.
 - Frontend: bundle delta if non-trivial; render-path notes if hot.
 - Background work: queue depth, retry semantics, idempotency.
 

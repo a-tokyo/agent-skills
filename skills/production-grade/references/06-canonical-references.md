@@ -38,7 +38,7 @@ When the row above doesn't fit and there's no peer skill, `production-grade` con
 
 The order of preference when reaching for *any* external source — a skill, a library, a config, a doc, a pattern catalogue:
 
-1. **Official / platform-blessed** — Anthropic skills repo · Cursor skills · Vercel AI SDK · Convex skills · React core · TypeScript handbook · the operator's own published skill catalogue.
+1. **Official / platform-blessed** — Anthropic skills repo · Cursor skills · Vercel AI SDK · React core · TypeScript handbook · framework-specific skill catalogues · the operator's own published skill catalogue.
 2. **Popular community canon** — the named peers from §C and §D.
 3. **Custom-built in this repo** — only when (1) and (2) genuinely don't fit *and* the gap is named in the plan.
 

@@ -71,7 +71,7 @@ When cost dominates at low/spiky volume → fresh-isolate wins. When per-request
 | Want | Use |
 |---|---|
 | KV / blob storage | Cloudflare KV / R2 · Vercel Blob · Deno KV |
-| Database | Cloudflare D1 · Neon (HTTP driver) · PlanetScale (HTTP) · Convex · Turso · Upstash |
+| Database | Cloudflare D1 · Neon (HTTP driver) · PlanetScale (HTTP) · Supabase (edge functions) · Turso · Upstash |
 | Queues | Cloudflare Queues · Upstash QStash · Inngest |
 | Crypto | Web Crypto API (`crypto.subtle`) — never `crypto.createHash` (Node) on edge |
 | File ops | R2 / Blob · never `fs.writeFile` |

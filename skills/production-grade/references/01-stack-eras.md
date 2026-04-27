@@ -19,9 +19,9 @@ When the local repo has its own `AGENTS.md`, that file wins. This file is the fa
 
 ## Era A — Target-state agentic
 
-**Signature:** Next.js App Router · server-state DB (Convex / SWR / TanStack Query) · edge auth (Clerk-shape) · AI SDK abstraction · GitHub Actions with **SHA-pinned third-party actions** · Husky + lint-staged with `prettier → eslint → tsc` order · Vitest · Testing Library · Playwright · TypeScript strict · Tailwind + Radix/Base UI · agent-attribution trailers in PR bodies (`Made-with: Cursor`).
+**Signature:** Modern framework (Next.js App Router-shape) · server-state management (TanStack Query / SWR / framework server actions) · managed auth (Clerk-shape / Auth.js-shape) · AI SDK abstraction · GitHub Actions with **SHA-pinned third-party actions** · Husky + lint-staged with `prettier → eslint → tsc` order · Vitest · Testing Library · Playwright · TypeScript strict · component library (Tailwind + Radix/Base UI-shape) · agent-attribution trailers in PR bodies (`Made-with: Cursor`).
 
-**Posture:** lean in. Greenfield default. Use every modern affordance — server actions, edge handlers, streaming UI, partial pre-rendering, AI SDK structured output, Convex's index-with-schema co-location, Clerk webhooks via Svix.
+**Posture:** lean in. Greenfield default. Use every modern affordance — server actions, edge handlers, streaming UI, partial pre-rendering, AI SDK structured output, index-with-schema co-location, webhook relay patterns.
 
 **First instinct:** the right answer is usually existing primitives composed cleanly. Reach for the new only when primitives genuinely don't cover the concern.
 
@@ -47,7 +47,7 @@ When the local repo has its own `AGENTS.md`, that file wins. This file is the fa
 
 **Signature:** Flow (or no types) · Enzyme · CRA + Webpack · Redux + thunks · CircleCI · Babel-everything · Mocha or older Jest · `var`/`let` mixed · class components · `componentDidMount`. Often Bower/Grunt artefacts in git history.
 
-**Posture:** **extend in place.** The system ships value; migration is a strategic decision, not the agent's reflex. Write Flow when the file is Flow. Enzyme tests when the file is Enzyme. CRA's build pipeline when the build is CRA. Do **not** introduce a TS file in a Flow project, a Vitest test in an Enzyme suite, or a Convex query in a Redux feed without explicit operator approval.
+**Posture:** **extend in place.** The system ships value; migration is a strategic decision, not the agent's reflex. Write Flow when the file is Flow. Enzyme tests when the file is Enzyme. CRA's build pipeline when the build is CRA. Do **not** introduce a TS file in a Flow project, a Vitest test in an Enzyme suite, or a new data-fetching paradigm in an existing Redux feed without explicit operator approval.
 
 **Typical opening:** *"Extending the existing Flow + Enzyme shape; fix scoped to the resolver. Tests added in Enzyme to match the suite. Migration to TS out of scope; happy to scope a separate effort if wanted."*
 

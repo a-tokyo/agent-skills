@@ -21,14 +21,14 @@ The table below is vocabulary, not prescription. Read `package.json` first — t
 
 | Category | Concept slots → example instances |
 |----------|----------------------------------|
-| **Data** | Relational (Postgres + `pg` · Prisma · Knex) · Document (Mongo · Convex) · Graph (Neo4j) · Vector/search (Elasticsearch · Convex indexes) · Cache (Redis / `ioredis`) · Object storage (R2 · S3) |
+| **Data** | Relational (Postgres + `pg` · Prisma · Knex · Supabase) · Document (Mongo · Firestore · Convex) · Graph (Neo4j) · Vector/search (Elasticsearch · Pinecone · pgvector) · Cache (Redis / `ioredis`) · Object storage (R2 · S3) |
 | **Auth & identity** | Auth provider (Clerk) · Apple Sign-In (focused verifier package) |
 | **Messaging** | Email (Resend + React Email) · SMS (Twilio) · Webhooks (Svix) · Push (platform-native) |
 | **Payments** | Stripe (`stripe`, `@stripe/stripe-js`) |
 | **Observability** | Error monitoring (Sentry) · Analytics (Mixpanel · Segment) · Full-stack APM (Datadog) |
 | **AI** | AI SDK abstraction (Vercel AI SDK) · Zero-shot classifier (OSS LLM-backed) |
 | **Code quality** | Linter (ESLint + org config) · Style linter (Stylelint) · Formatter (Prettier) · Pre-commit (Husky + lint-staged; **order: format → lint → type-check**) |
-| **Testing** | Unit/integration (Vitest · Jest for legacy/RN · `convex-test`) · Component (Testing Library) · E2E (Playwright · Cypress for legacy) |
+| **Testing** | Unit/integration (Vitest · Jest for legacy/RN) · Component (Testing Library) · E2E (Playwright · Cypress for legacy) |
 | **Frontend** | Framework (Next.js App Router) · UI primitives (Radix · Base UI) · Styling (Tailwind + `cva` + `clsx`) · Forms (react-hook-form + Zod) · State (server-driven; Zustand / Jotai when genuinely needed) · Animation (`framer-motion` web · `react-native-reanimated` mobile) · Icons (Lucide) |
 | **Mobile** | Runtime (Expo + EAS) · Storybook (`@storybook/*`) |
 | **Infra & CI** | CI (GitHub Actions, SHA-pinned · CircleCI legacy) · IaC (Terraform) · Containers (Docker + compose) · Lib bundler (Vite · Rollup) |
@@ -54,7 +54,7 @@ Before pulling a third-party for a concept slot, check whether the operator (or 
 | Buddybuild → Fastlane → EAS | Default EAS. Fastlane only when bare RN demands it. |
 | CRA + Webpack → Next.js App Router + Vite | Default Next for apps, Vite for libs. Never propose CRA. |
 | Redux + thunks → server-driven + Zustand/Jotai | Default server-driven. Redux only in explicitly-Redux codebases. |
-| REST/GraphQL Relay → Convex / Server Actions | Default Convex when used; otherwise typed Route Handlers. |
+| REST/GraphQL Relay → Server Actions / typed RPC | Default server-driven. Use framework's data layer; typed Route Handlers or RPC otherwise. |
 | Babel → TS / SWC / esbuild | Babel only for legacy `@babel/preset-flow` repos. |
 | SendGrid → Resend · Bugsnag/Instabug → Sentry · HMAC → Svix · hand-rolled OAuth → Clerk | Default current. Legacy stays until asked. |
 
@@ -90,4 +90,4 @@ When the kit genuinely shifts → update this file + log the swap in whatever de
 
 ---
 
-*Search keywords: toolchain, concept-slot, migration, OSS, eslint, prettier, husky, lint-staged, typescript, removed from canon, kit not canon, lived migrations, Twilio, Mixpanel, Datadog, Sentry, Resend, Convex, Vercel, EAS, Expo, Fastlane.*
+*Search keywords: toolchain, concept-slot, migration, OSS, eslint, prettier, husky, lint-staged, typescript, removed from canon, kit not canon, lived migrations, Twilio, Mixpanel, Datadog, Sentry, Resend, Postgres, Supabase, Vercel, EAS, Expo, Fastlane.*
