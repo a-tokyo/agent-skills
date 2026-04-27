@@ -19,9 +19,11 @@ When the local repo has its own `AGENTS.md`, that file wins. This file is the fa
 
 ## Era A — Target-state agentic
 
-**Signature:** Modern framework (Next.js App Router-shape) · server-state management (TanStack Query / SWR / framework server actions) · managed auth (Clerk-shape / Auth.js-shape) · AI SDK abstraction · GitHub Actions with **SHA-pinned third-party actions** · Husky + lint-staged with `prettier → eslint → tsc` order · Vitest · Testing Library · Playwright · TypeScript strict · component library (Tailwind + Radix/Base UI-shape) · agent-attribution trailers in PR bodies (`Made-with: Cursor`).
+**Signature:** Modern web framework (SSR / edge / server-actions capable) · server-state management (TanStack Query / SWR / framework server actions) · managed auth (Clerk-shape / Auth.js-shape) · AI SDK abstraction · GitHub Actions with **SHA-pinned third-party actions** · Husky + lint-staged with `prettier → eslint → tsc` order · Vitest · Testing Library · Playwright · TypeScript strict · component library (Tailwind + Radix/Base UI-shape) · agent-attribution trailers in PR bodies (`Made-with: Cursor`).
 
-**Posture:** lean in. Greenfield default. Use every modern affordance — server actions, edge handlers, streaming UI, partial pre-rendering, AI SDK structured output, index-with-schema co-location, webhook relay patterns.
+**Posture:** lean in. Greenfield default. Use every modern affordance — server actions, edge handlers, streaming UI, partial pre-rendering, AI SDK structured output, index-with-schema co-location, webhook relay patterns. **Backend shape is a fit decision** (framework-integrated routes, a modular server framework like NestJS-shape, or a minimal server like Fastify/Express-shape; FastAPI-shape in Python) based on needs (latency, long-lived connections, background jobs, team topology, deploy constraints), not fashion.
+
+**Bundle posture:** treat bundle size and dependency surface as architecture. Prefer fewer deps, audit transitive weight, keep server-only code server-only, and call out bundle delta when a change could impact it.
 
 **First instinct:** the right answer is usually existing primitives composed cleanly. Reach for the new only when primitives genuinely don't cover the concern.
 
@@ -76,47 +78,13 @@ Workspace-level persona file (typically `AGENTS.md` at repo root, sometimes `PER
 
 When both exist → satisfy both simultaneously. If conflict (rare): persona wins for voice, `production-grade` wins for craft.
 
-### Agent-persona OS
-
-A more elaborate pattern — a `personas/<name>/` (or `agents/<name>/`) directory with structured files:
-
-```
-IDENTITY.md     — who this agent is
-SOUL.md         — voice rules, posture, posture under stress
-AGENTS.md       — the operating contract
-MEMORY.md       — what the agent remembers across sessions
-HEARTBEAT.md    — the iteration log
-TOOLS.md        — tools allowed
-USER.md         — who the agent serves
-BOOTSTRAP.md    — startup sequence
-memory/YYYY-MM-DD.md  — append-only daily entries
-skills/         — per-agent skills installed at this layer
-```
-
-When the agent sees this shape:
-
-- Reads `MEMORY.md` and the most recent `memory/YYYY-MM-DD.md` *before* recommending.
-- Updates `MEMORY.md` and appends to today's `memory/YYYY-MM-DD.md` *after*, with non-obvious learning.
-- Respects `TOOLS.md`'s allowlist — never reaches for an unauthorised tool.
-- Treats `HEARTBEAT.md` as a log it must keep alive.
-
-This is the operator's own pattern; the file shape is the transferable knowledge.
-
 ### Agent runtime as infrastructure
 
 Some repos package their agent runtime (container, entrypoint, lifecycle) as deployable infra. When running *inside* such a runtime:
 
-- Don't write outside the runtime's documented working directory.
+- Treat runtime constraints as real infra: working directory boundaries, process lifetime, tool allowlists.
 - Don't assume background processes survive past the run phase.
-- Don't install dependencies at runtime — ask for the dependency to be added to the image.
-
-### Coordination spaces ("cowork")
-
-Some orgs maintain shared spaces where multiple agents and humans coordinate. When in a cowork space:
-
-- Read what other agents have left.
-- Leave a record of own work.
-- Never silently overwrite another agent's in-flight artefact.
+- Don't install dependencies at runtime — request they be added to the image / base environment.
 
 ### Code-quality as installable infrastructure
 
@@ -126,9 +94,9 @@ Some orgs ship lint / format / test / TS / pre-commit configs as **installable p
 - Propose upstream changes when the same change benefits other repos in the org.
 - Don't override package rules locally without ask.
 
-### Three-environment CI as default
+### Deployment gradient (when present)
 
-`dev` / `staging` / `prod` parallel CI + deployment targets → treat as the deployment shape. PRs land in `dev` first, smoke-test, promote to `staging`, e2e-test, promote to `prod`. Migrations + config changes follow the same gradient.
+If the repo has an explicit `dev`→`staging`→`prod` promotion flow, treat it as canonical: migrations and config changes follow the same gradient.
 
 ---
 
