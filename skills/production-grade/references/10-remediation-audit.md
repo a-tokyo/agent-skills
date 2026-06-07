@@ -7,7 +7,7 @@ The mechanics below use JS/TS examples; the principle is substrate-agnostic — 
 ## Remediation workflow
 
 1. **Map the real stack.** Read the manifest, lockfile, and build config — the repo is ground truth, not the stated framework (a "Next.js" app may be React Router / Vite). Classify the era (`01-stack-eras.md`) before planning.
-2. **Inventory the alerts.** Pull the advisory list (Dependabot / `pnpm audit` / equivalent). For each, open the advisory — the patched version is its fixed-version range, not the `latest` dist-tag.
+2. **Inventory the alerts.** Pull the advisory list (Dependabot / `pnpm audit` / equivalent). For each, open the advisory — the patched version is its fixed-version range, not the `latest` dist-tag. (npm → GHSA + `pnpm audit`; Python → OSV/PyPA + `pip-audit`; Rust → RustSec + `cargo audit`; Go → `govulncheck`.)
 3. **Rate by deployed exposure** (table below) before assigning urgency.
 4. **Upgrade in lockstep.** Bump coupled families together; regenerate generated types; run typecheck, build, and tests.
 5. **Triage residuals to zero.** Every remaining alert is fixed or dismissed with a recorded reason — no silent backlog.
@@ -36,6 +36,12 @@ The same advisory has different urgency by where the code runs. Map before ratin
 
 The question is always: *is the vulnerable path actually deployed here?*
 
+## When remediation isn't a clean bump
+
+- **No fixed version** (abandoned / unmaintained package): replace the dependency, vendor a minimal patch, or accept-and-dismiss with a documented reason and a tracking issue — never leave it silently open.
+- **The fix is a breaking major.** Clearing the alert is now a scoped migration, not a bump — surface it, size it, and ship it under R13 (its own PR with a scope boundary), not smuggled inside a security patch.
+- **Inherited code with no tests.** Stand up the test runner and a characterization-test floor on the touched paths first; set the coverage gate at the current measured level and ratchet it up — a threshold is meaningless with no harness beneath it.
+
 ## Evidence-linked audit claim
 
 Every line in a security or audit document is shaped **claim → file:symbol → proving test**.
@@ -56,7 +62,7 @@ Patterns are repo- and language-specific — adapt the markers (and their langua
 - Stale phase / legacy markers: `rg -n 'Phase [0-9]|legacy parity|like legacy|ported from' src/` returns empty.
 - Debug / scratch scripts: no `debug-*`, `tmp-*`, `scratch-*` committed.
 - Orphaned config: deleting a tree deletes its references — grep configs for the removed path.
-- Lint: no new warnings (`--max-warnings=0`); no new disable directive without a one-line reason and a ticket.
+- Lint: no new warnings (`--max-warnings=0` or the ecosystem equivalent); pre-existing warnings are burned down on a tracked plan, not used to block the gate retroactively; no new disable directive without a one-line reason and a ticket.
 - Coverage: thresholds count every in-scope file (untested counts as zero); critical modules gated per-file.
 
 ## Dependency cadence

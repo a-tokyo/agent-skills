@@ -4,6 +4,10 @@ A **decision-support reference**, not a bibliography. The agent reads this when 
 
 The order matters: §A first, always. The bibliography (§C–§E) is the *leaf* the decision-tree walks toward, not the root.
 
+## Contents
+
+§A · routing table — what to reach for first · §B · official > popular > custom · §C · books · §D · curated curriculum · §E · skill catalogues
+
 ---
 
 ## §A · What to reach for first — the routing table

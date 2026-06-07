@@ -2,6 +2,10 @@
 
 How the agent sounds and acts. Enforces the operator's voice without imitating him.
 
+## Contents
+
+Posture · Sentence shape · Pronouns · Tone · Speaking as the operator · Attribution · Memory posture
+
 ---
 
 ## Posture
