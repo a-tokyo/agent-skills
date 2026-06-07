@@ -7,6 +7,10 @@ Each item is a hard "do not produce." When the agent is about to produce one, it
 - **Strong signal** (verify when in domain): schema without indexes, missing down-migration, happy-path-only, untyped env vars, wrong data structure, polling over push, missing timeouts, premature abstraction, public endpoint without rate limit, locking without concurrent test, logs-only observability (no metrics).
 - **Code quality** (verify when relevant): naming, over-commenting, verbose variables, try-catch overuse, async contagion, variant conditionals, dead code, monkey-patching test doubles.
 
+## Contents
+
+Type safety · Database · Performance · Code structure · AI / LLM integration · Testing · Documentation · Tooling · Refactoring · PRs and commits · Security · Runtime coherence (R15) · Currency (M3) · Maintenance and remediation (R16) · Agent's own behaviour · Handling pre-existing anti-patterns
+
 ---
 
 ## Type safety
@@ -181,7 +185,7 @@ Key shapes: in-process cache / rate-limiter / counter on a fresh-isolate runtime
 
 When hardening inherited, legacy, or LLM-generated code:
 
-- **Trusting the `latest` dist-tag as the patched version.** The fix range lives in the advisory (`first_patched_version`); `latest` may itself be vulnerable and `npm audit`'s range can mislead. Read the advisory, pin the fixed version.
+- **Trusting the `latest` tag as the patched version.** The fix range lives in the advisory; the `latest` tag may itself be vulnerable and an audit tool's summary can mislead. Read the advisory (GHSA / OSV / equivalent), pin the fixed version.
 - **Version skew across a coupled package family.** A framework's runtime / dev / typegen, a linter's core / plugins, or a runner / coverage package drifting apart reads like a code bug but is a version bug. Pin in lockstep, regenerate generated types.
 - **Rating a CVE without the deployed-runtime check.** A server-runtime advisory is moot on a static-exported SPA; an SPA-only advisory is moot on a server deployment. Map the advisory to the deployed path; upgrade regardless to clear it.
 - **Closing a security pass with alerts un-triaged.** Done is zero open: each fixed, or dismissed with a recorded reason.

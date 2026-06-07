@@ -2,6 +2,8 @@
 
 The companion to R16. Greenfield rules assume the agent authors from zero; this file is for the opposite — raising legacy, inherited, or LLM-generated code to the bar. The mode is *audit → remediate → prove*, not rewrite.
 
+The mechanics below use JS/TS examples; the principle is substrate-agnostic — substitute the ecosystem's advisory database (GHSA / OSV / RustSec / PyPA / Go vuln DB), audit tool (`pnpm audit`, `pip-audit`, `cargo audit`, `govulncheck`, …), and fail-on-warning lint setting (`--max-warnings=0`, `ruff`/`clippy -D warnings`, …).
+
 ## Remediation workflow
 
 1. **Map the real stack.** Read the manifest, lockfile, and build config — the repo is ground truth, not the stated framework (a "Next.js" app may be React Router / Vite). Classify the era (`01-stack-eras.md`) before planning.
@@ -27,7 +29,7 @@ A caret range that lets one sibling float produces type-generation and module-re
 
 The same advisory has different urgency by where the code runs. Map before rating; upgrade regardless to clear the alert, but report exposure honestly.
 
-| Advisory targets | Static-exported SPA (`ssr:false`) | Server / SSR deployment |
+| Advisory targets | Static / SPA build (no server runtime) | Server / SSR deployment |
 |---|---|---|
 | Server runtime (loader / render, request handling) | not in the deployed path — low real exposure | real — prioritize |
 | Client / SPA path (hydration, client routing, header handling) | real — prioritize | may not apply — verify |
@@ -41,13 +43,15 @@ Every line in a security or audit document is shaped **claim → file:symbol →
 > ✗ "Entity reads are access-scoped." (posture from intent)
 > ✓ "Entity reads are access-scoped — `services/entity.ts:list()` filters by `accessScope`; proven by `entity.list.test.ts › rejects cross-tenant read`."
 
-A claim without the file and test is not a finding, it is a hope.
+A claim without the file and test is not a finding, it is a hope. (For a dependency-vulnerability fix, the proof is the clean advisory/audit report at the pinned version, not a unit test.)
 
 ## CSRF for cookie / credential auth
 
 When auth rides a cookie, CSRF defense is a *signed* (session-bound / HMAC) double-submit token or a synchronizer token — not the naive unsigned double-submit (bypassable via cookie injection), and not "deleted because a phase comment said so." Token-bearer (Authorization header) auth carries no ambient credential and does not need it. Evaluate against the auth model, not a blanket rule.
 
 ## Migration grep-gates (sweep to zero before handover)
+
+Patterns are repo- and language-specific — adapt the markers (and their language) to the codebase.
 
 - Stale phase / legacy markers: `rg -n 'Phase [0-9]|legacy parity|like legacy|ported from' src/` returns empty.
 - Debug / scratch scripts: no `debug-*`, `tmp-*`, `scratch-*` committed.
