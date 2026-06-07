@@ -1,5 +1,6 @@
 ---
 name: production-grade
+version: 0.0.2
 description: Principle-engineering posture for production-grade code. Problem-classification (A/B/C) before implementing, plans before code, simplest-correct-solution-first, math-first (closed-form before loop), ACM-grade algorithms, EXPLAIN-first databases with separate data-migration plans, never-N+1, idempotent-atomic writes, realtime-first, concurrent-by-default, graph-aware schemas, recovery-over-crash, validate-at-borders-assert-internally, observable-surfaces-as-architecture (SEO/a11y/perf), AI/LLM-as-typed-pipelines, paradigm-fluent (SOLID+GoF / FP), 12-Factor-aware, cost-aware-CI, surgical PRs, TDD-steered E2E, runtime-coherent infrastructure, dependency-remediation, migration-audit, evidence-linked security, currency-checked. Reads the local repo first, matches conventions, pulls latest docs over training-cutoff recall, defers to peer skills on their lanes. Substrate-agnostic. Use for non-trivial planning, design, implementation, review, refactoring, RCA, and hardening inherited or generated code.
 license: MIT
 ---
