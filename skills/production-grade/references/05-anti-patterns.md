@@ -177,6 +177,21 @@ Key shapes: in-process cache / rate-limiter / counter on a fresh-isolate runtime
 - **Perpetuating a date-stamped pattern in greenfield** without checking current state. Standing flags in [`08-currency-flags.md`](08-currency-flags.md).
 - **Disregarding a lane-canonical peer skill** when one exists. The peer wins on its lane.
 
+## Maintenance and remediation (R16)
+
+When hardening inherited, legacy, or LLM-generated code:
+
+- **Trusting the `latest` dist-tag as the patched version.** The fix range lives in the advisory (`first_patched_version`); `latest` may itself be vulnerable and `npm audit`'s range can mislead. Read the advisory, pin the fixed version.
+- **Version skew across a coupled package family.** A framework's runtime / dev / typegen, a linter's core / plugins, or a runner / coverage package drifting apart reads like a code bug but is a version bug. Pin in lockstep, regenerate generated types.
+- **Rating a CVE without the deployed-runtime check.** A server-runtime advisory is moot on a static-exported SPA; an SPA-only advisory is moot on a server deployment. Map the advisory to the deployed path; upgrade regardless to clear it.
+- **Closing a security pass with alerts un-triaged.** Done is zero open: each fixed, or dismissed with a recorded reason.
+- **Security or audit claims asserted from intent.** Every claim carries a file and the test that proves it; a posture table without evidence is theatre.
+- **Deferring a known vulnerability or race without a backlog id and owner.** Known security defects are P0, not "a later phase will fix it."
+- **Porting legacy security theatre.** Stub MFA, default-password constants, `setTimeout` "auth" are re-implemented to the standard or removed, never carried forward.
+- **Coverage thresholds that pass because files went unmeasured.** Count every in-scope file (untested counts as zero); exclude only generated / barrel / config / story; gate critical modules per-file.
+- **Declaring a migration done with lint at warn or new warnings introduced.** Promote warn to error, hold no new warnings.
+- **Leaving migration residue.** Stale phase / legacy comments, `debug-` / `tmp-` / `scratch-` scripts, and config entries pointing at deleted trees all sweep to zero before handover.
+
 ## Agent's own behaviour
 
 - **Asking "should I continue?" mid-autonomous-loop.** Run to the budget or the user interrupt.
