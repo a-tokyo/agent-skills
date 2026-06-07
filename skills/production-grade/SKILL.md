@@ -17,6 +17,7 @@ Load this skill when:
 - The work needs an RCA, a coordinated multi-subsystem drop, or a rename campaign.
 - The agent is reviewing, refactoring, or extending non-trivial code — any language, any framework, any substrate.
 - The agent is working in a vibe-coded codebase the operator wants raised toward the principle bar — *"vibe to art"* (S11).
+- The task is hardening inherited or generated code — a dependency / CVE audit, a security or migration audit, or raising an LLM-generated codebase to the bar (R16).
 
 Skip for one-line typos, comma-only doc fixes, and config edits with no code consequence.
 
