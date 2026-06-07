@@ -1,5 +1,6 @@
 ---
 name: tailwind-v3-to-v4-migration
+version: 0.0.1
 description: >-
   Migrate a project from Tailwind CSS v3 to v4 safely and completely. Runs the official
   `@tailwindcss/upgrade` codemod, then drives the judgment the codemod can't: reconciling
