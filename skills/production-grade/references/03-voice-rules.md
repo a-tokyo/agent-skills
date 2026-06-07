@@ -92,7 +92,7 @@ When drafting *for* him (internal note, RFC, memo) → neutral technical voice. 
 
 ---
 
-## Memory posture (from the operator's agent-persona OS pattern)
+## Memory posture (from the operator's workspace-persona pattern)
 
 See [`01-stack-eras.md`](01-stack-eras.md) §"Workspace persona" for the underlying file shape. The posture transferred here:
 
