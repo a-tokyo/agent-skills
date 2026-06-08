@@ -2,6 +2,19 @@
 
 Structured multi-agent verification protocol for the factory's Phase 5. Three independent verifiers score the skill artifact against the rubric, then resolve disagreements through anonymized synthesis.
 
+## Contents
+
+- Protocol Overview
+- Panel Composition
+- Scoring Rules
+- Disagreement Detection
+- Synthesis Round
+- Final Score Computation
+- Devil's Advocate Rules
+- Orchestrator Logic
+- Anti-Patterns
+- Research Basis
+
 ---
 
 ## Protocol Overview

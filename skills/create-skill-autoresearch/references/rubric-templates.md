@@ -2,6 +2,14 @@
 
 Rubric YAML format and templates for scoring skills against gold standards.
 
+## Contents
+
+- Rubric YAML Schema
+- Universal Dimensions
+- Domain-Specific Templates
+- Custom Dimension Guidelines
+- Judge Variance Considerations
+
 ---
 
 ## Rubric YAML Schema
