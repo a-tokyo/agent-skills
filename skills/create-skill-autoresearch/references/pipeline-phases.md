@@ -168,7 +168,9 @@ input as the user message, then compare the LLM's output to the gold standard re
 # 6. Sends output + reference to an LLM judge for subjective dimensions → emit METRIC lines
 # 7. Computes and emits METRIC overall_score=<weighted_average>
 #
-# Requirements: JUDGE_API_BASE, JUDGE_API_KEY, JUDGE_MODEL env vars for LLM steps
+# Requirements: JUDGE_API_BASE, JUDGE_API_KEY, JUDGE_MODEL env vars for LLM steps.
+# Optional: EXECUTOR_MODEL to run the skill-under-test on a *different* model from the
+# judge (recommended -- see SKILL.md Phase 3.4: use a different model family for the panel).
 # Fallback: deterministic-only scoring if no LLM API configured
 
 set -euo pipefail
@@ -184,7 +186,7 @@ REFERENCE=$(cat "$(dirname "$TEST_CASE")/$(basename "$TEST_CASE" .md | sed 's/in
 # Step 3-4: Invoke skill via LLM API (curl to OpenAI-compatible endpoint).
 # Build the JSON body with a real encoder -- never string-interpolate file contents into
 # JSON (quotes/newlines in the skill or the input would otherwise produce invalid JSON).
-REQUEST=$(SKILL_PATH="$SKILL" USER_INPUT="$INPUT" MODEL="$JUDGE_MODEL" python3 -c '
+REQUEST=$(SKILL_PATH="$SKILL" USER_INPUT="$INPUT" MODEL="${EXECUTOR_MODEL:-$JUDGE_MODEL}" python3 -c '
 import json, os
 print(json.dumps({
     "model": os.environ["MODEL"],
