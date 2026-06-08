@@ -142,7 +142,7 @@ The DA role is critical. Research shows generic skepticism ("be critical") is st
 2. **Must be specific**: Generic skepticism is worthless. Name the exact failure scenario.
 3. **Must name attack vectors**: For each concern, describe the concrete situation where the skill fails
 4. **Score conservatively**: Scores should be 0.5-1.5 points lower than a neutral evaluator on dimensions with legitimate concerns
-5. **Never score 5/5 (or 10/10)**: Unless ALL attack vectors exhausted and nothing found (should be rare)
+5. **Never score a perfect 10/10**: Unless ALL attack vectors exhausted and nothing found (should be rare)
 
 ### Attack Vectors
 

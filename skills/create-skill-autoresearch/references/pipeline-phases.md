@@ -2,13 +2,21 @@
 
 Detailed instructions for each phase of the create-skill-autoresearch factory.
 
+## Contents
+
+- Phase 1: Interview -- Detailed Question Flow
+- Phase 2: Research -- Subagent Orchestration
+- Phase 3: Draft -- Design-First Approach (DESIGN.md template, `evaluate.sh` contract, judge templates)
+- Phase 4: Autoresearch -- Integration Details (data split, overfitting detection)
+- Phase 5: Verify -- Panel Prompt Templates (Verifier-A/B, Devil's Advocate, synthesis)
+
 ---
 
 ## Phase 1: Interview -- Detailed Question Flow
 
 ### Question Sequence
 
-Run through these questions using the AskQuestion tool. Gather all answers before proceeding.
+Ask the user these questions directly (use whatever questioning mechanism your agent supports). Gather all answers before proceeding.
 
 **Q1 -- Purpose**: "What skill do you want to build? What problem does it solve?"
 - Follow up: "Who is the target user? An AI coding agent? A CLI tool? A human?"
@@ -167,17 +175,28 @@ set -euo pipefail
 
 TEST_CASE="$1"
 RUBRIC="work/evaluation/rubric.yaml"
-SKILL="output/<name>/SKILL.md"
+SKILL="output/<skill-name>/SKILL.md"
 
 # Step 1-2: Extract input
 INPUT=$(cat "$TEST_CASE")
 REFERENCE=$(cat "$(dirname "$TEST_CASE")/$(basename "$TEST_CASE" .md | sed 's/input/output/').md")
 
-# Step 3-4: Invoke skill via LLM API (curl to OpenAI-compatible endpoint)
+# Step 3-4: Invoke skill via LLM API (curl to OpenAI-compatible endpoint).
+# Build the JSON body with a real encoder -- never string-interpolate file contents into
+# JSON (quotes/newlines in the skill or the input would otherwise produce invalid JSON).
+REQUEST=$(SKILL_PATH="$SKILL" USER_INPUT="$INPUT" MODEL="$JUDGE_MODEL" python3 -c '
+import json, os
+print(json.dumps({
+    "model": os.environ["MODEL"],
+    "messages": [
+        {"role": "system", "content": open(os.environ["SKILL_PATH"]).read()},
+        {"role": "user", "content": os.environ["USER_INPUT"]},
+    ],
+}))')
 SKILL_OUTPUT=$(curl -s "${JUDGE_API_BASE}/chat/completions" \
   -H "Authorization: Bearer $JUDGE_API_KEY" \
   -H "Content-Type: application/json" \
-  -d "{\"model\":\"$JUDGE_MODEL\",\"messages\":[{\"role\":\"system\",\"content\":\"$(cat $SKILL)\"},{\"role\":\"user\",\"content\":\"$INPUT\"}]}" \
+  -d "$REQUEST" \
   | python3 -c "import json,sys; print(json.load(sys.stdin)['choices'][0]['message']['content'])")
 
 # Step 5: Deterministic checks → METRIC lines
@@ -185,7 +204,7 @@ SKILL_OUTPUT=$(curl -s "${JUDGE_API_BASE}/chat/completions" \
 # Step 7: Weighted average → METRIC overall_score=<value>
 ```
 
-See `self-test/evaluation/evaluate.sh` for a complete reference implementation.
+See `self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo for a complete reference implementation.
 
 The specific approach depends on the skill type:
 - **Instruction skills**: Call LLM with SKILL.md as system prompt (most common)
@@ -277,7 +296,7 @@ The factory prepares these inputs for the autoresearch skill:
 1. **Goal statement**: "Improve <skill-name> quality as measured by LLM-as-judge scoring against gold standards"
 2. **Metric command**: `./work/evaluation/evaluate.sh` (must emit METRIC lines)
 3. **Primary metric**: `overall_score` (weighted average of all rubric dimensions)
-4. **In-scope files**: Only the skill being built (`output/<name>/SKILL.md` and `output/<name>/references/*`)
+4. **In-scope files**: Only the skill being built (`output/<skill-name>/SKILL.md` and `output/<skill-name>/references/*`)
 5. **Out-of-scope**: Everything else (`input/` and `work/` — evaluation scripts, gold standards, research)
 6. **Budget**: From `rubric.yaml` `max_iterations` field
 7. **Checks**: `./work/evaluation/evaluate-checks.sh` if it exists

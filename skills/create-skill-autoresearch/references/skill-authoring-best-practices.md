@@ -33,7 +33,7 @@ asserted by the panel in Phase 5 — not optional.
   references (SKILL.md → a.md → b.md) — Claude may only partially read deeply nested files.
 - **Table of contents** for any reference file longer than ~100 lines, so partial reads still see
   the full scope.
-- **Forward-slash paths** only (`reference/guide.md`), never backslashes.
+- **Forward-slash paths** only (`references/guide.md`), never backslashes.
 
 ## Description quality
 
@@ -58,8 +58,8 @@ Avoid: `Helps with documents`, `Processes data`, `Does stuff with files`.
 SKILL.md is a table of contents that points to detail loaded only when needed. Two patterns:
 - **High-level guide + references**: quick start in SKILL.md, advanced topics in `FORMS.md`,
   `REFERENCE.md`, `EXAMPLES.md`.
-- **Domain organization**: split reference files by domain (`reference/finance.md`,
-  `reference/sales.md`) so unrelated context isn't loaded. Name files descriptively
+- **Domain organization**: split reference files by domain (`references/finance.md`,
+  `references/sales.md`) so unrelated context isn't loaded. Name files descriptively
   (`form_validation_rules.md`, not `doc2.md`).
 
 ## Workflows and feedback loops

@@ -214,7 +214,7 @@ Create `work/evaluation/evaluate.sh` that:
 5. Emits `METRIC <dimension>=<score>` lines to stdout
 6. Emits `METRIC overall_score=<weighted_average>` as the primary metric
 
-See `self-test/evaluation/evaluate.sh` for a reference implementation.
+See `self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo for a complete reference implementation.
 
 The LLM judge should:
 - Use structured JSON output for per-dimension scoring
