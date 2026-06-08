@@ -24,8 +24,8 @@ npx skills add a-tokyo/agent-skills --skill tailwind-v3-to-v4-migration
 npx skills add a-tokyo/agent-skills --skill create-skill-autoresearch
 ```
 
-> `create-skill-autoresearch` orchestrates companion skills at runtime — `autoresearch` and
-> `create-agentsmd` ([github/awesome-copilot](https://github.com/github/awesome-copilot)), `premortem`
+> `create-skill-autoresearch` orchestrates companion skills at runtime — `autoresearch`
+> ([github/awesome-copilot](https://github.com/github/awesome-copilot)), `premortem`
 > ([parcadei/continuous-claude-v3](https://github.com/parcadei/continuous-claude-v3)), and `handoff`
 > ([mattpocock/skills](https://github.com/mattpocock/skills)). Install those too, or just use the
 > batteries-included [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) where
