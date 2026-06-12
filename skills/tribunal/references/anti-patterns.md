@@ -1,79 +1,77 @@
-# Anti-Patterns — symptoms and fixes
+# Anti-Patterns — symptom, then fix
 
-Nineteen ways tribunal runs go wrong. Each entry: the observable SYMPTOM, then the FIX.
-
-## Recursive tribunals
-- SYMPTOM: a verifier (or an agent handed a panel report) spins up a nested tribunal on the artifact it is judging; agent layers multiply with no depth guard.
-- FIX: panel members never invoke the protocol. Panel outputs (verdicts, ledgers, plans) are verified, if at all, by one ordinary fresh panel — never nested inside a running slice cycle.
-
-## Counter conflation
-- SYMPTOM: doer re-dispatches logged as panel rounds (or vice versa); a slice escalates with panel budget unspent, or burns unbounded doer retries because only rounds are capped.
-- FIX: two counters, both capped — doer attempts (default 5, complexity-weighted) and panel rounds (max 3). Whichever exhausts first escalates; the ledger records panel rounds.
+Fifteen ways tribunal runs go wrong, each with the observable symptom.
 
 ## Generic skepticism
-- SYMPTOM: the Devil's Advocate writes "this could be more robust" or "consider edge cases" with no named scenario; its catch rate equals its false-positive rate.
-- FIX: enforce the contract — every concern names an exact scenario (input -> wrong behavior) via the seven attack vectors. Discard unanchored concerns.
+- SYMPTOM: the adversary writes "could be more robust" / "consider edge cases" with no
+  named scenario; its catch rate equals its false-positive rate.
+- FIX: every concern names input -> wrong behavior. Discard unanchored concerns.
 
-## Consensus pressure
-- SYMPTOM: round-1 scores cluster suspiciously; a verifier references "the other reviews."
-- FIX: re-erect the wall — verifiers never see peer scores or identities before synthesis; respawn any verifier that has.
+## Over-blocking
+- SYMPTOM: BLOCK or "needs a rewrite" on an artifact whose defects are all localized
+  one-line fixes; iteration stalls on a verdict the evidence does not support.
+- FIX: verdict severity tracks repairability — local fixes are ITERATE with a fix
+  list; BLOCK requires a majority-blocked dimension or a structural defect.
 
-## Score anchoring
-- SYMPTOM: scores hover around a number that appeared in the dispatch ("last round was 0.78").
-- FIX: never tell the panel expected scores, prior-round scores, or the target's history.
-
-## Halo inflation
-- SYMPTOM: one excellent dimension and every other dimension scores within a point of it; a single holistic paragraph justifies all scores.
-- FIX: atomic per-dimension passes, each with its own evidence; reject scorecards with one shared justification.
-
-## Unbounded debate
-- SYMPTOM: a second or third synthesis round "to fully converge"; positions converge to the most verbose member.
-- FIX: exactly one synthesis round, then resolution math or escalation. No exceptions.
-
-## Devil's Advocate drift to agreement
-- SYMPTOM: the DA opens with concessions, mirrors the majority by round 2, or scores a perfect 10 without exhausting attack vectors.
-- FIX: the DA prompt prohibits agreement language; "no flaw found" must be earned, stated, and rare. Replace a drifting DA with a fresh spawn.
-
-## Context-wall leaks
-- SYMPTOM: a verifier mentions the doer's intent, effort, or reasoning ("the implementer chose X because...").
-- FIX: verifiers receive only criteria, artifact, references, command permission, and premortem risks. A leaked verifier's scorecard is void; respawn.
-
-## Rubber-stamp panels
-- SYMPTOM: three SHIPs inside minutes, no quoted evidence, no findings, no caveats — on a non-trivial slice.
-- FIX: evidence thresholds make rubber-stamping detectable: an 8+ without a verbatim quote is an invalid score. Reject the scorecard and re-dispatch.
+## Rubber-stamp panel
+- SYMPTOM: unanimous quick SHIPs, no quoted evidence, no findings, on a non-trivial slice.
+- FIX: a high score without a verbatim quote is invalid; reject and re-dispatch.
 
 ## Evidence-free findings
 - SYMPTOM: findings phrased as opinions ("feels fragile") with no file:line, quote, or output.
-- FIX: discard them before consensus — a finding without an anchor does not exist.
-
-## Verifying without pre-declared criteria
-- SYMPTOM: the panel is asked "is this good?"; each verifier invents its own bar; scores are incomparable.
-- FIX: acceptance criteria are written before implementation and frozen; they are the rubric. No criteria, no panel — write them first.
-
-## Improve-while-verifying scope creep
-- SYMPTOM: a verifier (or the orchestrator) starts editing the artifact to "fix it while we're here"; the review becomes a second implementation.
-- FIX: verifiers measure; only a fresh doer changes the artifact, via the ITERATE fix list. The orchestrator never edits the deliverable itself.
-
-## Ledger drift
-- SYMPTOM: the gate ledger lags reality by slices; verdicts reconstructed from memory at handover.
-- FIX: the ledger entry is part of the slice cycle — written in the same step as the verdict, before the next slice starts.
-
-## Premature parallel dispatch
-- SYMPTOM: multiple doers running concurrently on overlapping files, or doers dispatched before the slice strategy and criteria are fixed; merge conflicts and rework.
-- FIX: serialize doers by default (parallel only in isolated workspaces on disjoint slices); fix criteria and doer rules before dispatching anyone. Panel parallelism is safe — verifiers only read.
-
-## Trusting agent success reports
-- SYMPTOM: "the doer said tests pass" goes straight to the panel; the diff was never opened; later the change turns out partial or absent.
-- FIX: the orchestrator's first act on DONE is inspecting the actual diff and demanding fresh command output. Agent-reported success is a claim, not a fact.
-
-## Wrong review order (quality before spec compliance)
-- SYMPTOM: detailed craft feedback on code that builds the wrong thing; "beautifully tested, doesn't match the request."
-- FIX: Verifier-A checks missing / extra / misunderstood against the criteria first; a spec failure caps the verdict at ITERATE regardless of craft scores.
-
-## Trigger-evaluation laziness
-- SYMPTOM: the orchestrator checks only the trigger that obviously fired (a big spread, say) and never evaluates the remaining three, silently narrowing or missing the disputed set.
-- FIX: evaluate all four triggers every round; the disputed set is the union of all flagged dimensions.
+- FIX: discard before consensus — an unanchored finding does not exist.
 
 ## Averaging away disagreement
-- SYMPTOM: a 3-vs-8 split becomes "5.5, close enough to ship" — or a confused outlier's score sinks a passing artifact — without anyone checking whose evidence is true.
-- FIX: adjudicate before aggregating. Spot-verify the outlier's evidence against the artifact: refuted evidence -> score excluded, dissent logged as refuted; surviving evidence -> the concern drives the verdict. The mean is only for scores that earned their place in it.
+- SYMPTOM: a 3-vs-8 split becomes "5.5, ship it" — or a confused outlier sinks a
+  passing artifact — without anyone checking whose evidence is true.
+- FIX: adjudicate first. Refuted -> excluded, logged; surviving -> drives the verdict.
+
+## Trusting agent success reports
+- SYMPTOM: "the doer said tests pass" goes straight to the panel; the diff was never
+  opened; the change turns out partial or absent.
+- FIX: on DONE, first inspect the actual diff and demand fresh command output.
+
+## Context-wall leaks
+- SYMPTOM: a verifier mentions the doer's intent or reasoning ("the implementer chose
+  X because...").
+- FIX: verifiers get only their RECEIVES list; a leaked scorecard is void — respawn.
+
+## Consensus pressure
+- SYMPTOM: round-1 scores cluster suspiciously; a verifier references "the other reviews."
+- FIX: no peer scores or identities before synthesis; respawn any verifier that has seen them.
+
+## Score anchoring
+- SYMPTOM: scores hover around a number that appeared in the dispatch ("last round was 0.78").
+- FIX: never reveal expected scores, prior-round scores, or target history to the panel.
+
+## Halo inflation
+- SYMPTOM: one excellent dimension and every other score within a point of it; a
+  single paragraph justifies all scores.
+- FIX: atomic per-dimension passes, each with its own evidence.
+
+## Unbounded debate
+- SYMPTOM: a second synthesis round "to fully converge"; positions converge to the
+  most verbose member.
+- FIX: exactly one synthesis round, then resolution math or escalation.
+
+## Adversary drift to agreement
+- SYMPTOM: the adversary opens with concessions, mirrors the majority, or scores a
+  perfect 10 without exhausting its attack surface.
+- FIX: "no flaw found" must be earned, stated, and rare; replace a drifting adversary
+  with a fresh spawn.
+
+## Verifying without pre-declared criteria
+- SYMPTOM: the panel is asked "is this good?"; each verifier invents its own bar;
+  scores are incomparable.
+- FIX: criteria frozen before implementation are the rubric. No criteria, no panel.
+
+## Wrong review order
+- SYMPTOM: detailed craft feedback on code that builds the wrong thing.
+- FIX: spec compliance (missing / extra / misunderstood) first; a spec failure caps
+  the verdict at ITERATE regardless of craft scores.
+
+## Counter conflation
+- SYMPTOM: doer re-dispatches logged as panel rounds (or vice versa); a slice
+  escalates with budget unspent, or burns unbounded retries.
+- FIX: two counters, both capped — doer dispatches (default 5) and max 3 panel
+  rounds; whichever exhausts first escalates.
