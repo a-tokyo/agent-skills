@@ -3,6 +3,13 @@
 A tribunal cycle on a fictional `rate-limiter` module. Round 1: an adversary claim
 SURVIVES verification (genuine bug, ITERATE). Round 2: a claim is REFUTED and excluded.
 
+## Contents
+
+- Slice spec (frozen before implementation)
+- Round 1 — independent scorecards
+- Round 1 — adjudication, synthesis, resolution
+- Round 2 — fix, re-panel, refuted dissent
+
 ## Slice spec (frozen before implementation)
 
 ```
