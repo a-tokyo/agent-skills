@@ -50,7 +50,10 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
 
 ## Invariants (low freedom — these are the skill)
 
-1. **Context wall.** Each verifier RECEIVES exactly: frozen criteria; the artifact
+1. **Context wall.** Each role — doer, each verifier, the adversary — is a DISTINCT agent
+   in its own session; one agent never plays two roles (shared context = shared blind
+   spots = no triangulation, the entire point). The doer finishes first; then the
+   verifiers run in parallel, each RECEIVING exactly: frozen criteria; the artifact
    (diff + new-file paths, or the document + its predecessor); reference materials;
    permission to run the verification commands; known risks. Verifiers NEVER receive:
    the doer's reasoning or self-assessment, design rationale, each other's first-round
@@ -145,10 +148,13 @@ pass, re-vet once, then escalate. Vetting freezes the criteria the panel later a
 
 ## Platforms
 
-With parallel subagents, dispatch the panel as parallel calls in one message. Without
-subagents, run each role as a sequential fresh-context session, enforcing the wall by
-prompt discipline (each verifier gets only its RECEIVES list). One session playing every
-role degrades independence: label the verdict "single-context (reduced independence)".
+With parallel subagents, dispatch the panel as parallel calls in one message — separate
+agents, real independence. Without parallel dispatch, run each role as its own sequential
+fresh-context session (still distinct agents), enforcing the wall by what each session
+receives. One agent playing every role forfeits the triangulation benefit — measured
+equal to no panel at all (a weak model self-simulating a panel scores at its solo floor);
+use only when no separate-session option exists, and label the verdict "single-context
+(no independence)".
 
 End-to-end example: [worked-example.md](references/worked-example.md).
 Failure catalogue: [anti-patterns.md](references/anti-patterns.md).
