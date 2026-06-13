@@ -65,8 +65,8 @@ Target supplied by the criteria (default 0.80 normalized).
 | Condition | Verdict |
 |---|---|
 | overall >= target AND no dimension blocked | SHIP |
-| overall >= target - 0.10 (below target), only non-blocking caveats | SHIP_WITH_CAVEATS |
-| overall < target - 0.10, or caveat band with a surviving blocking caveat | ITERATE |
+| caveat band [target - 0.10, target), only non-blocking caveats | SHIP_WITH_CAVEATS |
+| overall < target - 0.10; a surviving blocking caveat; or a blocked dimension whose causes are all localized, enumerable fixes (regardless of overall) — with a mandatory fix list | ITERATE |
 | a blocked dimension whose causes are structural (redesign, not enumerable localized fixes) or unsafe to proceed past | BLOCK, regardless of overall |
 | deadlock, unrebutted opposition scenario, or max 3 panel rounds exhausted | ESCALATE |
 
@@ -75,7 +75,9 @@ dissent, not a block. A blocked dimension forces BLOCK only when its causes are
 structural; if every cause is a localized, enumerable fix, the verdict is ITERATE with
 a mandatory fix list (low scores set fix priority, never the verdict class).
 A **non-blocking caveat** asserts no correctness or safety defect
-and carries a concrete fix or a logged deferral. The math decides unless a verified
+and carries a concrete fix or a logged deferral; a **blocking caveat** is its
+complement — it asserts a correctness or safety defect, or lacks a concrete fix or
+logged deferral. The math decides unless a verified
 (unrefuted) failure scenario overrides it; never let an unverified outlier sink a
 passing artifact — adjudicate first. The ITERATE feedback packet to the fresh doer:
 top concern per member, named failure scenarios, per-dimension scores, the fix list.
@@ -117,7 +119,9 @@ verified vs refuted), the artifact location, and a suggested next step — never
    re-dispatch, same lens, else exclude that member).
 5. Adjudicate outliers; exclude refuted scores; log refuted dissent.
 6. Run all four triggers; if any fires, run the one synthesis round.
-7. Resolve: converged / majority / deadlock; map to verdict; honor any `ESCALATE:`.
+7. Resolve: converged / majority / deadlock; a lone survivor on a dimension never
+   decides it — dispatch one fresh replacement verifier or ESCALATE; map to verdict;
+   honor any `ESCALATE:`.
 8. Ledger entry: round verdicts, dissents (incl. refuted), caveats, panel rounds used of max 3.
 9. SHIP: next slice. ITERATE: feedback packet -> fresh doer -> fresh panel. BLOCK or
    ESCALATE: stop and surface.

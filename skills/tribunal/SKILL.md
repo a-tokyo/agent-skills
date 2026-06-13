@@ -1,6 +1,6 @@
 ---
 name: tribunal
-version: 0.1.2
+version: 0.0.1
 license: MIT
 description: >-
   Runs a doer -> verifier-panel -> consensus loop to verify a deliverable before it ships.
@@ -85,16 +85,19 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
 | Verdict | Trigger |
 |---|---|
 | SHIP | Overall at or above target; no dimension blocked. |
-| SHIP_WITH_CAVEATS | Within 0.10 below target, only non-blocking caveats. During a build this is an ITERATE trigger: each caveat fixed and re-verified, or deferred with a logged reason — final only if the human accepts. |
-| ITERATE | Below the caveat band, or a surviving blocking caveat. Math decides unless a verified (unrefuted) failure scenario overrides. |
+| SHIP_WITH_CAVEATS | In the caveat band [target − 0.10, target), only non-blocking caveats. During a build this is an ITERATE trigger: each caveat fixed and re-verified, or deferred with a logged reason — final only if the human accepts. |
+| ITERATE | Below the caveat band; a surviving blocking caveat (one asserting a correctness/safety defect, or lacking a concrete fix or logged deferral); or a blocked dimension whose causes are all localized, enumerable fixes (regardless of overall) — with a mandatory fix list. Math decides unless a verified (unrefuted) failure scenario overrides. |
 | BLOCK | The defect set is structural: remediation needs redesign, not an enumerable list of localized fixes — or proceeding is unsafe. Low scores alone never force BLOCK: a majority-blocked dimension whose causes are all localized fixes is ITERATE with a mandatory fix list. |
 | ESCALATE | Deadlock, an unrebutted opposition scenario, or budgets exhausted. Orchestrator-only — never a panel recommendation. |
 
 Calibration: BLOCK is structural. Many severe defects that are each a localized fix in
 a sound architecture make ITERATE, not BLOCK — severity sets fix priority, never the
-verdict class. Consistency check before issuing BLOCK: if the report itself describes
-every defect as locally fixable, BLOCK contradicts the evidence — issue ITERATE. One
-member's low score is a logged dissent, not a block.
+verdict class. A blocked dimension (majority at 3 or below) never lets a passing overall
+slip through as SHIP: with localized causes it is ITERATE plus a mandatory fix list, even
+when overall ≥ target; only structural causes reach BLOCK. Consistency check before
+issuing BLOCK: if the report itself describes every defect as locally fixable, BLOCK
+contradicts the evidence — issue ITERATE. One member's low score is a logged dissent, not
+a block.
 
 ## Panel composition (derive per artifact)
 
