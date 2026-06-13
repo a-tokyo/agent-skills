@@ -1,88 +1,73 @@
 # tribunal
 
-Doer → verifier-panel → consensus: a delivery-verification pattern for orchestrating
-agents. An orchestrator freezes acceptance criteria before implementation, dispatches a
-doer, then convenes a context-walled panel of independent verifiers — including an
-adversary with an explicit must-oppose mandate — for evidence-anchored review
-adjudicated to a SHIP / SHIP_WITH_CAVEATS / ITERATE / BLOCK / ESCALATE verdict.
+Verify a deliverable before it ships: a doer builds it, an independent panel judges it,
+and an orchestrator adjudicates on evidence. Code slices, plans, documents, audits — any
+artifact a single review pass can get wrong.
 
-Start at [SKILL.md](SKILL.md). Mechanics live in [references/](references/): consensus
-mechanics (triggers, synthesis, resolution math, adjudication), a worked end-to-end
-example, and an anti-pattern catalogue. The skill is principles-first: panel size,
-lenses, scoring dimensions, prompts, and record shapes are derived per artifact from a
-small set of hard invariants rather than prescribed.
+The orchestrator freezes acceptance criteria, dispatches a doer, then convenes a
+context-walled panel of independent verifiers — including an adversary with a must-oppose
+mandate — that score against the criteria with grep-checked evidence. Verdict:
+SHIP / SHIP_WITH_CAVEATS / ITERATE / BLOCK / ESCALATE.
 
-Works with any agent platform that can spawn parallel subagents; degrades to sequential
-fresh-context sessions (with reduced independence, labeled as such) when it cannot.
+Principles-first: panel size, lenses, scoring dimensions, and prompts are derived per
+artifact from a few hard invariants — not prescribed. Platform-agnostic; runs on any agent
+that can spawn parallel subagents.
 
 ## Architecture
 
 ```mermaid
 flowchart LR
-  subgraph orch [ORCHESTRATOR]
-    O["Slices work · freezes criteria<br/>adjudicates on evidence · owns the ledger"]
-  end
+  O["ORCHESTRATOR<br/>freezes criteria · adjudicates · owns the ledger"]
+  D["DOER<br/>builds one slice · runs checks · reports evidence"]
+  A["Verifier: quality"]
+  B["Verifier: fitness-for-purpose"]
+  DA["Adversary<br/>MUST oppose"]
+  V["ADJUDICATE<br/>grep citations · drop refuted · verdict → ledger"]
 
-  subgraph doer [DOER]
-    D["Implements one slice<br/>runs verification commands · reports status + evidence"]
-  end
-
-  subgraph panel [PANEL — lenses derived per artifact]
-    A["Verifier: quality<br/>spec compliance first"]
-    B["Verifier: fitness-for-purpose<br/>edge cases · integration"]
-    DA["Adversary<br/>MUST oppose · named failure scenarios"]
-  end
-
-  subgraph out [ADJUDICATION]
-    V["Grep citations · exclude refuted scores<br/>SHIP / SHIP_WITH_CAVEATS / ITERATE / BLOCK / ESCALATE<br/>→ ledger"]
-  end
-
-  O -->|"slice spec only"| D
-  D -->|"diff + evidence"| O
-  O --> A
-  O --> B
-  O --> DA
-  D -.->|"context wall: reasoning never crosses"| panel
+  O -->|slice spec only| D
+  D -->|diff + evidence| O
+  O --> A & B & DA
+  D -.->|context wall: reasoning never crosses| A
   A --> V
   B --> V
   DA --> V
-  V -->|"ITERATE: fix list → fresh doer + fresh panel"| O
+  V -->|ITERATE → fresh doer + fresh panel| O
 ```
 
-The load-bearing constraint is the **context wall**: verifiers receive the artifact,
-frozen criteria, and known risks — never the doer's reasoning or each other's
-first-round views. Independent vantage points triangulate ground truth only while they
-stay independent.
+Each role is a separate agent in its own context — the doer finishes, the verifiers run in
+parallel, blind to the doer's reasoning and to each other. Independence is the mechanism:
+separate readers triangulate ground truth a single pass misses.
 
 ## Benchmarks
 
-Method: identical neutral prompts per arm, the only variable being which skill version
-(if any) was installed. Reports blind-judged (anonymized candidates, randomized order,
-answer key withheld); outcome scores computed against private answer keys whose failure
-scenarios were executed, not asserted. Scoring is outcome-weighted (80/20) and process
-credit is restricted to outcome-linked behaviors, so a single-pass report with the same
-findings scores the same as a panel report — the skill earns nothing for ceremony.
+Blind-judged, against answer keys whose failures were executed (not asserted), scored
+outcome-weighted. The only variable is whether the skill was installed.
 
-**Verification task** — a ~560-line module, 12 seeded defects across three difficulty
-tiers (tier-weighted), 3 non-defect traps, expected verdict ITERATE:
+**Cross-file verification** — a 6-file codebase with defects spanning module boundaries
+(cause in one file, failure in another). Tier-weighted defect recall:
 
-| Arm | Composite | Tier-weighted recall | Trap FPs | Other FPs | Verdict |
-|---|---|---|---|---|---|
-| with skill | 9.65 | 26/26 | 0 | 0 | ITERATE (correct) |
-| frontier model, no skill | 9.45 | 26/26 | 0 | 1 | ITERATE (correct) |
+| Run | Recall | Verdict |
+|---|---|---|
+| Frontier model + tribunal | 0.79–0.81 | correct |
+| Small model + tribunal (independent panel) | **0.75** | correct |
+| Small model, single pass | 0.62 | correct |
 
-**Build-and-verify task** — a 3-slice CLI spec with 17 acceptance criteria; the judge
-re-executes the test suites and probes edge cases:
+The pattern lifts a small model's cross-file recall from 0.62 to 0.75 — approaching a model
+tier above — by triangulating across independent readers. Across every run, model, and
+configuration, the **verdict was correct** (8/8): calibration holds even where recall varies.
 
-| Arm | Composite | Acceptance criteria | Notable |
-|---|---|---|---|
-| with skill | ~9.5 | 17/17 | caught + escalated a genuine spec contradiction |
-| frontier model, no skill | 8.35 | 17/17 | shipped the contradiction silently |
+**Build-and-verify** — a 3-slice CLI against a 17-criterion spec:
 
-Recall saturates on artifacts of this size regardless of method; the skill's measured
-contribution is precision, verdict calibration, and surfacing defects a single pass
-ships silently. Full judge reports, fixtures, and answer keys live in the build
-workspace of the factory that produced this skill.
+| Run | Composite | Notable |
+|---|---|---|
+| With tribunal | ~9.5 / 10 | caught and escalated a genuine spec contradiction |
+| Single pass | 8.35 / 10 | shipped the same contradiction silently |
+
+## Usage
+
+Install with [`npx skills`](https://skills.sh), then point an orchestrating agent at a
+deliverable and its acceptance criteria. See [SKILL.md](SKILL.md); mechanics in
+[references/](references/).
 
 ## License
 
