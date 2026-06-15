@@ -64,9 +64,11 @@ const CHECKS = {
 
 import sys
 def valid(fn, s):
-    # "valid" = truthy & no raise; "invalid" = falsy OR raises
+    # "valid" = truthy return & no raise; "invalid" = falsy/None return OR raises.
+    # (covers bool validators, parse-style returning the address-or-None, and lib
+    # validators that return an object on success and raise on failure)
     try:
-        r = fn(s); return r is None or bool(r)
+        return bool(fn(s))
     except Exception:
         return False
 cands = [v for k, v in list(globals().items()) if callable(v) and not k.startswith('_')]
@@ -192,6 +194,17 @@ const PROBE_SETS = {
     { name: 'money_not_float', critical: true, re: /Decimal|cents|int\(|integer|minor units?/i },
     { name: 'atomic_or_locked', critical: true, re: /lock|transaction|atomic|begin|commit|for update|with .*session/i },
     { name: 'overdraft_guard', critical: false, re: /insufficient|balance\s*[<>]=?|>=\s*amount|<\s*amount|negative/i },
+    // no double-charge on retry: a Python-level dedup check, OR a unique constraint/index on a
+    // transfer/idempotency key (not account name or a version column). Detected on code only.
+    { name: 'idempotent', critical: false, fn: (c) => {
+      const key = '(transfer_?id|txn_?id|transaction_?id|idempotency_?key|request_?id|nonce|client_token|operation_?id|reference)';
+      return /idempotency_key|seen[_ ]?(ids|keys|requests|transactions)|processed[_ ]?(ids|keys|set)|on conflict|unique\s*=\s*True|UniqueConstraint|already_(processed|applied|exists)/i.test(c)
+        || new RegExp('if .*' + key + ' (in|not in)', 'i').test(c)
+        || new RegExp('create unique index[\\s\\S]{0,100}' + key, 'i').test(c)
+        || new RegExp(key + '[^\\n]{0,40}\\bunique\\b', 'i').test(c)
+        || new RegExp('unique\\s*\\([^)]*' + key, 'i').test(c)
+        || new RegExp('\\bunique\\b[^\\n]{0,40}' + key, 'i').test(c);
+    } },
   ],
   validation: [
     { name: 'boundary_validation', critical: true, re: /isinstance|is None|if not |pydantic|BaseModel|schema|ValidationError|raise/i },
