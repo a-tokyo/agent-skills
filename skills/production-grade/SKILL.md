@@ -1,7 +1,7 @@
 ---
 name: production-grade
-version: 0.0.2
-description: Principle-engineering posture for production-grade code. Problem-classification (A/B/C) before implementing, plans before code, simplest-correct-solution-first, math-first (closed-form before loop), ACM-grade algorithms, EXPLAIN-first databases with separate data-migration plans, never-N+1, idempotent-atomic writes, realtime-first, concurrent-by-default, graph-aware schemas, recovery-over-crash, validate-at-borders-assert-internally, observable-surfaces-as-architecture (SEO/a11y/perf), AI/LLM-as-typed-pipelines, paradigm-fluent (SOLID+GoF / FP), 12-Factor-aware, cost-aware-CI, surgical PRs, TDD-steered E2E, runtime-coherent infrastructure, dependency-remediation, migration-audit, evidence-linked security, currency-checked. Reads the local repo first, matches conventions, pulls latest docs over training-cutoff recall, defers to peer skills on their lanes. Substrate-agnostic. Use for non-trivial planning, design, implementation, review, refactoring, RCA, and hardening inherited or generated code.
+version: 0.0.3
+description: Principle-engineering posture for production-grade code. Problem-classification (A/B/C) before implementing, plans before code, simplest-correct-solution-first (YAGNI ladder: stdlib/native before deps, delete over add), math-first (closed-form), ACM-grade algorithms, EXPLAIN-first DBs with data-migration plans, never-N+1, idempotent-atomic writes, realtime-first, concurrent-by-default, graph-aware schemas, validate-at-borders, observable-surfaces (SEO/a11y/perf), LLM-as-typed-pipelines, paradigm-fluent (SOLID+GoF / FP), 12-Factor-aware, cost-aware-CI, surgical PRs, over-engineering audit, TDD-steered E2E, runtime-coherent infrastructure, dependency-remediation, migration-audit, evidence-linked security, currency-checked. Reads the repo first, matches conventions, pulls latest docs over training recall, defers to peer skills on their lanes. Substrate-agnostic. Use for non-trivial planning, design, implementation, review, refactoring, RCA, over-engineering cleanup, and hardening inherited or generated code.
 license: MIT
 ---
 
@@ -19,6 +19,7 @@ Load this skill when:
 - The agent is reviewing, refactoring, or extending non-trivial code — any language, any framework, any substrate.
 - The agent is working in a vibe-coded codebase the operator wants raised toward the principle bar — *"vibe to art"* (S11).
 - The task is hardening inherited or generated code — a dependency / CVE audit, a security or migration audit, or raising an LLM-generated codebase to the bar (R16).
+- The operator wants the laziest-correct path or an over-engineering pass — *"be lazy," "simplest / minimal solution," "YAGNI," "is this over-engineered," "what can we delete," "harvest the deferred shortcuts"* (R2, `references/11-minimalism-audit.md`).
 
 Skip for one-line typos, comma-only doc fixes, and config edits with no code consequence.
 
@@ -44,15 +45,15 @@ Sixteen directives. Each is short on purpose; the depth lives in the references 
 
 ### R1 — Plan of plans, zero assumptions (V1, V10, S2)
 
-Before code, the agent writes a plan. First, classify the problem: **(A) known pattern** — name it, implement the canonical shape, check current docs for drift; **(B) similar to a known problem** — name the analogous problem, name what's different, adapt; **(C) unfamiliar** — slow down, enumerate candidate techniques, decompose, plan more, validate more. Type C triggers plan-of-plans mode. For non-trivial work, a plan of plans: the top plan names the slices, each slice has *Inputs*, *Outputs*, *Out of scope*, *Risks*, *Verification*. Assumptions are listed and resolved before they cost a line of code. Tradeoffs are surfaced explicitly — when multiple valid approaches exist, the agent names them with costs, not picks silently. The plan is the contract the diff has to honour; if the diff drifts, the plan changes first. Before submitting, run the self-verification gate below. See `references/02-pr-anatomy.md`.
+Before code, the agent writes a plan. First, classify the problem: **(A) known pattern** — name it, implement the canonical shape, check current docs for drift; **(B) similar to a known problem** — name the analogous problem, name what's different, adapt; **(C) unfamiliar** — slow down, enumerate candidate techniques, decompose, plan more, validate more. Type C triggers plan-of-plans mode. For non-trivial work, a plan of plans: the top plan names the slices, each slice has *Inputs*, *Outputs*, *Out of scope*, *Risks*, *Verification*. Assumptions are listed and resolved before they cost a line of code. Context that *exists* is read, not asked about — harvesting the repo and the docs (M2) is the agent's own work, never a stall. An assumption still open after harvesting is handled by stakes: a *low-stakes, defaultable* one is resolved by shipping the simplest-correct default with the assumption flagged (a ceiling comment, an *Out of scope* note), not by blocking on a clarifying round-trip the agent could have defaulted; a *high-stakes* fork — security, payments, auth, data-loss, an irreversible or destructive operation, or anywhere a wrong default is expensive (R7) — is confirmed before acting, never silently defaulted. Tradeoffs are surfaced explicitly — when multiple valid approaches exist, the agent names them with costs, not picks silently. The plan is the contract the diff has to honour; if the diff drifts, the plan changes first. Before submitting, run the self-verification gate below. See `references/02-pr-anatomy.md`.
 
 ### R2 — Quality over quantity (V2, S5)
 
-One change at the standard beats five below it. The simplest correct solution is the best solution — complexity must justify itself against the simpler alternative. If scope cannot fit the standard inside the budget, the agent narrows scope, never the standard. Every scope cut is logged in *Out of scope* with a one-line reason — silent omission is the anti-pattern. A cut that costs more to defer (ticket, review comment, tech-debt tracker) than to implement is not a cut — do it now.
+One change at the standard beats five below it. The simplest correct solution is the best solution — complexity must justify itself against the simpler alternative. Before writing, the agent walks the minimalism ladder, stopping at the first rung that holds: **(1)** does this need to exist at all? — speculative need is skipped and named (YAGNI); **(2)** a stdlib or native-platform feature does it (`<input type="date">` over a picker lib, CSS over JS, a DB constraint over app code) — R3; **(3)** an already-installed dependency does it — R3; **(4)** one line — R4; **(5)** the minimum code that works. The ladder is a reflex, not a research project — two rungs hold, take the higher and move on; deletion over addition. Simplest correct is always on; the agent narrows scope, never the standard. If scope cannot fit the standard inside the budget, every scope cut is logged in *Out of scope* with a one-line reason — silent omission is the anti-pattern. A cut that costs more to defer (ticket, review comment, tech-debt tracker) than to implement is not a cut — do it now. A deliberate shortcut with a known ceiling is marked in-code with that ceiling and its upgrade trigger — `// simplification: global lock; upgrade to per-account locks if throughput matters` — the in-code counterpart to the *Out of scope* log; a marker that names no upgrade trigger is the rot risk. Lazy never means flimsy: between two same-size options, take the edge-case-correct one. See `references/11-minimalism-audit.md`.
 
 ### R3 — Stand on shoulders, official-first (V3, V28, V32, V33, S26, S30)
 
-When a perfect dependency exists, the agent uses it. Preference order: *official > popular > custom* — sourced via M2, not recalled from training. License terms are checked before adoption — licensing changes between versions. The agent ships its own only when the gap is real and named. See `references/06-canonical-references.md`.
+The stdlib and the native platform come before any dependency — the runtime, language, or browser already ships it (R2 ladder rungs 2–3); a new dependency is never added for what a few lines of platform feature cover. When a perfect dependency *is* warranted, the agent uses it. Preference order: *native/stdlib > official > popular > custom* — sourced via M2, not recalled from training. License terms are checked before adoption — licensing changes between versions. The agent ships its own only when the gap is real and named. See `references/06-canonical-references.md`.
 
 ### R4 — ACM-grade libs and helpers (V4, V12, S10, S13)
 
@@ -84,7 +85,7 @@ Bug fixes flow `Symptom → RCA (negatives ruled out) → Minimum patch → Regr
 
 ### R11 — Evergreen docs, DRY and referential (V11, S8, S21)
 
-Tables over prose, links over re-explanations. Stale documentation is worse than none — update docs in the same edit as the code. READMEs follow the repo's convention or a fixed shape (title → badges → TOC → setup → run → troubleshooting).
+Tables over prose, links over re-explanations. Stale documentation is worse than none — update docs in the same edit as the code. READMEs follow the repo's convention or a fixed shape (title → badges → TOC → setup → run → troubleshooting). Code leads; prose follows only as far as the code needs. The agent ships **one** implementation, not a menu — it names the alternative in a line with its cost (R1), it does not build it; rule names (R-numbers, M-numbers) are the skill's scaffolding and never appear in output. No essays, no feature tours, no header-stacked walkthroughs around a small change. Unrequested prose defending a simplification is complexity smuggled back in — if the explanation outweighs the code it defends, cut it. Requested artifacts (PR body, plan, RCA, walkthrough) are not debt; the rule is only against unrequested prose.
 
 ### R12 — Forward design, code that does not need refactoring (V13, V20, V27, S1, S32, S35)
 
@@ -92,7 +93,7 @@ Code ships shaped for the next ten edits — optimize for change, not for readin
 
 ### R13 — Surgical precision, bounded sister-PRs (V14, V16, S1, S33, S34, S40)
 
-Diffs are exactly the size of the conceptual change. PRs include *What did NOT change (scope boundary)*. Renames ship as their own PR — never bundled with a feature. Sister-rename PRs are timed just before the next caller arrives. Cleanup discipline: remove imports, variables, and functions that YOUR changes orphaned; don't touch pre-existing dead code unless asked — every changed line traces to the request.
+Diffs are exactly the size of the conceptual change. PRs include *What did NOT change (scope boundary)*. Renames ship as their own PR — never bundled with a feature. Sister-rename PRs are timed just before the next caller arrives. Cleanup discipline: remove imports, variables, and functions that YOUR changes orphaned; don't touch pre-existing dead code unless asked — every changed line traces to the request. When the task is an over-engineering pass — review a diff, audit a repo, or harvest deferred shortcuts into a ledger — the agent runs the minimalism lane (the leanness counterpart to R16's security/deps audit): a delete-list, not a rewrite. See `references/11-minimalism-audit.md`.
 
 ### R14 — Functional spine, DevOps and business in mind (V17, V18, V19, S14, S15, S22, S25, S38, S41)
 
@@ -137,7 +138,7 @@ After generating code and before submitting, the agent runs this checklist again
 3. **Errors** — try-catch wrapping everything? string-matched errors? vague message? internal state leaked?
 4. **Tests** — shipped without tests? shallow E2E (response-only, no side-effect check)? invalid test data? locking logic without concurrent test? monkey-patching modules instead of injecting deps?
 5. **Security** — hardcoded secret? SQL interpolation? missing auth? PII in logs? secret comparison using `===` instead of timing-safe? public endpoint without rate-limit or documented deferral?
-6. **Shape** — narrating comments? premature abstraction? async without await? over-verbose names? dead code?
+6. **Shape** — narrating comments? premature abstraction? code that needn't exist (YAGNI miss)? reinvented stdlib/native? a dependency added for a few-line job? a deliberate shortcut without a ceiling+upgrade comment? multiple implementations where one was asked? rule numbers narrated into output? essay prose or stacked headers around a small change? async without await? over-verbose names? dead code?
 7. **Codebase** — does it match existing style? imposing greenfield patterns? touching pre-existing dead code?
 8. **Infra** (greenfield only) — env validated at boot (config module with schema)? pre-commit hooks wired (format → lint → type-check)? config example file checked in, secrets git-ignored? language-level strict mode enabled?
 9. **Remediation** (inherited / hardening work) — security and audit claims carry a file + test? open alerts zero (fixed or dismissed with a reason and owner)? coupled deps pinned in lockstep? migration sweep (stale comments, debug scripts, orphaned config) clean?
@@ -153,6 +154,7 @@ Headlines below; the full list lives in `references/05-anti-patterns.md`.
 - Non-idempotent writes, check-then-act races, polling when push exists, missing timeouts on external calls, bare retry loops, cache without invalidation, crash without re-queue on transient failure.
 - Sequential where concurrent is safe, in-process caches in fresh-isolate runtimes, missing resource cleanup.
 - Paradigm mixing, premature abstraction, deduplicating divergent code, reinventing named design patterns, happy-path-only implementation, magic numbers/strings, variant conditionals, try-catch at every boundary, async without await, over-verbose naming.
+- Code that needn't exist (YAGNI miss), reinventing the stdlib or a native platform feature, adding a dependency for what a few lines cover, a deferred shortcut whose comment names no ceiling or upgrade trigger, explanation longer than the code it defends.
 - Unnecessary backwards compatibility in greenfield, vague error messages, internal state leaking to consumers, cross-system identifiers without mapping.
 - Code-first bug fixes (no RCA), trivial deferrals as scope cuts, bundled rename + feature PRs, tests deferred to follow-up, reimplementation without reference testing.
 - Inline LLM prompts, unvalidated LLM output, hardcoded model identifiers, unbounded tool-call loops, no cost/token awareness.
@@ -178,6 +180,7 @@ Each reference is independently readable. The agent loads only the ones the curr
 - `references/08-currency-flags.md` — lane-canonical authorities, standing flags, flag-landing protocol.
 - `references/09-before-after.md` — six calibration diffs: LLM default → production-grade output for the most common failure modes.
 - `references/10-remediation-audit.md` — remediation workflow, coupled-package lockstep, exploitability-by-runtime, evidence-linked audit template, migration grep-gates.
+- `references/11-minimalism-audit.md` — the minimalism ladder, the neutral ceiling-comment convention, and the over-engineering review / repo-audit / deferred-shortcut-debt lanes with their delete/stdlib/native/yagni/shrink tags.
 
 ## Provenance
 
