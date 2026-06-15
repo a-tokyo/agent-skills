@@ -1,0 +1,8 @@
+# Benchmark runtime artifacts — regenerable, not source.
+.venv/
+__pycache__/
+node_modules/
+.env
+*.log
+results/
+output.json

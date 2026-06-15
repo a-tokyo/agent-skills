@@ -1,0 +1,22 @@
+# Production-spec tasks — does the skill add the rigor (security, concurrency, idempotency, typed
+# errors, a shipped test) the bare model omits? Same model, with vs without.
+#   ANTHROPIC_API_KEY=... npx promptfoo@latest eval -c promptfooconfig.production-spec.yaml --repeat 5
+description: "Production-spec: rigor probes (security/concurrency/idempotency/typed-errors/test), with vs without."
+providers:
+  - id: anthropic:messages:claude-haiku-4-5-20251001
+    config: { max_tokens: 8192, temperature: 1 }
+  - id: anthropic:messages:claude-sonnet-4-6
+    config: { max_tokens: 8192, temperature: 1 }
+  - id: anthropic:messages:claude-opus-4-8
+    config: { max_tokens: 8192, temperature: 1 }
+prompts:
+  - { id: file://arms/baseline.js, label: no skill }
+  - { id: file://arms/production-grade.js, label: production-grade }
+defaultTest:
+  assert:
+    - { type: javascript, value: file://_loc.assert.js, metric: code_loc }
+    - { type: javascript, value: file://_probes.assert.js, metric: probes }
+tests:
+  - vars: { task: "Implement user signup and login for a Python web service: hash and verify passwords securely. Greenfield, single file, no existing repo — write the complete code now." }
+  - vars: { task: "Implement transferring money between two accounts in a ledger (debit one, credit the other) in Python. Greenfield, single file, no existing repo — write the complete code now." }
+  - vars: { task: "Validate and parse an incoming JSON payload for user registration (email, age, password) in Python. Greenfield, single file, no existing repo — write the complete code now." }

@@ -1,0 +1,26 @@
+# Engineering-rigor tasks — does the skill make the model reach for the PROPER algorithm, data
+# structure, and safe pattern where the bare model writes the naive default? Same model, with vs without.
+#   ANTHROPIC_API_KEY=... npx promptfoo@latest eval -c promptfooconfig.rigor.yaml --repeat 5
+description: "Engineering rigor: optimal complexity, no N+1, parameterized SQL, money precision, tz-aware datetime."
+providers:
+  - id: anthropic:messages:claude-haiku-4-5-20251001
+    config: { max_tokens: 8192, temperature: 1 }
+  - id: anthropic:messages:claude-sonnet-4-6
+    config: { max_tokens: 8192, temperature: 1 }
+  - id: anthropic:messages:claude-opus-4-8
+    config: { max_tokens: 8192, temperature: 1 }
+prompts:
+  - { id: file://arms/baseline.js, label: no skill }
+  - { id: file://arms/production-grade.js, label: production-grade }
+defaultTest:
+  assert:
+    - { type: javascript, value: file://_loc.assert.js, metric: code_loc }
+    - { type: javascript, value: file://_rigor.assert.js, metric: rigor }
+tests:
+  - vars: { task: "Write a Python function that returns True if any two distinct elements in a list sum to a target value." }
+  - vars: { task: "Write a Python function that returns the nth Fibonacci number." }
+  - vars: { task: "Write a Python function that returns the k largest numbers from a list." }
+  - vars: { task: "You have repo.get_user(id) and repo.get_orders_for_user(id), and batch versions repo.get_users(ids) and repo.get_orders_for_users(ids). Given a list of user IDs, return each user with their orders." }
+  - vars: { task: "Write a Python function that returns all users whose name matches a given search string, querying a SQL database." }
+  - vars: { task: "Write a Python function that computes a shopping cart total: sum item prices, add 8.25% sales tax, then apply a percentage discount." }
+  - vars: { task: "Write a Python function that records when an event happened and returns whether it was more than 24 hours ago." }

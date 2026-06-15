@@ -1,0 +1,23 @@
+# Everyday tasks — does the skill keep correctness while cutting bloat? Same model, with vs without.
+#   ANTHROPIC_API_KEY=... npx promptfoo@latest eval -c promptfooconfig.everyday.yaml --repeat 5
+description: "Everyday tasks: code size (loc) + executed correctness, model with production-grade vs without."
+providers:
+  - id: anthropic:messages:claude-haiku-4-5-20251001
+    config: { max_tokens: 8192, temperature: 1 }
+  - id: anthropic:messages:claude-sonnet-4-6
+    config: { max_tokens: 8192, temperature: 1 }
+  - id: anthropic:messages:claude-opus-4-8
+    config: { max_tokens: 8192, temperature: 1 }
+prompts:
+  - { id: file://arms/baseline.js, label: no skill }
+  - { id: file://arms/production-grade.js, label: production-grade }
+defaultTest:
+  assert:
+    - { type: javascript, value: file://_loc.assert.js, metric: code_loc }
+    - { type: javascript, value: file://_correct.assert.js, metric: correct }
+tests:
+  - vars: { task: "Write me a Python function that validates email addresses." }
+  - vars: { task: "Add debounce to a search input in vanilla JavaScript. It currently fires an API call on every keystroke." }
+  - vars: { task: "Write Python code that reads sales.csv and sums the 'amount' column." }
+  - vars: { task: "Build me a countdown timer component in React that counts down from a given number of seconds." }
+  - vars: { task: "Add rate limiting to my FastAPI endpoint so users can't spam it." }
