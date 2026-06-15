@@ -182,7 +182,7 @@ function idProbe(t) {
 const PROBE_SETS = {
   auth: [
     { name: 'strong_kdf', critical: true, re: /pbkdf2|bcrypt|scrypt|argon2/i },
-    { name: 'salt', critical: true, re: /salt|secrets\.|os\.urandom|token_bytes|gensalt/i },
+    { name: 'salt', critical: true, fn: (c) => /salt|secrets\.|os\.urandom|token_bytes|gensalt/i.test(c) || /argon2|PasswordHasher|bcrypt|\bscrypt\b|CryptContext|passlib/i.test(c) },
     { name: 'constant_time_compare', critical: false, re: /compare_digest|constant[_-]?time|checkpw|\.verify\(/i },
     { name: 'no_weak_only_hash', critical: true, not: true, re: /^(?=[\s\S]*\b(md5|sha1)\b)(?![\s\S]*(pbkdf2|bcrypt|scrypt|argon2))/i },
   ],

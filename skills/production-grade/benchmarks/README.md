@@ -30,9 +30,11 @@ structural-probe scorer (`score.js`, self-tested in `test-rigor.js`), and three 
 | timezone-aware datetime, not naive `utcnow()` | 0% → **60%** | 100% → 100% | 0% → **100%** |
 | typed / domain errors, not bare exceptions (R14) | 50% → **80%** | 50% → **65%** | 50% → **75%** |
 | parameterized SQL, not string-interpolated (R7) | 100% → 100% | 100% → 100% | 80% → **100%** |
-| security + concurrency primitives | 100% → 97% | 100% → 100% | 100% → 94% |
 
-Floors every arm already clears (not differentiators): Fibonacci memoization, top-k via sort/heap.
+Floors every arm already clears (not differentiators): Fibonacci memoization, top-k via sort/heap, and
+password-hashing / money-locking primitives (~100% with or without the skill — unguided code already
+uses bcrypt/Decimal/locks). The one sub-100% with-skill cell on those is a single Haiku run that asked
+about the task rather than shipping; neither arm ever produced insecure code.
 
 ### Everyday tasks — median LOC and executed correctness (no skill → + production-grade)
 

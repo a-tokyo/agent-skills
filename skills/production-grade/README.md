@@ -28,7 +28,11 @@ Share of runs that ship the correct engineering choice, **no skill → + product
 | timezone-aware datetime, not naive `utcnow()` | **0% → 60%** | 100% → 100% | **0% → 100%** |
 | typed / domain errors, not bare exceptions (R14) | 50% → 80% | 50% → 65% | 50% → 75% |
 | parameterized SQL, not string-interpolated (R7) | 100% → 100% | 100% → 100% | 80% → 100% |
-| security + concurrency primitives (held) | 100% → 97% | 100% → 100% | 100% → 94% |
+
+Password-hashing and money-locking primitives are a floor both arms clear (~100% with or without the
+skill — verbose unguided code already reaches for bcrypt/Decimal/locks), so they aren't a differentiator
+and aren't listed. The skill holds them; the only sub-100% with-skill cell is one Haiku run where it
+asked about the task instead of shipping code — no insecure code was produced by either arm.
 
 The bare model **never** makes a money transfer idempotent (0% on every model), and on weaker models it
 routinely writes an O(n²) loop, stores money in floats, and compares naive timestamps. The skill is the
