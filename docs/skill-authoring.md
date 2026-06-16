@@ -25,7 +25,10 @@ disagree with the guide, the guide wins.
 | Reference file with a TOC | required when the file is > 100 lines |
 | Reference depth | one level deep from `SKILL.md` (no reference that only links to another reference) |
 
-These are validated by Anthropic at upload; the table is an early warning, not the authority.
+`name`, `description`, and upload size are enforced by Anthropic at upload; the body-line count is a
+performance guideline (Anthropic's wording is "body under 500 lines"). The check below counts the
+whole file — frontmatter adds only a few lines — as a conservative proxy. The table is an early
+warning, not the authority.
 
 ## Check current compliance
 
@@ -37,9 +40,10 @@ under-counts. This parses the frontmatter properly:
 python3 - <<'PY'
 import glob, re
 for f in sorted(glob.glob("skills/*/SKILL.md")):
-    s = open(f).read()
+    with open(f, encoding="utf-8") as fh:
+        s = fh.read()
     fm = s.split("---", 2)[1]
-    name = re.search(r'^name:\s*(.+)$', fm, re.M).group(1).strip()
+    name = re.search(r'^name:\s*(.+)$', fm, re.M).group(1).strip().strip("\"'")
     m = re.search(r'^description:[ \t]*(.*)$', fm, re.M)
     val = m.group(1).strip()
     if val in (">", "|", ">-", "|-", ">+", "|+", ""):       # folded/literal block scalar

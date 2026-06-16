@@ -29,7 +29,7 @@ npx skills add a-tokyo/agent-skills                      # all skills
 npx skills add a-tokyo/agent-skills --skill production-grade
 
 # check every skill against the platform limits (run from repo root)
-wc -l skills/*/SKILL.md                                  # quick glance: body line counts
+wc -l skills/*/SKILL.md                                  # whole-file lines (Anthropic's limit is body < 500)
 # full name + description check (handles folded YAML): see docs/skill-authoring.md
 
 # run a skill's benchmark (from inside the repo)
@@ -60,9 +60,10 @@ existing set beats the gerund default.
 
 ## Testing — benchmarking
 
-Every skill ships a self-contained benchmark in `benchmarks/<name>/`. The standard is **same-model
-uplift**: the same model run with the skill vs. bare, on identical tasks, scored by executing the
-output. Full method and reproduce steps: **[docs/benchmarking.md](docs/benchmarking.md)**.
+A new or materially changed skill ships a self-contained benchmark in `benchmarks/<name>/`. The
+standard is **same-model uplift**: the same model run with the skill vs. bare, on identical tasks,
+scored by executing the output. Full method and reproduce steps:
+**[docs/benchmarking.md](docs/benchmarking.md)**.
 
 ## Security
 

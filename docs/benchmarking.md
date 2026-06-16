@@ -1,8 +1,9 @@
 # Benchmarking
 
-Every skill ships with a benchmark proving it earns its place. This is the standard; the worked
-example and reproduce steps live in [`../benchmarks/README.md`](../benchmarks/README.md) and each
-[`../benchmarks/<skill>/README.md`](../benchmarks/production-grade/README.md).
+Benchmarks are the repo's test harness: a new or materially changed skill should ship a benchmark
+proving it earns its place. This is the standard; the index lives in
+[`../benchmarks/README.md`](../benchmarks/README.md) and a worked example with reproduce steps in
+[`../benchmarks/production-grade/README.md`](../benchmarks/production-grade/README.md).
 
 ## The standard
 
