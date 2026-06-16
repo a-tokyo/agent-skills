@@ -52,6 +52,9 @@ below is a *mirror, confirm at the guide*.
 | `description` | ≤ 1024 chars, non-empty, third person, *what* + *when* |
 | Skill upload (all files) | ≤ 30 MB |
 
+Beyond Anthropic's required `name`/`description`, every skill in this repo also carries `version`
+(semver) and `license` (`MIT`) in frontmatter — bump `version` when behaviour changes.
+
 Plus: progressive disclosure (split into `references/` before the body nears 500 lines), references
 **one level deep** from `SKILL.md`, a `## Contents` TOC on any reference > 100 lines, fully-qualified
 MCP names (`ServerName:tool_name`), forward-slash paths, provide-a-default over a menu, and no

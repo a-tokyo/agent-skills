@@ -85,6 +85,10 @@ the `description`, before it breaks.
 
 - **Skill folder.** `skills/<name>/` holds `SKILL.md`, an optional `references/` dir, and an optional
   `README.md` (user-facing; ships on install). Nothing else is required.
+- **Frontmatter fields.** Anthropic requires only `name` and `description`. On top of those, every
+  skill in this repo also carries `version` (semver, e.g. `0.0.4`) and `license` (`MIT`). Bump
+  `version` whenever the skill's behaviour changes — patch for wording/fixes, minor for new
+  capability.
 - **Naming.** Descriptive kebab-case noun phrase (`production-grade`, `tribunal`,
   `tailwind-v3-to-v4-migration`). Anthropic's guide prefers gerunds, but in this repo *consistency
   wins* — match the existing set.
