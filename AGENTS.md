@@ -29,7 +29,7 @@ npx skills add a-tokyo/agent-skills                      # all skills
 npx skills add a-tokyo/agent-skills --skill production-grade
 
 # check every skill against the platform limits (run from repo root)
-wc -l skills/*/SKILL.md                                  # whole-file lines (Anthropic's limit is body < 500)
+wc -l skills/*/SKILL.md                                  # whole-file lines (guideline: keep body < 500; this count includes frontmatter)
 # full name + description check (handles folded YAML): see docs/skill-authoring.md
 
 # run a skill's benchmark (from inside the repo)
