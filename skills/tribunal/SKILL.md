@@ -17,8 +17,9 @@ description: >-
 
 # Tribunal
 
-One agent builds, independent agents measure, and the orchestrator adjudicates on
-evidence. Three behaviors carry the value: an **adversarial second look** that catches
+The orchestrator builds nothing and scores nothing itself — it slices the work, dispatches
+a *separate* doer, convenes *separate* verifiers, and adjudicates on evidence. Three
+behaviors carry the value: an **adversarial second look** that catches
 what a single pass ships silently, as named failure scenarios; **calibrated verdicts**
 — locally fixable defects get ITERATE, not "rewrite everything", and passing math is
 overridden only by verified evidence; **evidence before claims** — nothing is "done"
@@ -39,8 +40,10 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
    scoring dimensions, weights, and a pass target from them, recorded so re-panels
    reuse the rubric. Verify-only entry (artifact already exists): write criteria from
    the original request — never reverse-engineered from it — freeze, start at step 3.
-2. Dispatch a fresh doer with the full slice spec pasted in (never "read the plan
-   file"). The doer implements, runs the verification commands, and reports a diff
+2. Spawn a SEPARATE doer agent (never the orchestrator itself) with the full slice spec
+   pasted in (never "read the plan file"). If the orchestrator writes or edits the
+   deliverable, there is no independent artifact to verify and the run collapses to one
+   context. The doer implements, runs the verification commands, and reports a diff
    summary, verbatim output, and exactly one status (table below).
 3. Check the report against the actual diff yourself; dispatch the panel in parallel, context-walled.
 4. Adjudicate per [consensus-mechanics.md](references/consensus-mechanics.md); record
@@ -50,9 +53,11 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
 
 ## Invariants (low freedom — these are the skill)
 
-1. **Context wall.** Each role — doer, each verifier, the adversary — is a DISTINCT agent
-   in its own session; one agent never plays two roles (shared context = shared blind
-   spots = no triangulation, the entire point). The doer finishes first; then the
+1. **Context wall.** Four roles, four separate sessions: the orchestrator (slices,
+   dispatches, adjudicates, owns the ledger — produces NO deliverable content and assigns
+   NO scores itself), the doer, and each verifier. One agent never plays two roles (shared
+   context = shared blind spots = no triangulation, the entire point). The doer finishes
+   first; then the
    verifiers run in parallel, each RECEIVING exactly: frozen criteria; the artifact
    (diff + new-file paths, or the document + its predecessor); reference materials;
    permission to run the verification commands; known risks. Verifiers NEVER receive:
@@ -135,9 +140,13 @@ recommendation SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK; escalation if any.
 
 ## Records
 
-Any durable form works — a gitignored ledger file (e.g. `.tribunal-gates.md`), PR comment,
-decision log — as long as per-slice verdicts, dissents (incl. refuted, verbatim), caveats
-(fixed | deferred + reason), and panel-round counts survive handover; never silently drop a caveat.
+The deliverable is the ONLY durable artifact a tribunal run produces. Report the
+verdict, dissents (incl. refuted, verbatim), caveats (fixed | deferred + reason), and
+panel-round counts in your closing summary — and fold them into the PR description or
+commit message when one exists. Never leave loose files in the tree. If a run genuinely
+needs working files (a running ledger across many slices, temp fixtures), put them ALL
+inside a single gitignored `.tribunal/` directory and never commit it; nothing else is
+written. Never silently drop a caveat.
 
 ## Plan vetting (same machinery, earlier)
 
