@@ -1,6 +1,22 @@
 # Anti-Patterns — symptom, then fix
 
-Fifteen ways tribunal runs go wrong, each with the observable symptom.
+Seventeen ways tribunal runs go wrong, each with the observable symptom.
+
+## Slop output (files left in the tree)
+- SYMPTOM: the run leaves ledger / scorecard / scratch files (e.g. `.tribunal-gates.md`,
+  per-verifier dumps, temp dirs) scattered in the repo; the deliverable is buried in clutter.
+- FIX: the deliverable is the only durable file; verdicts/dissents/caveats go in the closing
+  summary (and the PR/commit). Any working files go inside one gitignored `.tribunal/` dir,
+  never committed.
+
+## Orchestrator self-executing (role collapse)
+- SYMPTOM: the orchestrator writes or edits the deliverable itself, or scores the artifact
+  directly, instead of dispatching separate doer/verifier agents; the run has no independent
+  artifact or panel and degrades to a single context (the failure mode that drops a model to
+  its solo floor).
+- FIX: the orchestrator only slices, dispatches, and adjudicates — it produces no deliverable
+  content and assigns no scores. If it has touched the deliverable or scored anything, stop
+  and re-dispatch that work to a fresh separate agent.
 
 ## Generic skepticism
 - SYMPTOM: the adversary writes "could be more robust" / "consider edge cases" with no

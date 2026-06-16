@@ -122,6 +122,8 @@ verified vs refuted), the artifact location, and a suggested next step — never
 7. Resolve: converged / majority / deadlock; a lone survivor on a dimension never
    decides it — dispatch one fresh replacement verifier or ESCALATE; map to verdict;
    honor any `ESCALATE:`.
-8. Ledger entry: round verdicts, dissents (incl. refuted), caveats, panel rounds used of max 3.
+8. Record round verdicts, dissents (incl. refuted), caveats, and panel-rounds-used in the
+   closing summary (and the PR/commit if one exists) — not as committed files; a gitignored
+   `.tribunal/` scratch file only if the run is too large to hold in context.
 9. SHIP: next slice. ITERATE: feedback packet -> fresh doer -> fresh panel. BLOCK or
    ESCALATE: stop and surface.
