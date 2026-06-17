@@ -70,6 +70,10 @@ cited line is grep-checked; refuted scores are dropped, not averaged).
 frontier model already strong at single-pass review the margin narrows. Pairing an inexpensive
 model with tribunal can approach a larger model's result at lower cost.
 
+Full method, fixtures, answer keys, and reproduce steps — plus a deterministic
+operative-skill propagation-fidelity check — live in
+[benchmarks/tribunal/](../../benchmarks/tribunal/).
+
 ## Usage
 
 Install with [`npx skills`](https://skills.sh), then point an orchestrating agent at a

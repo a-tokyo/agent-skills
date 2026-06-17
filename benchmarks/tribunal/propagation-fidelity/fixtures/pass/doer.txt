@@ -1,0 +1,16 @@
+You are the doer in a tribunal run. Implement exactly this slice — do not read any
+plan file, everything you need is below.
+
+SLICE SPEC
+Add a `parseRetryAfter(header)` helper to src/http/retry.ts that returns the delay
+in milliseconds. Accept both delta-seconds ("120") and an HTTP-date. Reject anything
+else with a typed error. Run `npm test -- retry` and report the verbatim output.
+
+OPERATIVE SKILLS
+This work is being built to the production-grade standard. Load the production-grade
+skill and apply it (typed errors, no float money, tz-aware dates, idempotency where
+relevant). If you cannot load the production-grade skill in your environment, say so
+explicitly in your report rather than proceeding against a weaker bar.
+
+Report: a diff summary, the verbatim test output, and exactly one status
+(DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED).
