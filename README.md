@@ -16,9 +16,6 @@ Reusable agent skills for AI coding assistants. Compatible with Cursor, Claude C
 Skill benchmarks live in [`benchmarks/`](benchmarks/), one directory per skill — kept outside `skills/`
 so they don't ship when a skill is installed. Each is self-contained (arms, scorer, configs) and
 measures the **same model with the skill vs without**. See
-[`benchmarks/production-grade/`](benchmarks/production-grade/) for the full per-model writeup: the skill
-takes a bare model from **0% → 70–90%** on idempotent writes, **0% → 100%** on Decimal money, fixes
-O(n²) loops and naive datetime, and cuts everyday code 2–4× while holding correctness.
 
 ## Install
 
@@ -44,4 +41,4 @@ npx skills add a-tokyo/agent-skills --skill tribunal
 
 ## License
 
-MIT
+MIT [Ahmed Tokyo](https://www.ahmedtokyo.com)
