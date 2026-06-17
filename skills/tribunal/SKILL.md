@@ -1,6 +1,6 @@
 ---
 name: tribunal
-version: 0.0.1
+version: 0.0.2
 license: MIT
 description: >-
   Runs a doer -> verifier-panel -> consensus loop to verify a deliverable before it ships.
@@ -38,10 +38,15 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
 
 1. Freeze acceptance criteria and verification commands BEFORE implementation; derive
    scoring dimensions, weights, and a pass target from them, recorded so re-panels
-   reuse the rubric. Verify-only entry (artifact already exists): write criteria from
-   the original request — never reverse-engineered from it — freeze, start at step 3.
+   reuse the rubric. Identify the operative skills in play — those bearing on how the
+   artifact is built or judged (e.g. production-grade); never the tribunal skill itself
+   nor pure orchestration skills — and fold their standards into the criteria. Verify-only
+   entry (artifact already exists): write criteria from the original request — never
+   reverse-engineered from it — freeze, start at step 3.
 2. Spawn a SEPARATE doer agent (never the orchestrator itself) with the full slice spec
-   pasted in (never "read the plan file"). If the orchestrator writes or edits the
+   pasted in (never "read the plan file") and the operative skills named with an
+   instruction to load them (load production-grade, etc.) — if it cannot load a named
+   skill it says so rather than proceeding. If the orchestrator writes or edits the
    deliverable, there is no independent artifact to verify and the run collapses to one
    context. The doer implements, runs the verification commands, and reports a diff
    summary, verbatim output, and exactly one status (table below).
@@ -60,9 +65,12 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
    first; then the
    verifiers run in parallel, each RECEIVING exactly: frozen criteria; the artifact
    (diff + new-file paths, or the document + its predecessor); reference materials;
-   permission to run the verification commands; known risks. Verifiers NEVER receive:
+   permission to run the verification commands; known risks; the operative skills
+   (named, to load). Verifiers NEVER receive:
    the doer's reasoning or self-assessment, design rationale, each other's first-round
-   views or identities, expected or prior scores.
+   views or identities, expected or prior scores. Naming shared standards is not a wall
+   breach — the wall withholds the doer's reasoning and scores, not the bar everyone is
+   measured against.
 2. **Evidence anchoring.** High scores require a verbatim quote from the artifact;
    failure claims require file:line or command output; evidence-free findings are
    discarded. Before any consensus math the orchestrator greps every verdict-driving
@@ -129,7 +137,7 @@ the artifact itself, as-is.
 [Adversary only: You MUST oppose — build the strongest case against shipping;
 name the exact failure scenario per concern. Write "ESCALATE: <reason>" for a
 correctness/safety concern you believe cannot be rebutted.]
-Inputs: frozen criteria; dimensions/weights/target; artifact; references; verification commands (you may run them); known risks.
+Inputs: frozen criteria; dimensions/weights/target; artifact; references; verification commands (you may run them); known risks; operative skills (named — load them; if you cannot, say so).
 Rules: score each dimension separately, 1-10, with confidence 0.0-1.0; every
 claim cites a verbatim quote, file:line, or command output. Citations WILL be
 grepped against the artifact and spec — one that does not exist verbatim

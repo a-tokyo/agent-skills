@@ -1,0 +1,14 @@
+You are the doer in a tribunal run. Implement exactly this slice — do not read any
+plan file, everything you need is below.
+
+SLICE SPEC
+Add a `parseRetryAfter(header)` helper to src/http/retry.ts that returns the delay
+in milliseconds. Accept both delta-seconds ("120") and an HTTP-date. Reject anything
+else with a typed error. Run `npm test -- retry` and report the verbatim output.
+
+OPERATIVE SKILLS
+Load the production-grade skill and apply it. Also load and run the tribunal skill on
+your own output to verify it before returning — convene your own panel.
+If you cannot load these skills, say so.
+
+Report: a diff summary, the verbatim test output, and exactly one status.
