@@ -2,6 +2,8 @@
 
 Reusable agent skills for AI coding assistants. Compatible with Cursor, Claude Code, Codex, and 40+ agents via [`npx skills`](https://skills.sh).
 
+[![skills.sh](https://skills.sh/b/a-tokyo/agent-skills)](https://skills.sh/a-tokyo/agent-skills)
+
 ## Skills
 
 | Skill | Description |
