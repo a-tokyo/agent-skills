@@ -156,7 +156,9 @@ function collect(model) {
       if (c.comment) C.column_comments.set(ck, String(c.comment).trim());
     }
     for (const fk of t.foreign_keys || []) {
-      const k = `${tk}/(${colset(fk.columns)})->${normId(fk.ref_table || '')}`;
+      // include ref_schema (default to the parent table's schema when absent) so an FK pointing at the
+      // wrong schema with the same table name is flagged — matters for multi-schema databases.
+      const k = `${tk}/(${colset(fk.columns)})->${normId(fk.ref_schema || t.schema || '')}.${normId(fk.ref_table || '')}`;
       C.foreign_keys.set(k, colset(fk.ref_columns));
       C.fk_on_delete.set(k, fkAction(fk.on_delete));
       C.fk_on_update.set(k, fkAction(fk.on_update));
