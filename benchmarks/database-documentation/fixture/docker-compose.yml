@@ -1,0 +1,33 @@
+# Public reproducible fixture for the database-documentation benchmark.
+# `docker compose up -d` brings up a Postgres and a SQL Server, each seeded with the same logical schema
+# (one of every object class). Anyone can reproduce the benchmark against these with no private repos.
+# Both DBs bind to localhost only (throwaway fixture creds; not exposed to the network).
+services:
+  fixture-pg:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: bench
+      POSTGRES_DB: bench
+    ports:
+      - "127.0.0.1:5440:5432"
+    volumes:
+      - ./init/postgres.sql:/docker-entrypoint-initdb.d/postgres.sql:ro
+
+  fixture-mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "${BENCH_DB_PASSWORD:-Bench_Pass123!}"   # overridable; the seed command reads it from the env
+    ports:
+      - "127.0.0.1:1434:1433"
+    volumes:
+      - ./init:/init:ro
+    # MSSQL has no auto-init dir; start the server, poll until it accepts logins, then seed.
+    # `$$` escapes compose interpolation so the container shell expands the var / runs the subshell.
+    command: >
+      bash -c "/opt/mssql/bin/sqlservr &
+      for i in $$(seq 1 60); do /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q 'SELECT 1' >/dev/null 2>&1 && break; sleep 2; done;
+      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -Q \"IF DB_ID('bench') IS NULL CREATE DATABASE bench\" &&
+      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P \"$${MSSQL_SA_PASSWORD}\" -C -I -d bench -i /init/mssql.sql &&
+      wait"

@@ -1,0 +1,11 @@
+{
+  "name": "database-documentation-eval",
+  "private": true,
+  "type": "module",
+  "version": "0.0.0",
+  "description": "Deterministic ground-truth extractor + parity scorer for the database-documentation skill build.",
+  "dependencies": {
+    "mssql": "^11.0.1",
+    "pg": "^8.22.0"
+  }
+}
