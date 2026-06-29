@@ -114,17 +114,22 @@ Exit: master CSM + a `discrepancies` list.
 
 ### Phase 3 — Generate docs + schema.json
 
-Render the CSM (a pure function of it). Match the output template in `references/output-template.md`,
-**sized to the schema**:
-- **≤ ~15 tables** → a single `DATABASE.md` (stats header, one mermaid ERD, per-table sections, an Issues section).
-- **larger** → `README.md` (index + stats) + `ONBOARDING.md` + `diagrams/<domain>.md` per domain (mermaid
-  `erDiagram` with all columns+types + relationship lines, then per-table sections) + `diagrams/full-erd.md`
-  (table-level only, so it stays renderable) + `tables/entity-reference.md` + `issues/README.md`.
+Write all output into one **dedicated docs directory** — never scatter files across the repo. Default to
+`docs/db/`; if Phase 0 found an existing DB-docs directory (e.g. `docs/db/`, `docs/database/`,
+`docs/schema/`, or wherever the repo already keeps them), write there instead to match house style. Create
+the directory if absent. Render the CSM (a pure function of it) into it, matching the template in
+`references/output-template.md`, **sized to the schema**:
+- **≤ ~15 tables** → a single `docs/db/DATABASE.md` (stats header, one mermaid ERD, per-table sections, an Issues section).
+- **larger** → under `docs/db/`: `README.md` (index + stats) + `ONBOARDING.md` + `diagrams/<domain>.md` per
+  domain (mermaid `erDiagram` with all columns+types + relationship lines, then per-table sections) +
+  `diagrams/full-erd.md` (table-level only, so it stays renderable) + `tables/entity-reference.md` + `issues/README.md`.
+
+Emit `schema.json` into that same directory (`docs/db/schema.json`).
 
 Per-table section: 1–2 sentence **evidence-based** description, a `Column | Type | Nullable | Default |
 Description` table, then **Indexes:** and **Foreign Keys:** (with `ON DELETE`). Partition domains by ORM
-module/folder → name prefix → FK clustering, with a Legacy/Misc catch-all. Always also emit `schema.json`
-(the CSM) — see `references/csm-contract.md`.
+module/folder → name prefix → FK clustering, with a Legacy/Misc catch-all. The `schema.json` follows the
+shape in `references/csm-contract.md`.
 
 ### Phase 4 — Prove parity (the verified half)
 
