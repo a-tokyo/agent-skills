@@ -143,6 +143,16 @@ async function main() {
     FROM sys.objects o JOIN sys.schemas s ON s.schema_id=o.schema_id
     WHERE o.type IN ('P','FN','IF','TF') AND o.is_ms_shipped=0 AND s.name IN (${inList})
     ORDER BY 1,2`);
+  // routine parameters (parameter_id 0 = the scalar-function return; >0 = arguments)
+  const routineParams = await q(`
+    SELECT s.name AS [schema], o.name AS [routine], p.parameter_id, p.name AS pname,
+           ty.name AS type_name, p.max_length, p.precision, p.scale
+    FROM sys.parameters p
+    JOIN sys.objects o ON o.object_id=p.object_id
+    JOIN sys.schemas s ON s.schema_id=o.schema_id
+    JOIN sys.types ty ON ty.user_type_id=p.user_type_id
+    WHERE o.type IN ('P','FN','IF','TF') AND o.is_ms_shipped=0 AND s.name IN (${inList})
+    ORDER BY 1,2,3`);
 
   const seqs = await q(`
     SELECT s.name AS [schema], sq.name AS [name]
@@ -210,7 +220,12 @@ async function main() {
     enums: [], // SQL Server has no native enums (modeled as CHECK constraints, captured above)
     domains: [],
     sequences: seqs.map((s) => ({ schema: s.schema, name: s.name })).sort(cmp('schema', 'name')),
-    routines: routines.map((r) => ({ schema: r.schema, name: r.name, kind: r.kind, returns: null, arguments: null, language: 'tsql' })).sort(cmp('schema', 'name')),
+    routines: routines.map((r) => {
+      const params = routineParams.filter((p) => p.schema === r.schema && p.routine === r.name);
+      const args = params.filter((p) => p.parameter_id > 0).map((p) => `${p.pname} ${renderType(p)}`).join(', ');
+      const ret = params.find((p) => p.parameter_id === 0);
+      return { schema: r.schema, name: r.name, kind: r.kind, returns: ret ? renderType(ret) : null, arguments: args || null, language: 'tsql' };
+    }).sort(cmp('schema', 'name')),
   };
   process.stdout.write(JSON.stringify(canonical(out), null, 2) + '\n');
   await pool.close();
