@@ -153,7 +153,8 @@ function collect(model) {
       C.column_defaults.set(ck, normDefault(c.default));
       C.column_is_identity.set(ck, !!c.is_identity);
       C.column_is_generated.set(ck, !!c.is_generated);
-      if (c.comment) C.column_comments.set(ck, String(c.comment).trim());
+      // set for EVERY column (empty when none) so a dropped or invented comment is a mismatch, not invisible
+      C.column_comments.set(ck, c.comment ? String(c.comment).trim() : '');
     }
     for (const fk of t.foreign_keys || []) {
       // include ref_schema (default to the parent table's schema when absent) so an FK pointing at the
@@ -244,8 +245,15 @@ for (const cls of classes) {
   const nTruth = tm.size;
   let tp = 0, fp = 0, fn = 0;
   if (ATTR_CLASSES.has(cls)) {
-    // score only over keys present in both (presence handled by parent class); value must match
-    for (const [k, v] of tm) { if (gm.has(k)) { if (gm.get(k) === v) tp++; else { fp++; fn++; } } }
+    // score only over keys present in both (presence handled by parent class); value must match.
+    for (const [k, v] of tm) {
+      if (!gm.has(k)) continue;
+      // column_comments: a DB comment is a fact (omitting/changing a real one is a defect), but adding a
+      // description where the DB has NO comment is helpful interpretation, not a false DB fact — don't
+      // penalize it. So only score columns where truth actually has a comment.
+      if (cls === 'column_comments' && v === '') continue;
+      if (gm.get(k) === v) tp++; else { fp++; fn++; }
+    }
     // no overlap => the parent objects weren't documented; omission already counted by presence
     // classes. Drop this conditional class from the rollup rather than scoring it 1.0 vacuously.
     if (tp + fp === 0) { perClass[cls] = { f: null, tp, fp, fn, n: nTruth }; continue; }
@@ -292,7 +300,7 @@ if (process.env.SHOW_DIFF === '1') {
     const tm = T[cls], gm = G[cls];
     const fn = [], fp = [];
     if (ATTR_CLASSES.has(cls)) {
-      for (const [k, v] of tm) if (gm.has(k) && gm.get(k) !== v) fn.push(`${k} [truth=${v} cand=${gm.get(k)}]`);
+      for (const [k, v] of tm) if (gm.has(k) && gm.get(k) !== v && !(cls === 'column_comments' && v === '')) fn.push(`${k} [truth=${v} cand=${gm.get(k)}]`);
     } else {
       for (const k of tm.keys()) if (!gm.has(k)) fn.push(k);
       for (const k of gm.keys()) if (!tm.has(k)) fp.push(k);

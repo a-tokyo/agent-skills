@@ -57,7 +57,9 @@ deliverables are the docs and `schema.json`**.
    a connected **DB MCP server** → **`docker compose exec` / `docker exec`** into the DB container (read
    creds from compose env) → a **local DB CLI** (`psql`/`mysql`/`sqlcmd`/`sqlite3`) against host:port from
    `.env`. **Prove it** with one trivial query (`SELECT 1`, list tables) before continuing. If the DB is
-   down but a compose file defines it, offer to start it.
+   down but a compose file defines it, offer to start it. **Never print credentials**: treat passwords/DSNs
+   read from `.env`/compose as secrets — keep them only in the command you execute, and **redact them**
+   (`password=***`) in anything you show or write to the docs.
 3. **Inventory every other surface**: migrations dir (+count), generated client/`*.d.ts`, seeds/fixtures,
    and grep the app for raw SQL / query-builder calls. Note existing `docs/db/` — if present this is a
    *refresh*: load it to diff for drift and to match house style.
