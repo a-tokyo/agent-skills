@@ -1,0 +1,30 @@
+# Public reproducible fixture for the database-docs benchmark.
+# `docker compose up -d` brings up a Postgres and a SQL Server, each seeded with the same logical schema
+# (one of every object class). Anyone can reproduce the benchmark against these with no private repos.
+services:
+  fixture-pg:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: bench
+      POSTGRES_PASSWORD: bench
+      POSTGRES_DB: bench
+    ports:
+      - "5440:5432"
+    volumes:
+      - ./init/postgres.sql:/docker-entrypoint-initdb.d/postgres.sql:ro
+
+  fixture-mssql:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_SA_PASSWORD: "Bench_Pass123!"
+    ports:
+      - "1434:1433"
+    volumes:
+      - ./init:/init:ro
+    # MSSQL has no auto-init dir; apply the schema once the server is up:
+    command: >
+      bash -c "/opt/mssql/bin/sqlservr & sleep 25 &&
+      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Bench_Pass123!' -C -Q \"IF DB_ID('bench') IS NULL CREATE DATABASE bench\" &&
+      /opt/mssql-tools18/bin/sqlcmd -S localhost -U sa -P 'Bench_Pass123!' -C -d bench -i /init/mssql.sql &&
+      wait"
