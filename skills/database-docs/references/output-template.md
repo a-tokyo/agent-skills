@@ -4,18 +4,18 @@ Render these from the CSM. Use **physical DB identifiers** throughout. Pick the 
 
 ## Small schema (≤ ~15 tables): single `DATABASE.md`
 
-```markdown
+~~~markdown
 # <Database> schema
 
 > Engine: PostgreSQL 16.8 · 12 tables · 3 enums · Generated <date> · Parity: verified (0 undocumented, 0 invented)
 
 ## ER diagram
-\`\`\`mermaid
+```mermaid
 erDiagram
   user { int id PK; varchar email; int client_id FK }
   client { int id PK; varchar name }
   user }o--|| client : client_id
-\`\`\`
+```
 
 ## Tables
 
@@ -33,7 +33,7 @@ Central user entity for all system users.
 
 ## Issues / drift
 - ...
-```
+~~~
 
 ## Large schema: multi-file under `docs/db/`
 

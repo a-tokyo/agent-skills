@@ -43,16 +43,16 @@ flowchart LR
 
 | target | engine / ORM | model | with skill | bare baseline |
 |---|---|---|---|---|
-| real app A | PostgreSQL / TypeORM | Opus | **1 / 0** | 0 / 7 |
+| real app A | PostgreSQL / TypeORM | Opus | **1 / 0** | 0 / 81 |
 | real app A | PostgreSQL / TypeORM | Sonnet | **1 / 0** | did-not-finish (unbounded, no output) |
-| real app A | PostgreSQL / TypeORM | Haiku | **1 / 0** | 0 / 2877 |
+| real app A | PostgreSQL / TypeORM | Haiku | **1 / 0** | 0 / 2182 |
 | real app B | SQL Server / Prisma | Opus | **1 / 0** | 0 / 338 |
-| public fixture | PostgreSQL | Opus | **1 / 0** | 0 / 14 |
+| public fixture | PostgreSQL | Opus | **1 / 0** | 0 / 7 |
 | public fixture | SQL Server | Opus | **1 / 0** | — |
 
 (`exact_parity / total_defects`, scored by the strengthened scorer that routes every schema-object class —
-including partial-index predicates, index method, trigger/view bodies, FK on-update, routine signatures, and
-column flags — into the diff. An earlier, weaker scorer had let some of these slip; the audit that hardened
+including partial-index predicates, index method, trigger/view bodies, FK on-update, routines (name + kind),
+and column flags — into the diff. An earlier, weaker scorer had let some of these slip; the audit that hardened
 it also re-confirmed every "with skill" cell stays at exact `1 / 0`.)
 
 **Read this honestly:**
@@ -62,7 +62,7 @@ it also re-confirmed every "with skill" cell stays at exact `1 / 0`.)
   model (Haiku) defaults to parsing the ORM and ships **2809 defects** — incomplete (missing 58 tables, 541
   columns, all sequences/triggers/checks) *and* hallucinated (phantom enums, a typo'd table). A mid model
   (Sonnet) without the skill explored unboundedly and produced nothing.
-- Even on the **small public fixture**, the bare Opus baseline misses **14** schema facts (a trigger body,
+- Even on the **small public fixture**, the bare Opus baseline misses **7** schema facts (a trigger body,
   a view body, the computed-column expression, an FK on-update, index methods, etc.) — things a strong model
   skims past but the skill's verification loop catches. The fixture has no application repo, so there is no
   ORM to mis-read (the skill's single biggest lever, grounding-vs-ORM, is removed); even so the gap persists.

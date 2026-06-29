@@ -80,6 +80,8 @@ and confirm each is present in `schema.json` with a live count:
 - [ ] **sequences** · [ ] **triggers** · [ ] **views** (+definition) · [ ] routines (functions/procedures)
 
 Sequences, triggers, and routines are routinely forgotten because they are not columns — extract them explicitly.
+Capture view / trigger / routine **bodies in full and verbatim** — never abbreviate, summarize, or elide
+with `...`; a truncated definition is an incomplete (wrong) doc.
 **`schema.json.enums` = DB-NATIVE enum types only.** A string column with a `CHECK (col IN (...))` goes under
 that table's `check_constraints` (not `enums`); an app-level-only value set goes in the column description
 marked "app-enforced". Putting a non-native enum in `enums` is a hallucination against the live schema.

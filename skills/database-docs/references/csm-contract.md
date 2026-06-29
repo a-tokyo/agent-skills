@@ -63,7 +63,7 @@ exactly what the catalog reports.
   "indexes": [ { "name": "idx_user_email", "unique": false, "method": "btree",
                  "columns": ["user_email"], "where": "deleted_at IS NULL", "def": "CREATE INDEX ..." } ],
   "triggers": [ { "name": "user_set_updated", "def": "CREATE TRIGGER ..." } ],
-  "view_definition": null                          // SQL text for views/matviews, else null
+  "view_definition": null                          // FULL verbatim SQL for views/matviews (never abbreviated), else null
 }
 ```
 

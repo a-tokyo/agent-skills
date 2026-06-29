@@ -107,10 +107,18 @@ function indexCols(ix) {
   return (ix.columns || []).map((c) => normIndexItem(String(c)));
 }
 const tkey = (s, n) => `${normId(s || '')}.${normId(n)}`;
-// body normalizer (trigger/view defs): strip SQL comments (a leading `-- desc` differs cosmetically only),
-// then lowercase + collapse whitespace. Catches a wrong body without flagging comment/format differences.
-const normDef = (d) => (d == null ? '' : String(d).replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ')
-  .toLowerCase().replace(/\s+/g, ' ').trim());
+// body normalizer (trigger/view defs). Bodies are compared to catch a substantively-wrong body, but SQL
+// has many equivalent renderings (pg_get_*def schema-qualifies, adds ::casts and extra parens), so strip
+// the cosmetic layer: comments, ::type casts, default-schema (`public.`) qualification, then all parens and
+// whitespace. A body referencing different tables/columns/functions still differs (its tokens differ);
+// only formatting is absorbed.
+const normDef = (d) => (d == null ? '' : String(d)
+  .replace(/--[^\n]*/g, ' ').replace(/\/\*[\s\S]*?\*\//g, ' ')   // SQL comments
+  .toLowerCase()
+  .replace(/::"?[a-z0-9_]+"?(\[\])?/g, '')                       // ::type casts
+  .replace(/\bpublic\./g, '')                                   // default-schema qualification
+  .replace(/[()\s;]+/g, '')                                     // parens + whitespace + statement terminators
+  .trim());
 const fkAction = (a) => (a || 'NO ACTION').toUpperCase().replace(/[\s_]/g, ''); // NO ACTION==NO_ACTION==NOACTION
 
 // ---------- build keyed object lists for each class ----------
@@ -126,7 +134,8 @@ function collect(model) {
     foreign_keys: new Map(), fk_on_delete: new Map(), fk_on_update: new Map(), unique_constraints: new Map(),
     check_constraints: new Map(), indexes: new Map(), enums: new Map(), enum_values: new Map(),
     domains: new Map(), domain_base: new Map(), views: new Map(), view_defs: new Map(),
-    triggers: new Map(), trigger_defs: new Map(), routines: new Map(), sequences: new Map(),
+    triggers: new Map(), trigger_defs: new Map(), routines: new Map(), routine_kind: new Map(),
+    sequences: new Map(),
   };
   for (const t of rel) {
     const tk = tkey(t.schema, t.name);
@@ -186,8 +195,12 @@ function collect(model) {
     C.domain_base.set(dk, normType(d.base_type));
   }
   for (const r of model.routines || []) {
-    // include normalized arguments so overloads f(int) vs f(int,text) are distinct objects
-    C.routines.set(`${tkey(r.schema, r.name)}(${normId(r.arguments || '')})`, (r.kind || '').toLowerCase());
+    // presence by name (omission/hallucination scored) + kind as an attribute. Name-only key keeps it
+    // engine-fair (SQL Server doesn't expose arg signatures the way Postgres does); overloads sharing a
+    // name are a rare, accepted collapse.
+    const rk = tkey(r.schema, r.name);
+    C.routines.set(rk, true);
+    C.routine_kind.set(rk, (r.kind || '').toLowerCase());
   }
   for (const s of model.sequences || []) C.sequences.set(tkey(s.schema, s.name), true);
   return C;
@@ -197,13 +210,13 @@ function collect(model) {
 // presence classes: TP if key in both. attribute classes: among keys-in-both, TP if value matches.
 const ATTR_CLASSES = new Set(['column_types', 'column_nullability', 'column_defaults', 'column_comments',
   'column_is_identity', 'column_is_generated', 'primary_keys', 'foreign_keys',
-  'fk_on_delete', 'fk_on_update', 'routines', 'domain_base', 'view_defs', 'trigger_defs']);
+  'fk_on_delete', 'fk_on_update', 'routine_kind', 'domain_base', 'view_defs', 'trigger_defs']);
 const WEIGHTS = {
   tables: 1, columns: 1, column_types: 1, primary_keys: 1, foreign_keys: 1,
   fk_on_delete: 0.6, fk_on_update: 0.6, column_nullability: 0.6, enums: 0.6, enum_values: 0.6,
   unique_constraints: 0.6, check_constraints: 0.6, indexes: 0.6, domains: 0.6,
   column_defaults: 0.3, views: 0.3, view_defs: 0.3, triggers: 0.3, trigger_defs: 0.3, routines: 0.3,
-  sequences: 0.3, domain_base: 0.3, column_is_identity: 0.3, column_is_generated: 0.3,
+  sequences: 0.3, domain_base: 0.3, column_is_identity: 0.3, column_is_generated: 0.3, routine_kind: 0.3,
   column_comments: 0.1,
 };
 // classes counting toward hallucinated/missing OBJECT tallies (presence of a real object)
@@ -217,7 +230,7 @@ const BETA2 = BETA * BETA;
 
 const T = collect(truth), G = collect(cand);
 const classes = Object.keys(WEIGHTS);
-let hallucinated = 0, missing = 0, wF = 0, wSum = 0, gTP = 0, gFP = 0, gFN = 0;
+let hallucinated = 0, missing = 0, wF = 0, wSum = 0, gTP = 0, gFP = 0, gFN = 0, defects = 0;
 const perClass = {};
 
 for (const cls of classes) {
@@ -241,6 +254,9 @@ for (const cls of classes) {
   perClass[cls] = { f: F, tp, fp, fn, n: nTruth, P, R };
   wF += WEIGHTS[cls] * F; wSum += WEIGHTS[cls];
   gTP += tp; gFP += fp; gFN += fn;
+  // total_defects counts each disagreement ONCE: presence classes contribute fp+fn (distinct missing +
+  // hallucinated objects); attribute classes contribute fp (== fn, one count per mismatched key).
+  defects += ATTR_CLASSES.has(cls) ? fp : (fp + fn);
   if (OBJECT_CLASSES.has(cls)) { hallucinated += fp; missing += fn; }
 }
 
@@ -251,7 +267,7 @@ const f = (x) => (x == null ? 'NA' : x.toFixed(4));
 // The north star is EXACT 100% parity. total_defects = every disagreement across all classes (missing +
 // hallucinated objects + attribute mismatches). exact_parity is the binary ship signal: 1 only when the
 // docs are provably the schema (0 defects). The benchmark proves bare models do NOT reach exact_parity=1.
-const total_defects = gFP + gFN;
+const total_defects = defects;
 const exact = total_defects === 0 ? 1 : 0;
 
 console.log(`METRIC overall_parity=${f(overall)}`);
