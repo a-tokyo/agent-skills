@@ -1,4 +1,4 @@
-# Public reproducible fixture for the database-docs benchmark.
+# Public reproducible fixture for the database-documentation benchmark.
 # `docker compose up -d` brings up a Postgres and a SQL Server, each seeded with the same logical schema
 # (one of every object class). Anyone can reproduce the benchmark against these with no private repos.
 # Both DBs bind to localhost only (throwaway fixture creds; not exposed to the network).

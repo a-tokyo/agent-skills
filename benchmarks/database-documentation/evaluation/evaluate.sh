@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# evaluate.sh -- deterministic parity scoring for the database-docs skill.
+# evaluate.sh -- deterministic parity scoring for the database-documentation skill.
 #
 # This owns the REPEATABLE half of the procedural eval: extract ground truth from the live DB and score a
 # candidate schema.json against it -> METRIC lines. The LLM agent-run that PRODUCES the candidate is driven
@@ -25,7 +25,7 @@ set -a; source "$ENVFILE"; set +a
 [ -f "$CANDIDATE" ] || { echo "candidate not found: $CANDIDATE" >&2; exit 2; }
 
 # truth is written OUTSIDE any repo working tree so an agent under test can never read the oracle.
-TRUTH_DIR="${TMPDIR:-/tmp}/database-docs-truth"
+TRUTH_DIR="${TMPDIR:-/tmp}/database-documentation-truth"
 mkdir -p "$TRUTH_DIR"
 TRUTH="$TRUTH_DIR/$TARGET.truth.json"
 

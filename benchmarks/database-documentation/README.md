@@ -1,6 +1,6 @@
-# database-docs — benchmark
+# database-documentation — benchmark
 
-Measures whether the `database-docs` skill makes an AI coding agent produce database documentation that is
+Measures whether the `database-documentation` skill makes an AI coding agent produce database documentation that is
 **exactly** the schema — not a plausible approximation. The metric is parity against the live database, and
 the headline is binary: did the docs reach **exact 100% parity (zero defects)**, which is the skill's
 promise, or not.

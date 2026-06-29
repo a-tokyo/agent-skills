@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Parity scorer for the database-docs skill build.
+// Parity scorer for the database-documentation skill build.
 // Compares a candidate Canonical Schema Model (the skill's schema.json) against the ground-truth CSM
 // (from the deterministic extractor) and emits METRIC lines. Structural parity is scored against the
 // oracle -- NOT against an LLM's opinion. Every CSM field the oracle emits is routed into a scored class,

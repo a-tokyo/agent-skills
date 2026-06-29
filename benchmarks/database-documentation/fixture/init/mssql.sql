@@ -1,4 +1,4 @@
--- Synthetic public fixture (SQL Server) for the database-docs benchmark.
+-- Synthetic public fixture (SQL Server) for the database-documentation benchmark.
 -- Same logical schema as postgres.sql, rendered in T-SQL to exercise SQL Server's object classes:
 -- IDENTITY, computed columns, filtered indexes, CHECK-as-enum, datetimeoffset, sequence, trigger, function,
 -- view, composite PK, FKs with varied delete actions. (SQL Server has no native ENUM type or citext.)

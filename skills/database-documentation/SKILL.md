@@ -1,5 +1,5 @@
 ---
-name: database-docs
+name: database-documentation
 version: 0.0.1
 license: MIT
 description: >-
@@ -15,7 +15,7 @@ compatibility: >-
   server) and, on platforms that support it, parallel subagents. Degrades gracefully without them.
 ---
 
-# database-docs
+# database-documentation
 
 Document a database so completely and accurately that the docs are **provably** the schema, not a
 plausible guess at it. A half-correct schema doc is worse than none: people trust it and write broken code.
@@ -44,7 +44,7 @@ worst outcome). Note it as out of scope rather than guessing.
 ## Workflow
 
 Run these phases in order. Each names its exit artifact. Keep all scratch (intermediate extractions, the
-working CSM) in a single `.database-docs/` scratch dir or your platform scratchpad — the **only durable
+working CSM) in a single `.database-documentation/` scratch dir or your platform scratchpad — the **only durable
 deliverables are the docs and `schema.json`**.
 
 ### Phase 0 — Discover (read-only)

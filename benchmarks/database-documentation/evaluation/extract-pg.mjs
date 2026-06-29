@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Deterministic PostgreSQL ground-truth extractor for the database-docs skill build.
+// Deterministic PostgreSQL ground-truth extractor for the database-documentation skill build.
 // Reads the live catalog (pg_catalog) and emits a Canonical Schema Model (CSM) as sorted JSON.
 // This is the ORACLE: code reading the catalog cannot hallucinate or omit. Faithful, not normalized
 // (type canonicalization happens in the scorer, so the oracle stays a pure mirror of the DB).

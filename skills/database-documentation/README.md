@@ -1,4 +1,4 @@
-# database-docs
+# database-documentation
 
 Generate database documentation that is **provably** the schema, not a plausible guess at it. A
 half-correct schema doc is worse than none — people trust it and write broken code.
@@ -50,12 +50,12 @@ as out of scope rather than mis-documented.
 
 ## Benchmark
 
-`benchmarks/database-docs/` — a deterministic ground-truth extractor + parity scorer over a public,
+`benchmarks/database-documentation/` — a deterministic ground-truth extractor + parity scorer over a public,
 reproducible dual-dialect fixture, plus maintainer-run results on private real apps. Measures the same model
 with the skill vs without; reports `exact_parity` (zero defects) and `total_defects` per object class.
 
 ## Install
 
 ```bash
-npx skills add a-tokyo/agent-skills --skill database-docs
+npx skills add a-tokyo/agent-skills --skill database-documentation
 ```

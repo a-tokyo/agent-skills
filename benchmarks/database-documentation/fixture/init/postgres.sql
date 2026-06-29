@@ -1,4 +1,4 @@
--- Synthetic public fixture (PostgreSQL) for the database-docs benchmark.
+-- Synthetic public fixture (PostgreSQL) for the database-documentation benchmark.
 -- Deliberately exercises ONE OF EVERY object class the parity scorer checks, so a clean docker-compose-up
 -- gives an outsider a fully reproducible target. Hand-authored; the held-out TEST set.
 
