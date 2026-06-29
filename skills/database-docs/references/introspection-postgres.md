@@ -93,16 +93,16 @@ trip every real DB: exclude constraint-backing indexes, and exclude extension-ow
 -- partitions (relkind 'r', relispartition=true) would otherwise inflate the count and false-fail the gate.
 SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=ANY($1) AND c.relkind IN ('r','p','f') AND NOT c.relispartition;
 SELECT count(*) FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=ANY($1) AND c.relkind IN ('v','m');  -- views
--- columns
-SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=ANY($1) AND c.relkind IN ('r','p','v','m','f') AND a.attnum>0 AND NOT a.attisdropped;
+-- columns  (NOT c.relispartition everywhere below: count the logical parent, not per-partition copies)
+SELECT count(*) FROM pg_attribute a JOIN pg_class c ON c.oid=a.attrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=ANY($1) AND c.relkind IN ('r','p','v','m','f') AND NOT c.relispartition AND a.attnum>0 AND NOT a.attisdropped;
 -- FKs / PKs / uniques / CHECKs  (NEVER information_schema.check_constraints: it adds a row per NOT NULL!)
-SELECT contype, count(*) FROM pg_constraint con JOIN pg_class r ON r.oid=con.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname=ANY($1) AND contype IN ('p','u','f','c') GROUP BY contype;
+SELECT contype, count(*) FROM pg_constraint con JOIN pg_class r ON r.oid=con.conrelid JOIN pg_namespace n ON n.oid=r.relnamespace WHERE n.nspname=ANY($1) AND NOT r.relispartition AND contype IN ('p','u','f','c') GROUP BY contype;
 -- indexes EXCLUDING constraint-backing ones (else 392 vs the 216 you document)
-SELECT count(*) FROM pg_index ix JOIN pg_class t ON t.oid=ix.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname=ANY($1) AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid=ix.indexrelid);
+SELECT count(*) FROM pg_index ix JOIN pg_class t ON t.oid=ix.indrelid JOIN pg_namespace n ON n.oid=t.relnamespace WHERE n.nspname=ANY($1) AND NOT t.relispartition AND NOT EXISTS (SELECT 1 FROM pg_constraint c WHERE c.conindid=ix.indexrelid);
 -- enums / sequences / triggers
 SELECT count(DISTINCT t.oid) FROM pg_type t JOIN pg_enum e ON e.enumtypid=t.oid JOIN pg_namespace n ON n.oid=t.typnamespace WHERE n.nspname=ANY($1);
 SELECT count(*) FROM pg_sequences WHERE schemaname=ANY($1);
-SELECT count(*) FROM pg_trigger tg JOIN pg_class c ON c.oid=tg.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=ANY($1) AND NOT tg.tgisinternal;
+SELECT count(*) FROM pg_trigger tg JOIN pg_class c ON c.oid=tg.tgrelid JOIN pg_namespace n ON n.oid=c.relnamespace WHERE n.nspname=ANY($1) AND NOT c.relispartition AND NOT tg.tgisinternal;
 -- routines EXCLUDING extension-owned (else 96 vs the 8 app functions you document)
 SELECT count(*) FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace WHERE n.nspname=ANY($1) AND NOT EXISTS (SELECT 1 FROM pg_depend d WHERE d.objid=p.oid AND d.deptype='e');
 ```

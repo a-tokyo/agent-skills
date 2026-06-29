@@ -3,6 +3,12 @@
 -- IDENTITY, computed columns, filtered indexes, CHECK-as-enum, datetimeoffset, sequence, trigger, function,
 -- view, composite PK, FKs with varied delete actions. (SQL Server has no native ENUM type or citext.)
 
+-- filtered indexes (and other features) require these SET options; set them explicitly so seeding works
+-- regardless of which sqlcmd build applies the script (the container's mssql-tools defaults QUOTED_IDENTIFIER OFF).
+SET QUOTED_IDENTIFIER ON;
+SET ANSI_NULLS ON;
+GO
+
 CREATE SEQUENCE invoice_number_seq AS int START WITH 1000;
 GO
 

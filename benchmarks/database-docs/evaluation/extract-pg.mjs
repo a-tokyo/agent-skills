@@ -56,7 +56,7 @@ async function main() {
             obj_description(c.oid) AS comment,
             CASE WHEN c.relkind IN ('r','p','m') THEN c.reltuples::bigint ELSE NULL END AS row_estimate
        FROM pg_class c JOIN pg_namespace n ON n.oid=c.relnamespace
-      WHERE n.nspname = ANY($1) AND c.relkind IN ('r','p','v','m','f')
+      WHERE n.nspname = ANY($1) AND c.relkind IN ('r','p','v','m','f') AND NOT c.relispartition
       ORDER BY 1,2`, [schemas]);
 
   // ---- columns ----
