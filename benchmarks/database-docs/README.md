@@ -24,7 +24,8 @@ flowchart LR
 - **Scorer.** Parses the agent's `schema.json` into the same canonical IR and diffs per object class
   (tables, columns + type/nullable/default, PKs, FKs + on_delete, uniques, checks, indexes incl
   partial/expression, enums + values, views, triggers, routines, sequences). It is **substance-normalized**
-  (identifier matching is snake/camel/Pascal-insensitive) and **dialect-fair** (default paren-wrapping,
+  (identifier matching is case-insensitive but underscore-sensitive, so a wrong physical name like
+  `client_id` for a `clientId` column is still flagged) and **dialect-fair** (default paren-wrapping,
   `on_delete` spelling, temporal default scale), so the score reflects schema substance, not naming/dialect
   style. Primary signals: `exact_parity` (1 iff zero defects), `total_defects` (missing + hallucinated +
   attribute mismatches), and per-class F1.
@@ -59,14 +60,14 @@ it also re-confirmed every "with skill" cell stays at exact `1 / 0`.)
 - The skill drives **exact 100% parity at every model tier on both engines**, including held-out targets it
   never trained on. No bare arm reaches exact 100% on a real app.
 - The **bare-model gap widens sharply as the model weakens**: a strong model (Opus) misses ~1 object; a weak
-  model (Haiku) defaults to parsing the ORM and ships **2809 defects** — incomplete (missing 58 tables, 541
+  model (Haiku) defaults to parsing the ORM and ships **2182 defects** — incomplete (missing 58 tables, 541
   columns, all sequences/triggers/checks) *and* hallucinated (phantom enums, a typo'd table). A mid model
   (Sonnet) without the skill explored unboundedly and produced nothing.
 - Even on the **small public fixture**, the bare Opus baseline misses **7** schema facts (a trigger body,
   a view body, the computed-column expression, an FK on-update, index methods, etc.) — things a strong model
   skims past but the skill's verification loop catches. The fixture has no application repo, so there is no
   ORM to mis-read (the skill's single biggest lever, grounding-vs-ORM, is removed); even so the gap persists.
-  On real repos with an ORM present and weaker models, that gap explodes (Haiku: 2877).
+  On real repos with an ORM present and weaker models, that gap explodes (Haiku: 2182).
 - Where a strong model already does well, the skill's residual value is **the verification loop that closes
   the last mile to exactly zero defects**, **precision** (it does not invent app-level enums as DB objects),
   and **hard-case correctness** (CHECK-enums, partial/expression indexes, extension-object exclusion, drift).

@@ -52,7 +52,11 @@ function normDefault(d) {
   if (d == null) return '';
   let s = stripWrapParens(String(d).toLowerCase().trim());
   s = s.replace(/::[a-z0-9_ ."\[\]]+/g, '');          // strip ::type casts (pg)
-  s = s.replace(/\bcurrent_timestamp\b/g, 'getdate()').replace(/\bnow\(\)/g, 'getdate()'); // equate now/current_timestamp/getdate
+  // equate the engine's "current timestamp" spellings (dialect-aware so a PG doc written as getdate() —
+  // a SQL Server function — does NOT falsely match the PG truth's now()).
+  s = ENGINE === 'mssql'
+    ? s.replace(/getdate\(\)|sysdatetimeoffset\(\)|sysutcdatetime\(\)|sysdatetime\(\)|current_timestamp/g, 'curts')
+    : s.replace(/now\(\)|current_timestamp|transaction_timestamp\(\)|statement_timestamp\(\)/g, 'curts');
   s = s.replace(/^nextval\(.*\)$/, 'nextval()');       // sequence defaults differ only by name
   s = s.replace(/['"\s]/g, '');
   return s;

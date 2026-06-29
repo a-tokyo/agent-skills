@@ -18,7 +18,7 @@ services:
     image: mcr.microsoft.com/mssql/server:2022-latest
     environment:
       ACCEPT_EULA: "Y"
-      MSSQL_SA_PASSWORD: "Bench_Pass123!"   # single source of truth; the command reads it from the env
+      MSSQL_SA_PASSWORD: "${BENCH_DB_PASSWORD:-Bench_Pass123!}"   # overridable; the seed command reads it from the env
     ports:
       - "127.0.0.1:1434:1433"
     volumes:

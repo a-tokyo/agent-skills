@@ -27,7 +27,7 @@ exactly what the catalog reports.
   "enums":    [ { "schema": "public", "name": "score_type", "values": ["a","b","c"] } ],
   "domains":  [ { "schema": "public", "name": "email", "base_type": "text", "constraints": "CHECK ((VALUE ~ '...'))" } ],
   "sequences":[ { "schema": "public", "name": "user_id_seq" } ],
-  "routines": [ { "schema": "public", "name": "calc_score", "kind": "function|procedure", "returns": "integer", "arguments": "p_id integer", "language": "plpgsql" } ]
+  "routines": [ { "schema": "public", "name": "calc_score", "kind": "function|procedure|aggregate|window", "returns": "integer", "arguments": "p_id integer", "language": "plpgsql" } ]
 }
 ```
 
@@ -39,6 +39,7 @@ exactly what the catalog reports.
   "name": "user",
   "kind": "table|partitioned|foreign|view|materialized_view",
   "comment": "Central user entity." ,          // null if none
+  "row_estimate": 12843,                        // optional, informational only (NOT part of parity — see reltuples note); null/omit if unknown
   "columns": [
     {
       "name": "user_email", "ordinal": 7,
