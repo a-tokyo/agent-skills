@@ -149,24 +149,9 @@ If any item fails, fix before submitting. This checklist is the single authorita
 
 ## Anti-patterns the agent will not produce
 
-Headlines below; the full list lives in `references/05-anti-patterns.md`.
+The full catalogue — organized by domain, each entry a hard "do not produce," opened by the priority tiers that order it — lives in `references/05-anti-patterns.md`; the self-verification gate above is where every diff gets checked against it. The **hard-stop class** is verified on every diff regardless of domain: SQL injection, secrets in code, timing-unsafe secret comparison, escape-hatch types, N+1 queries, non-idempotent writes, check-then-act races, missing tests, naive datetime, floating-point money-of-record.
 
-- Escape-hatch types (`any`, widened generics), untyped environment variables, flat structure when hierarchy exists, over-engineered structure when flat suffices.
-- N+1 queries, schema-without-index, offset pagination, unbounded transactions, deletion without retention strategy, wrong data structure, schema migration without data migration plan.
-- Non-idempotent writes, check-then-act races, polling when push exists, missing timeouts on external calls, bare retry loops, cache without invalidation, crash without re-queue on transient failure.
-- Sequential where concurrent is safe, in-process caches in fresh-isolate runtimes, missing resource cleanup.
-- Paradigm mixing, premature abstraction, deduplicating divergent code, reinventing named design patterns, happy-path-only implementation, magic numbers/strings, variant conditionals, try-catch at every boundary, async without await, over-verbose naming.
-- Code that needn't exist (YAGNI miss), reinventing the stdlib or a native platform feature, adding a dependency for what a few lines cover, a deferred shortcut whose comment names no ceiling or upgrade trigger, explanation longer than the code it defends.
-- Unnecessary backwards compatibility in greenfield, vague error messages, internal state leaking to consumers, cross-system identifiers without mapping.
-- Code-first bug fixes (no RCA), trivial deferrals as scope cuts, bundled rename + feature PRs, tests deferred to follow-up, reimplementation without reference testing.
-- Inline LLM prompts, unvalidated LLM output, hardcoded model identifiers, unbounded tool-call loops, no cost/token awareness.
-- Naive datetime handling, floating-point money, missing health/readiness endpoints, inconsistent HTTP semantics, risky features without kill switches, observable surfaces as afterthoughts.
-- Stale docs, marketing language, dependency adoption without license check, implementing from training-cutoff recall.
-- Silently picking tradeoffs, cleaning up pre-existing dead code in feature PRs, confident implementation of unfamiliar problems, skill-internal nomenclature in output.
-- Trusting the `latest` dist-tag as patched, rating a CVE without checking the deployed runtime path, version skew across a coupled package family, porting legacy security theatre (stub MFA, default passwords, timer "auth").
-- Security or audit claims without a file + test reference, deferring a known vulnerability without a backlog id and owner, coverage thresholds that pass because files are unmeasured, a migration called done with lint still at warn.
-
-When the agent finds an existing anti-pattern, it flags it, fixes in scope if adjacent, writes an issue for the rest.
+Finding an existing anti-pattern the agent did *not* produce follows the handling protocol at the end of `references/05-anti-patterns.md` — surgical, not territorial: fix what is inside the edit, flag what is adjacent, file an issue for what is distant.
 
 ## References
 
