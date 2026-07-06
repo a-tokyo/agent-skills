@@ -1,6 +1,6 @@
 ---
 name: production-grade
-version: 0.0.4
+version: 0.0.5
 description: "Principle-engineering posture for production-grade code: reads the repo first, plans before code, matches conventions, pulls latest docs over training recall, and ships the simplest correct change that holds the bar — proper algorithms and data structures, idempotent writes, schema+queries+indexes as one artefact, typed errors, tests in the same diff. Substrate-agnostic; defers to peer skills on their lanes. Use for non-trivial planning, design, implementation, review, or refactoring; RCA and debugging; performance and optimization work; changes touching a database schema, security, infrastructure, or a public API; hardening inherited, vibe-coded, or LLM-generated code (dependency/CVE and migration audits); and over-engineering cleanup (\"simplest solution,\" \"YAGNI,\" \"what can we delete\")."
 license: MIT
 ---
