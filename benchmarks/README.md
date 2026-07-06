@@ -7,6 +7,7 @@ they **don't ship** when a skill is installed (`npx skills add …` pulls only t
 |-------|-----------|
 | [production-grade](production-grade/) | same-model uplift (with skill vs without): engineering rigor, code size, correctness |
 | [tribunal](tribunal/) | same-model A/B (tribunal panel vs single pass): cross-file defect recall, build-and-verify composite, + a deterministic operative-skill propagation-fidelity check |
+| [app-ai-guardrails](app-ai-guardrails/) | same-model uplift (with skill vs bare) scaffolding a greenfield repo: deterministic `guardrail_score` + `all_gates_pass` across 6 stacks (Next.js, NestJS, Django, Go, Rust, Spring Boot), with teeth probes and honest env-failure/thin-cell disclosure |
 
 Each benchmark is self-contained — arms, a scorer, configs, and a README with method, per-model
 results, and reproduce steps. The arms read the skill they test from `../../skills/<skill>/SKILL.md`,
