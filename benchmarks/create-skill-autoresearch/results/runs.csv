@@ -1,0 +1,13 @@
+run_id,arm,model,exit_code,wall_seconds,env_failure
+bare-sonnet-1,bare,sonnet,0,206,0
+bare-sonnet-2,bare,sonnet,0,123,0
+sc-sonnet-1,skill-creator,sonnet,0,343,0
+factory-sonnet-1,factory,sonnet,0,1629,0
+sc-sonnet-2,skill-creator,sonnet,0,1498,0
+factory-sonnet-2,factory,sonnet,0,2977,0
+factory-sonnet-3,factory,sonnet,0,3690,0
+bare-haiku-1,bare,haiku,0,54,0
+sc-haiku-1,skill-creator,haiku,0,60,0
+bare-haiku-2,bare,haiku,0,39,0
+sc-haiku-2,skill-creator,haiku,0,103,0
+factory-haiku-1,factory,haiku,0,3692,0

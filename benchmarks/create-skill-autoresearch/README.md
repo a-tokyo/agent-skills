@@ -56,8 +56,52 @@ Ambiguity is handled in the answer key, not the scorer: where two commit types a
 
 ## Results
 
-_Pending: runs are executed with `arms/run-arm.sh` (below); results land in `results/runs.csv`
-and per-run `score-report.json`, and the medians are published here._
+Runs of 2026-07-06, builder models `claude-sonnet-5` and `claude-haiku-4-5-20251001`; per-run
+scores in [`results/scores.csv`](results/scores.csv). Overall = 0.60·execution + 0.25·compliance
++ 0.15·craft. Medians per cell (per-run values in parentheses):
+
+| Arm | Sonnet overall | Haiku overall | Sonnet execution | Haiku execution |
+|-----|---------------|---------------|------------------|-----------------|
+| bare | 0.896 (.896/.896) | **0.928** (.946/.909) | 0.911 | 0.932 |
+| skill-creator | 0.896 (.871/.921) | 0.846 (.821/.871) | 0.911 | 0.869 |
+| factory | 0.896 (.921/.871)¹ | 0.896 (n=1) | 0.911 | 0.911 |
+
+¹ Sonnet factory cell: the two disclosed-protocol runs (see notes below). A third, earlier run
+(0.871) paused after Phase 3 before the prompt was hardened and is recorded in `scores.csv` but
+not counted as a full-pipeline run.
+
+### Honest reading — no overall uplift on this task
+
+- **The factory does not beat the bare model here.** This task sits at the models' floor: given
+  6 gold examples, both Sonnet and Haiku one-shot a near-ceiling skill (bare-Haiku hit 0.946).
+  Per this repo's benchmarking standard, cells both arms pass are floors, not differentiators —
+  and this first task turned out to be one. A discriminating task needs a convention surface too
+  large to one-shot (dozens of interacting rules, or a procedural multi-step skill).
+- **The factory beats the official single-pass `skill-creator` on Haiku** (0.896 vs 0.846
+  median), and ties everything on Sonnet.
+- **Craft variance dominates overall spreads.** The user-invoked description rules (one-line,
+  no trigger scaffolding) were the biggest mover: factory-sonnet-2 was the only Sonnet run to
+  score craft 1.000; factory-sonnet-3 wrote a long trigger-style description (craft 0.333) —
+  run-to-run description style is not yet predictable for any arm.
+- **Process fidelity is where the factory visibly differs.** Only factory runs produced
+  verifiable pipeline artifacts: an internal rubric carrying the v0.1.0 `predictability`
+  dimension, an executed craft pass (leading-word/no-op prune) in the autoresearch log, and a
+  Phase-5 panel whose Devil's Advocate caught and fixed a real bug the improvement loop had
+  introduced (factory-sonnet-3, internal panel score 0.66 → 0.84 after fixes).
+- **Nobody passed the h3 no-bullets check** (a single-file revert should be subject +
+  SHA-sentence only): every arm's skill emitted explanation bullets. The check is achievable
+  but was missed universally; it stays in the key.
+
+### Protocol notes (disclosed)
+
+- Two Sonnet factory runs ended early by pausing to address a user that doesn't exist in
+  `claude -p`: one before the arm prompt was hardened (kept out of the cell), one from a stdin
+  hiccup, fixed by `< /dev/null` in the runner (kept in the cell as a phases-1-4 run at 0.921 —
+  its truncation cost iterations, not phases 1-3 quality). Both fixes are committed in
+  `arms/run-arm.sh`; rerunning the cell with the fixed runner is the first follow-up.
+- Cells are n=2 (n=1 for factory-Haiku) — below the n=5 standard; medians here bound the story
+  but not tightly. The executor ran through the `claude` CLI fallback (subscription auth; see
+  scoring note above).
 
 ## Reproduce
 
