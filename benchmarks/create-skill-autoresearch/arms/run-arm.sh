@@ -100,7 +100,7 @@ case "$ARM" in
     EXTRA="Use the skill-creator skill to build it. Read brief.md, the gold standards in input/, and materials/spec.md. Work fully non-interactively: brief.md answers every question you would ask the user; never wait for user input. Skip any packaging/upload steps — just produce the skill directory."
     ;;
   factory)
-    EXTRA="Use the create-skill-autoresearch skill (the 5-phase factory) to build it. brief.md answers every Phase-1 interview question; never wait for user input — where the factory says to confirm with the user, proceed with the brief's answers. Respect the brief's evaluation budget (max_iterations: 6). For any LLM-as-judge evaluation the factory builds, use the claude CLI itself (claude -p --model claude-haiku-4-5-20251001) rather than an external API."
+    EXTRA="Use the create-skill-autoresearch skill (the 5-phase factory) to build it. brief.md answers every Phase-1 interview question. You are running UNATTENDED in CI: there is no user, no one will ever reply, and pausing to ask or check in ends the run as a failure. Wherever the factory says to confirm, present, or check in with the user, adopt the brief's answer (or the factory's stated default) and continue immediately. Run ALL 5 phases to completion — including the Phase-4 autoresearch loop (budget max_iterations: 6) and the Phase-5 panel — before stopping. For any LLM-as-judge evaluation the factory builds, use the claude CLI itself (claude -p --model claude-haiku-4-5-20251001) rather than an external API."
     ;;
 esac
 PROMPT="You are in an empty workspace containing brief.md, input/, and materials/. Build the skill specified by brief.md. $EXTRA When you are done, the finished skill must exist at output/conventional-commits/SKILL.md."
