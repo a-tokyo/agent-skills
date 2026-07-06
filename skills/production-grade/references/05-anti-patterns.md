@@ -203,7 +203,7 @@ When hardening inherited, legacy, or LLM-generated code:
 - **Confident implementation of an unfamiliar problem.** When the agent cannot name the pattern or the analogous problem (problem type C), generating code at full speed is the anti-pattern. Decompose, try small cases (n=0, n=1, n=2 before n), check edge cases at design time not just test time, and validate each step. Don't trust intuition during execution.
 - **Defensive validation for conditions your own code makes impossible.** Validate at system boundaries (user input, API calls); assert invariants internally. If your algorithm requires `n >= 1` and your own caller guarantees it, an `assert` is correct — a full validation path with error handling is wasted code.
 - **Hallucinating package versions or API methods.** When adding a dependency, check the current registry for the latest version — never fabricate a version number. When calling an API method, verify it exists in the current version of the library. `response.json()` vs `res.send()` vs `c.json()` varies by framework — get it from the docs, not from recall.
-- **Leaking skill-internal nomenclature into output artifacts.** `(R8)`, `(per R5)`, `(S31)` — code comments reference the *pattern*, not the rule number. The output reads as if no skill exists.
+- **Leaking skill-internal nomenclature into output artifacts.** `(R8)`, `(per R5)` — code comments reference the *pattern*, not the rule number. The output reads as if no skill exists.
 - **Claiming authorship the operator didn't grant.** Consistency with the repo wins.
 - **Marketing language.** Reader awards labels.
 - **Filler phrases.** Delete and start over.

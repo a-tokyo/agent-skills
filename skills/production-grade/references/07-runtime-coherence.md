@@ -143,6 +143,6 @@ When the plan answers all four, R15 is satisfied. When it can't, the gap is *nam
 
 ---
 
-*Anchors: R15, V35, S25, S41. Cross-ref: `05-anti-patterns.md` §Performance + §Code-structure for the inverse, `06-canonical-references.md` §A for routing.*
+*Cross-ref: R15 in `SKILL.md` for the principle, `05-anti-patterns.md` §Performance + §Code-structure for the inverse, `06-canonical-references.md` §A for routing.*
 
 *Search keywords: runtime, coherence, cache, KV, rate-limiter, isolate, long-lived, edge, background, fake cache, Vercel, Lambda, Cloud Functions, Workers, Upstash, Redis, durable object, cron, websocket, in-memory, dataloader, fresh isolate.*

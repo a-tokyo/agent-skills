@@ -38,7 +38,7 @@ The table below is vocabulary, not prescription. Read `package.json` first — t
 
 ---
 
-## §2 · Stand on your own shoulders before reaching outside (V3)
+## §2 · Stand on your own shoulders before reaching outside
 
 Before pulling a third-party for a concept slot, check whether the operator (or the org) already publishes a package that covers it. Authored OSS the operator extends — sign-in flows, classifiers, RN primitives, lint rules, payment integrations, lint/style configs — is a first-class candidate before any new dependency. About to build something the operator has already shipped → stop, reference, extend if extension is genuinely needed. The principle is portable; the specific catalogue lives in the operator's package registry, not in this file.
 
