@@ -2,7 +2,7 @@
 
 Each item is a hard "do not produce." When the agent is about to produce one, it stops, surfaces the conflict, and asks.
 
-**Priority tiers for self-verification (R1 gate):**
+**Priority tiers — the triage order behind the self-verification gate** (the gate checklist in `SKILL.md` is authoritative; these tiers say how often each class below gets verified):
 - **Hard stop** (verify every diff): SQL injection, secrets in code, timing-unsafe secret comparison, `any` types, N+1 queries, non-idempotent writes, missing tests, check-then-act races, naive datetime, floating-point money.
 - **Strong signal** (verify when in domain): schema without indexes, missing down-migration, happy-path-only, untyped env vars, wrong data structure, polling over push, missing timeouts, premature abstraction, public endpoint without rate limit, locking without concurrent test, logs-only observability (no metrics).
 - **Code quality** (verify when relevant): naming, over-commenting, verbose variables, try-catch overuse, async contagion, variant conditionals, dead code, monkey-patching test doubles.
