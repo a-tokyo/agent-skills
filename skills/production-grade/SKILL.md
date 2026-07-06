@@ -1,7 +1,7 @@
 ---
 name: production-grade
 version: 0.0.4
-description: "Principle-engineering posture for production-grade code. Problem-classification (A/B/C) before implementing, plans before code, simplest-correct-solution-first (YAGNI ladder: stdlib/native before deps, delete over add), math-first (closed-form), ACM-grade algorithms, EXPLAIN-first DBs with data-migration plans, never-N+1, idempotent-atomic writes, realtime-first, concurrent-by-default, graph-aware schemas, validate-at-borders, observable-surfaces (SEO/a11y/perf), LLM-as-typed-pipelines, paradigm-fluent (SOLID+GoF / FP), 12-Factor-aware, cost-aware-CI, surgical PRs, over-engineering audit, TDD-steered E2E, runtime-coherent infrastructure, dependency-remediation, migration-audit, evidence-linked security, currency-checked. Reads the repo first, matches conventions, pulls latest docs over training recall, defers to peer skills on their lanes. Substrate-agnostic. Use for non-trivial planning, design, implementation, review, refactoring, RCA, over-engineering cleanup, and hardening inherited or generated code."
+description: "Principle-engineering posture for production-grade code: reads the repo first, plans before code, matches conventions, pulls latest docs over training recall, and ships the simplest correct change that holds the bar — proper algorithms and data structures, idempotent writes, schema+queries+indexes as one artefact, typed errors, tests in the same diff. Substrate-agnostic; defers to peer skills on their lanes. Use for non-trivial planning, design, implementation, review, or refactoring; RCA and debugging; changes touching a database schema, security, infrastructure, or a public API; hardening inherited, vibe-coded, or LLM-generated code (dependency/CVE and migration audits); and over-engineering cleanup (\"simplest solution,\" \"YAGNI,\" \"what can we delete\")."
 license: MIT
 ---
 
@@ -11,15 +11,7 @@ Principle-engineering posture as a skill. Reads the local codebase first, matche
 
 ## When to use
 
-Load this skill when:
-
-- The operator asks for principle-engineering rigor, a plan-of-plans, or "do it the right way."
-- The change touches a database schema, a security-impacting subsystem, infrastructure substrate, or a public API surface.
-- The work needs an RCA, a coordinated multi-subsystem drop, or a rename campaign.
-- The agent is reviewing, refactoring, or extending non-trivial code — any language, any framework, any substrate.
-- The agent is working in a vibe-coded codebase the operator wants raised toward the principle bar — *"vibe to art"*.
-- The task is hardening inherited or generated code — a dependency / CVE audit, a security or migration audit, or raising an LLM-generated codebase to the bar (R16).
-- The operator wants the laziest-correct path or an over-engineering pass — *"be lazy," "simplest / minimal solution," "YAGNI," "is this over-engineered," "what can we delete," "harvest the deferred shortcuts"* (R2, `references/11-minimalism-audit.md`).
+Load this skill for non-trivial engineering work in any language, framework, or substrate: planning ("plan of plans," "do it the right way") and implementation; changes touching a database schema, a security-impacting subsystem, infrastructure, or a public API surface; RCA, coordinated multi-subsystem drops, and rename campaigns; reviewing or refactoring; raising a vibe-coded codebase toward the principle bar; hardening inherited or generated code — dependency / CVE, security, and migration audits (R16); and minimalism passes — *"be lazy," "simplest / minimal solution," "YAGNI," "is this over-engineered," "what can we delete"* (R2, `references/11-minimalism-audit.md`).
 
 Skip for one-line typos, comma-only doc fixes, and config edits with no code consequence.
 
