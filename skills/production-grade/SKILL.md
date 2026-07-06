@@ -39,7 +39,13 @@ Sixteen directives. Each is short on purpose; the depth lives in the references 
 
 ### R1 — Plan of plans, zero assumptions
 
-Before code, the agent writes a plan. First, classify the problem: **(A) known pattern** — name it, implement the canonical shape, check current docs for drift; **(B) similar to a known problem** — name the analogous problem, name what's different, adapt; **(C) unfamiliar** — slow down, enumerate candidate techniques, decompose, plan more, validate more. Type C triggers plan-of-plans mode. For non-trivial work, a plan of plans: the top plan names the slices, each slice has *Inputs*, *Outputs*, *Out of scope*, *Risks*, *Verification*. Assumptions are listed and resolved before they cost a line of code. Context that *exists* is read, not asked about — harvesting the repo and the docs (M2) is the agent's own work, never a stall. An assumption still open after harvesting is handled by stakes: a *low-stakes, defaultable* one is resolved by shipping the simplest-correct default with the assumption flagged (a ceiling comment, an *Out of scope* note), not by blocking on a clarifying round-trip the agent could have defaulted; a *high-stakes* fork — security, payments, auth, data-loss, an irreversible or destructive operation, or anywhere a wrong default is expensive (R7) — is confirmed before acting, never silently defaulted. Tradeoffs are surfaced explicitly — when multiple valid approaches exist, the agent names them with costs, not picks silently. The plan is the contract the diff has to honour; if the diff drifts, the plan changes first. Before submitting, run the self-verification gate below. See `references/02-pr-anatomy.md`.
+Before code, the agent writes a plan. First, classify the problem: **(A) known pattern** — name it, implement the canonical shape, check current docs for drift; **(B) similar to a known problem** — name the analogous problem, name what's different, adapt; **(C) unfamiliar** — slow down, enumerate candidate techniques, decompose, plan more, validate more. Type C triggers plan-of-plans mode. For non-trivial work, a plan of plans: the top plan names the slices, each slice has *Inputs*, *Outputs*, *Out of scope*, *Risks*, *Verification*. Assumptions are listed and resolved before they cost a line of code, each by its stakes:
+
+- **Read, don't ask.** Context that *exists* is read, not asked about — harvesting the repo and the docs (M2) is the agent's own work, never a stall.
+- **Default and flag.** A *low-stakes* assumption still open after harvesting ships the simplest-correct default with the assumption flagged — a ceiling comment, an *Out of scope* note — never a clarifying round-trip the agent could have defaulted.
+- **Confirm, never default.** A *high-stakes* fork — security, payments, auth, data-loss, an irreversible or destructive operation, anywhere a wrong default is expensive (R7) — is confirmed before acting, never silently chosen. Confirming is one surfaced question naming the options and costs; it never stalls the rest — everything defaultable still ships, flagged, alongside the question (`references/09-before-after.md` §7).
+
+Tradeoffs are surfaced explicitly — when multiple valid approaches exist, the agent names them with costs, not picks silently. The plan is the contract the diff has to honour; if the diff drifts, the plan changes first. Before submitting, run the self-verification gate below. See `references/02-pr-anatomy.md`.
 
 ### R2 — Quality over quantity
 
@@ -157,7 +163,7 @@ Each reference is independently readable. The agent loads only the ones the curr
 - `references/06-canonical-references.md` — routing table, source-preference heuristic, curriculum.
 - `references/07-runtime-coherence.md` — four runtime classes, equivalents per primitive, smell test.
 - `references/08-currency-flags.md` — lane-canonical authorities, standing flags, flag-landing protocol.
-- `references/09-before-after.md` — six calibration diffs: LLM default → production-grade output for the most common failure modes.
+- `references/09-before-after.md` — seven calibration diffs: LLM default → production-grade output for the most common failure modes.
 - `references/10-remediation-audit.md` — remediation workflow, coupled-package lockstep, exploitability-by-runtime, evidence-linked audit template, migration grep-gates.
 - `references/11-minimalism-audit.md` — the minimalism ladder, the neutral ceiling-comment convention, and the over-engineering review / repo-audit / deferred-shortcut-debt lanes with their delete/stdlib/native/yagni/shrink tags.
 
