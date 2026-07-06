@@ -158,8 +158,13 @@ function runExecutorCli(skillText, input, oauthToken) {
     return execFileSync(
       "claude",
       ["-p", EXECUTOR_PROMPT(input), "--model", EXECUTOR_MODEL, "--system-prompt", skillText, "--max-turns", "1"],
-      { env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: "", CLAUDE_CODE_OAUTH_TOKEN: oauthToken }, encoding: "utf8", timeout: 120000 },
+      { env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: "", CLAUDE_CODE_OAUTH_TOKEN: oauthToken }, encoding: "utf8", timeout: 240000, stdio: ["ignore", "pipe", "pipe"] },
     );
+  } catch (err) {
+    // The CLI sometimes produces the full answer, then hangs on cleanup until the timeout.
+    // The answer is complete (single-turn text) — salvage it rather than failing the case.
+    if (err.stdout && err.stdout.trim().length > 0) return err.stdout;
+    throw err;
   } finally {
     rmSync(home, { recursive: true, force: true });
   }
