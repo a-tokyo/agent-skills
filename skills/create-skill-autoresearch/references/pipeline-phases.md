@@ -31,6 +31,7 @@ Ask the user these questions directly (use whatever questioning mechanism your a
 - Probe for: docs, code, transcripts, specs, style guides, existing skills, external references
 
 **Q4 -- Constraints**: "Any constraints on the skill? Conventions? Integration points? Anti-patterns?"
+- Follow up: "Should the agent fire this skill on its own when it detects the need (model-invoked -- its description then occupies context every turn), or only when you type its name (user-invoked, `disable-model-invocation: true` -- zero context cost, but you must remember it exists)?" Record as `INVOCATION_MODE`; it drives the description style in Phase 3.3 (see skill-craft-principles.md).
 
 **Q5 -- Confirm**: Present the summary table. Wait for explicit confirmation.
 
@@ -136,6 +137,14 @@ Before writing any SKILL.md code, create `work/experiments/DESIGN.md`:
 - Frontmatter: name=<name>, description follows WHAT+WHEN pattern
 - Voice: <imperative third-person / other>
 - Terminology: <key terms and their definitions>
+
+## Invocation & Hierarchy
+- Invocation mode: <model-invoked | user-invoked> and why (from INVOCATION_MODE)
+- Information hierarchy: <what is a step vs reference; what stays inline vs disclosed,
+  and which branch licenses each disclosure>
+
+## Leading Words
+- <candidate word>: <where it works -- body (execution) or description (invocation)>
 
 ## Integration Points
 - <skills this integrates with and how>
@@ -320,6 +329,11 @@ Before starting autoresearch, populate `autoresearch.ideas.md` with:
 
 ## From Gold Standard Analysis
 - [ ] <pattern in reference outputs the skill doesn't produce>
+
+## Craft Passes (see skill-craft-principles.md)
+- [ ] Leading-word hunt: collapse restated qualities and fuzzy gates into pretrained tokens
+- [ ] Pruning pass: sentence-level no-op test, duplication and sediment sweep
+- [ ] Disclosure rebalance: inline what every branch needs, disclose what only some reach
 ```
 
 ### Data Split Management
@@ -388,6 +402,8 @@ Assess STRUCTURAL QUALITY: correctness, completeness, clarity, spec adherence.
 - Ground every claim in evidence from the artifact
 - Score each dimension INDEPENDENTLY
 - Express calibrated confidence (0.0-1.0) per score
+- For the predictability dimension: check every step ends on a checkable completion
+  criterion (done vs not-done is decidable) and hunt no-op lines the model already obeys
 - You have NOT seen any other evaluator's scores or the building process
 
 ## Input
@@ -463,6 +479,7 @@ You are the last line of defense against shipping flawed work.
 4. Missing constraints: Inputs that produce wrong behavior?
 5. Drift risk: Dependencies that could break it?
 6. Spec gaps: What does the rubric require that this doesn't deliver?
+7. Craft failure modes: premature completion, duplication, sediment, sprawl, no-op lines (see references/skill-craft-principles.md)
 
 ## Escalation Power
 Write "ESCALATE: <reason>" if you identify a concern that:

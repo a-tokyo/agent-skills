@@ -1,6 +1,6 @@
 ---
 name: create-skill-autoresearch
-version: 0.0.1
+version: 0.1.0
 license: MIT
 description: >-
   Factory skill that creates production-grade, benchmarked, autonomously improved,
@@ -35,7 +35,7 @@ This factory **extends** the official single-pass skill creators (Anthropic's Sk
 
 ## Companion skills
 
-The factory orchestrates these sibling skills at runtime: **autoresearch** (Phase 4 improvement loop), **premortem** (Phase 5 risk pass), and **handoff** (cross-session continuity); the Phase 5 panel/consensus design draws on **llm-council**. In this harness they are vendored under `.agents/skills/`. If you install this skill standalone, install those alongside it.
+The factory orchestrates these sibling skills at runtime: **autoresearch** (Phase 4 improvement loop), **premortem** (Phase 5 risk pass), and **handoff** (cross-session continuity); the Phase 5 panel/consensus design draws on **llm-council**. In this harness they are vendored under `.agents/skills/`. If you install this skill standalone, install those alongside it. The factory's craft layer ([references/skill-craft-principles.md](references/skill-craft-principles.md)) is distilled from **writing-great-skills** ([mattpocock/skills](https://github.com/mattpocock/skills), MIT), vendored in this repo's `.agents/skills/` alongside Anthropic's **skill-creator**.
 
 ---
 
@@ -85,8 +85,10 @@ Record: `STUDY_MATERIALS` (list of paths/URLs).
 > - Are there skills it should integrate with?
 > - Any anti-patterns to avoid?
 > - Target line count? (default: < 500 lines per create-skill conventions)
+> - Invocation mode: should the agent fire this skill on its own (model-invoked, pays
+>   permanent context load) or only the human (user-invoked, `disable-model-invocation: true`)?
 
-Record: `CONSTRAINTS`, `INTEGRATION_SKILLS`, `ANTI_PATTERNS`.
+Record: `CONSTRAINTS`, `INTEGRATION_SKILLS`, `ANTI_PATTERNS`, `INVOCATION_MODE`.
 
 ### 1.5 Existing Skill Check
 
@@ -159,8 +161,9 @@ Always include these universal dimensions (adjust weights per domain):
 - **completeness**: All necessary sections and edge cases covered
 - **clarity**: A naive agent can follow without ambiguity
 - **consistency**: Aligns with existing codebase conventions
+- **predictability**: Drives the same process every run -- completion criteria checkable and exhaustive, no vague gates, no no-op lines (see [references/skill-craft-principles.md](references/skill-craft-principles.md))
 
-Add 3-6 domain-specific dimensions from the research synthesis.
+Add 3-5 domain-specific dimensions from the research synthesis (5-10 dimensions total).
 
 Present the rubric to the user for review. Iterate until confirmed.
 
@@ -177,6 +180,8 @@ Design before writing. Write before measuring.
 Create `work/experiments/DESIGN.md` with:
 - Skill name and description (following create-skill conventions)
 - Structural decisions: section count, reference file split, progressive disclosure plan
+- Invocation mode, information-hierarchy plan (steps vs reference; inline vs disclosed,
+  licensed by branching), and candidate leading words -- see [references/skill-craft-principles.md](references/skill-craft-principles.md)
 - Integration points with other skills
 - Key terminology and voice decisions
 
@@ -198,6 +203,8 @@ Following the design and the official skill-authoring rules (see [references/ski
 - Body < 500 lines; progressive disclosure (essentials in SKILL.md, detail in `references/`)
 - File references **one level deep** only; a table of contents for any reference file > 100 lines
 - Concrete examples over abstract instructions; consistent terminology; forward-slash paths
+- Description craft: leading word front-loaded, one trigger per branch, no synonym padding;
+  user-invoked skills get a one-line human-facing description ([references/skill-craft-principles.md](references/skill-craft-principles.md))
 
 Write the draft to `output/<skill-name>/SKILL.md` (reference files in `output/<skill-name>/references/`).
 
@@ -328,6 +335,7 @@ The factory adds to the autoresearch ideas backlog (`autoresearch.ideas.md`):
 - Ideas from research synthesis
 - Per-dimension improvement strategies from the rubric
 - Patterns observed in gold standards that aren't yet reflected in the skill
+- Craft passes from [references/skill-craft-principles.md](references/skill-craft-principles.md): leading-word hunt, no-op/duplication/sediment prune, disclosure rebalance
 
 ### 4.4 Monitor and Handoff
 
@@ -373,7 +381,7 @@ Independent verification by agents that did NOT participate in building. The con
 
 ### 5.1 Premortem
 
-Invoke the **premortem skill** on the skill artifact. Feed identified risks into the panel evaluation as additional test scenarios.
+Invoke the **premortem skill** on the skill artifact. Feed identified risks into the panel evaluation as additional test scenarios, including the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes.
 
 ### 5.2 Panel Evaluation
 
@@ -391,7 +399,7 @@ They do NOT receive: research notes, experiment logs, builder context, or ASI.
 |------|-------|------|
 | Verifier-A (Quality) | Correctness, completeness, clarity, spec adherence | Neutral |
 | Verifier-B (Utility) | Real-world usability, edge cases, developer experience | Neutral |
-| Devil's Advocate | Failure modes, hidden assumptions, missing constraints | Explicitly adversarial |
+| Devil's Advocate | Failure modes (incl. the five craft failure modes), hidden assumptions, missing constraints | Explicitly adversarial |
 
 Each panel member scores every rubric dimension independently with:
 - Score (per rubric scale)
