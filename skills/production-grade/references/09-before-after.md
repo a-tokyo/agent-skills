@@ -256,7 +256,8 @@ Task: *"Add rate limiting to my API endpoint so users can't spam it."* The runti
 // Four questions, zero value delivered, and three of them were defaultable.
 
 // ✅ production-grade — ship the defaultable part flagged, surface the one real fork
-import { rateLimit } from './rate-limit'; // store-backed: works on any runtime
+import { rateLimit, redisStore } from './rate-limit'; // store-backed: works on any runtime
+// (redisStore = any shared store adapter — Redis/Upstash/KV; the store is the point, not the vendor)
 
 // simplification: fixed window, 100 req/min per client key; upgrade to sliding
 // window if burst-edge fairness matters
