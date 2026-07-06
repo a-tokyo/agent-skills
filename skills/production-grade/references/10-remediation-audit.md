@@ -64,6 +64,7 @@ Patterns are repo- and language-specific — adapt the markers (and their langua
 - Orphaned config: deleting a tree deletes its references — grep configs for the removed path.
 - Lint: no new warnings (`--max-warnings=0` or the ecosystem equivalent); pre-existing warnings are burned down on a tracked plan, not used to block the gate retroactively; no new disable directive without a one-line reason and a ticket.
 - Coverage: thresholds count every in-scope file (untested counts as zero); critical modules gated per-file.
+- Monorepo scope: quality gates (lint, typecheck, tests) run across **every package**, not just the core one — a green pipeline that measures one package is the coverage-theatre shape applied to CI.
 
 ## Dependency cadence
 

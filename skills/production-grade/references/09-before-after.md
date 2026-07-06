@@ -1,10 +1,10 @@
 # 09 — Before / after: LLM default → production-grade output
 
-Six diffs. Each shows the most common LLM failure mode and the production-grade correction. The agent uses these as calibration — if the generated code looks like the "before," rewrite.
+Seven diffs. Each shows the most common LLM failure mode and the production-grade correction. The agent uses these as calibration — if the generated code looks like the "before," rewrite.
 
 ## Contents
 
-1 · check-then-act → atomic upsert · 2 · narrating comments + try-catch → clean · 3 · happy-path → edge-aware · 4 · premature abstraction → concrete-first · 5 · unstructured errors → typed domain errors · 6 · missing infra → scaffolded
+1 · check-then-act → atomic upsert · 2 · narrating comments + try-catch → clean · 3 · happy-path → edge-aware · 4 · premature abstraction → concrete-first · 5 · unstructured errors → typed domain errors · 6 · missing infra → scaffolded · 7 · ambiguous high-stakes ask → default-and-flag + one surfaced fork
 
 ---
 
@@ -222,10 +222,10 @@ res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An internal er
 //
 // 1. Config module — validates env at boot, fails fast, typed everywhere downstream.
 //    Raw env access (process.env, os.environ, os.Getenv) never scattered through code.
-//    Use the ecosystem's validation library (M2).
+//    Use the ecosystem's validation library.
 //
 // 2. Pre-commit hooks — format → lint → type-check on every commit from day one.
-//    Use the ecosystem's standard tooling (M2).
+//    Use the ecosystem's standard tooling.
 //
 // 3. Secrets hygiene — .env.example (or config.example.yaml, etc.) checked in with
 //    placeholder values. Real secrets file in .gitignore. Never committed.
@@ -237,6 +237,39 @@ res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An internal er
 ```
 
 **What changed:** Config validated at startup and typed everywhere downstream — raw env access never scattered through application code. Pre-commit hooks enforce quality on every commit from day one. Example config checked in (never real secrets). Language strict mode enabled. Config fails fast at boot with a clear error, not at runtime on the first request that touches an undefined var. Specific libraries and tooling come from M2 (check the ecosystem) or a peer language skill.
+
+---
+
+## 7. Ambiguous high-stakes ask → default-and-flag + one surfaced fork
+
+Task: *"Add rate limiting to my API endpoint so users can't spam it."* The runtime is unstated — an in-memory limiter is correct on a long-lived server and useless on serverless. That is a high-stakes fork (security surface, R7); everything else about the task is defaultable.
+
+```
+// ❌ LLM failure mode A — silent choice
+// Ships an in-memory token bucket with no mention of the runtime. On a
+// fresh-isolate deployment every instance has its own counter: the "limit"
+// is theatre, and nobody was told.
+
+// ❌ LLM failure mode B — full stall
+// Ships no code at all: "Before I implement this, could you tell me your
+// deployment platform, expected traffic, preferred store, and limit policy?"
+// Four questions, zero value delivered, and three of them were defaultable.
+
+// ✅ production-grade — ship the defaultable part flagged, surface the one real fork
+import { rateLimit, redisStore } from './rate-limit'; // store-backed: works on any runtime
+// (redisStore = any shared store adapter — Redis/Upstash/KV; the store is the point, not the vendor)
+
+// simplification: fixed window, 100 req/min per client key; upgrade to sliding
+// window if burst-edge fairness matters
+export const limiter = rateLimit({ windowMs: 60_000, max: 100, store: redisStore });
+```
+
+> **Surfaced in the reply, not asked as a blocker:** "Defaulted to a shared-store limiter so it holds
+> on serverless and multi-instance runtimes alike. If this runs as a single long-lived process, an
+> in-memory store drops the Redis dependency — say the word and I'll swap it. Limit policy defaulted
+> to 100 req/min per key (flagged in-code)."
+
+**What changed:** The one genuinely high-stakes fork (does the runtime sustain in-process state?) is resolved with the *safe-everywhere* default and surfaced as a single named tradeoff with both options costed — not silently picked (mode A), and not turned into a stall (mode B). The defaultable choices (window shape, limit numbers) ship flagged with ceiling comments. Value is delivered in the same turn the question is raised.
 
 ---
 

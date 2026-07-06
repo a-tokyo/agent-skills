@@ -109,7 +109,7 @@ Three questions, every time:
 2. **What's the failure mode on cold-start / scale-out / restart?** If "the cache cold-starts and the next request takes 10s" is unacceptable → layer in an L2.
 3. **Is there a runtime-coherent platform primitive I should use instead?** Cloudflare's KV is not a Redis replacement; it's a Cloudflare-native alternative that knows about the runtime. Reach platform-first.
 
-If any answer is *"I don't know"* → the answer is not "ship and find out." It's "find out before ship." (M3 — context first, every channel.)
+If any answer is *"I don't know"* → the answer is not "ship and find out." It's "find out before ship." (M2 — context first, every channel.)
 
 ---
 
@@ -129,7 +129,7 @@ If any answer is *"I don't know"* → the answer is not "ship and find out." It'
 
 ## §D · How the routing decision shows up in the plan (R1 link)
 
-The R1 plan checklist already covers *Approach* and *Risks*. When the plan touches infra:
+The R1 plan slices already carry *Risks* and *Out of scope*. When the plan touches infra:
 
 ```
 Plan additions for R15:
@@ -143,6 +143,6 @@ When the plan answers all four, R15 is satisfied. When it can't, the gap is *nam
 
 ---
 
-*Anchors: R15, V35, S25, S41. Cross-ref: `05-anti-patterns.md` §Performance + §Code-structure for the inverse, `06-canonical-references.md` §A for routing.*
+*Cross-ref: R15 in `SKILL.md` for the principle, `05-anti-patterns.md` §Performance + §Code-structure for the inverse, `06-canonical-references.md` §A for routing.*
 
 *Search keywords: runtime, coherence, cache, KV, rate-limiter, isolate, long-lived, edge, background, fake cache, Vercel, Lambda, Cloud Functions, Workers, Upstash, Redis, durable object, cron, websocket, in-memory, dataloader, fresh isolate.*

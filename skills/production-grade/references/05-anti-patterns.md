@@ -2,14 +2,14 @@
 
 Each item is a hard "do not produce." When the agent is about to produce one, it stops, surfaces the conflict, and asks.
 
-**Priority tiers for self-verification (R1 gate):**
-- **Hard stop** (verify every diff): SQL injection, secrets in code, timing-unsafe secret comparison, `any` types, N+1 queries, non-idempotent writes, missing tests, check-then-act races, naive datetime, floating-point money.
+**Priority tiers — the triage order behind the self-verification gate** (the gate checklist in `SKILL.md` is authoritative; these tiers say how often each class below gets verified):
+- **Hard stop** (verify every diff): SQL injection, secrets in code, timing-unsafe secret comparison, `any` types, N+1 queries, non-idempotent writes, missing tests, check-then-act races, naive datetime, floating-point money-of-record.
 - **Strong signal** (verify when in domain): schema without indexes, missing down-migration, happy-path-only, untyped env vars, wrong data structure, polling over push, missing timeouts, premature abstraction, public endpoint without rate limit, locking without concurrent test, logs-only observability (no metrics).
 - **Code quality** (verify when relevant): naming, over-commenting, verbose variables, try-catch overuse, async contagion, variant conditionals, dead code, monkey-patching test doubles.
 
 ## Contents
 
-Type safety · Database · Performance · Code structure · AI / LLM integration · Testing · Documentation · Tooling · Refactoring · PRs and commits · Security · Runtime coherence (R15) · Currency (M3) · Maintenance and remediation (R16) · Agent's own behaviour · Handling pre-existing anti-patterns
+Type safety · Database · Performance · Code structure · AI / LLM integration · Testing · Documentation · Tooling · Refactoring · PRs and commits · Security · Runtime coherence (R15) · Currency (M3) · Maintenance and remediation (R16) · Agent's own behaviour · When the agent finds an existing anti-pattern in the codebase
 
 ---
 
@@ -30,7 +30,8 @@ Type safety · Database · Performance · Code structure · AI / LLM integration
 - **Sequential scan on a hot path.** `EXPLAIN ANALYZE` showing `Seq Scan` on a frequent query → blocker.
 - **ORDER BY without a deterministic tie-breaker.** Add a unique column (usually the primary key) as the final sort key. Without it, rows with equal sort values return in arbitrary order across runs, pages, and DB engines.
 - **Naive datetime handling.** Store points-in-time as UTC (or epoch); store calendar dates as date-only without time component. Never compare or sort datetimes from different timezone sources without normalizing to UTC first. `new Date()` is local time — make the UTC conversion explicit.
-- **Floating-point arithmetic for money/currency.** Use integer-minor-units (cents), a decimal type (`NUMERIC` / `Decimal` / `BigDecimal`), or a money library. `0.1 + 0.2 !== 0.3` — rounding errors compound across invoices, line items, and tax calculations.
+- **Floating-point arithmetic for money-of-record.** Anything persisted, summed, or invoiced — ledger writes, balances, line items, tax — uses integer-minor-units (cents), a decimal type (`NUMERIC` / `Decimal` / `BigDecimal`), or a money library. `0.1 + 0.2 !== 0.3` — rounding errors compound. The rule is two-tier: float is acceptable for *non-authoritative estimates* (an NPV/IRR projection, a what-if forecast) where the result is advisory and never written back as money; the boundary between the two carries golden-fixture tests for the calculation edge cases.
+- **String columns at the ORM's default size.** A bare string type silently becomes whatever the ORM picks — often oversized for every column in the schema. Sizing is a design choice: give each string column a deliberate max length that fits its content (an email is not a URL is not a two-letter code). In inherited schemas, flag blanket defaults as tech-debt with a tightening migration — not a ship-blocker.
 - **Migration without a down-migration.** Irreversible → say so explicitly + get confirmation.
 - **Deletion without a retention strategy.** Soft delete (timestamped nullable column, active-by-default filter) vs hard delete with cascade — the choice is a design decision, not an afterthought. No table ships without a documented deletion path.
 - **Schema migration without a data migration plan.** Adding a non-nullable column, changing a column type, splitting/merging tables, or renaming a field with existing data requires: the backfill strategy (bounded batches, not one giant UPDATE), the deploy sequence (expand → migrate → contract), the dual-write window (if any), and the rollback path. Schema migrations and data migrations are separate artifacts.
@@ -62,17 +63,18 @@ Type safety · Database · Performance · Code structure · AI / LLM integration
 - **Over-verbose variable names.** `userDataResponseFromApiEndpoint` when `user` suffices. Names should be as long as their scope demands and as short as clarity allows — match the codebase's naming density.
 - **Deeply nested control flow.** Guard clause, early return, extract function. Two levels of nesting is the ceiling.
 - **`temp` · `data` · `result` · `value` · `obj` · `item`** unless a more specific noun is genuinely unavailable. Verb vocabulary is intentional: match the codebase first; when no convention exists, `get` = synchronous/cached, `find` = may return null, `load` = async I/O, `fetch` = network, `create` vs `build`, `remove` vs `delete` vs `destroy` each convey different lifecycle semantics.
-- **Magic numbers and strings.** `100`, `'active'`, `30000`, `3` scattered through code. Extract to a named constant at the top of the file or a dedicated config/constants module with a one-line comment explaining the value. When a constant has a domain derivation (physics, geometry, protocol spec), document the derivation — `const HALF_EARTH_KM = 10008; // circumference/2 adjusted for decay` is self-verifying; `10008` alone is not.
+- **Magic numbers and strings.** `100`, `'active'`, `30000`, `3` scattered through code. Extract to a named constant at the top of the file or a dedicated config/constants module with a one-line comment explaining the value. When a constant has a domain derivation (physics, geometry, protocol spec), document the derivation — `const HALF_EARTH_KM = 20004; // meridional circumference 40008 / 2` is self-verifying; `20004` alone is not.
 - **Comments narrating what the code does.** Comments only explain intent, trade-offs, constraints.
 - **Commented-out code.** Git remembers.
 - **Unstructured logging.** `console.log` scattered through handlers. Structured log format with level and correlation ID — one logger, configured once, imported everywhere. `console.log` in committed code → removed before commit.
 - **`TODO` without an issue link.** `TODO(JIRA-123): ...` or resolve before commit.
-- **Dead code.** Unreferenced exports, unreachable branches, orphaned files → removed in the same PR.
+- **Dead code your changes orphaned.** Unreferenced exports, unreachable branches, orphaned files that YOUR edit created → removed in the same PR. Pre-existing dead code is a separate cleanup PR (R13; see §PRs-and-commits).
 - **Paradigm mixing in a single module.** Class with no methods, functional code inside a DI-decorated module, OOP patterns in a functional codebase. Match the paradigm — class-based (SOLID, GoF) or functional (pure functions, pipelines), not both in one file.
 - **Reinventing a named design pattern.** When the shape is Strategy, Observer, Factory, Builder, Decorator, Singleton-via-DI — name it, use the canonical shape. Ad-hoc unnamed versions are harder to recognise and maintain.
 - **Premature abstraction.** Interface + abstract class + factory when a plain function or single class would do. Abstraction earns its cost at the second consumer, not the first.
 - **Deduplicating code that will diverge.** Two handlers look identical today but serve different use cases — don't extract a shared helper. The wrong abstraction is worse than duplication; each case should be free to evolve independently.
 - **Variant selection via conditional chains.** `if (size === 'xs') return 't13'; else if (size === 'sm') ...` — use a lookup map: `const MAP = { xs: 't13', sm: 't12' }; return MAP[size]`. More readable, more extensible, less error-prone.
+- **The same transform re-written inline.** One semantic mapping/normalization written out twice → extract a named, typed function. (The inverse of deduplicating *divergent* code above — extract when the meaning is one, keep separate when the cases will evolve apart.)
 - **Happy-path-only implementation.** Code that works for non-null, non-empty, positive values but crashes on edge cases. Handle null, empty, zero, boundary, and concurrent access in the implementation — not just the tests.
 - **Missing resource cleanup.** Subscriptions, event listeners, intervals, file handles, DB connections without a matching release in the lifecycle hook (`useEffect` cleanup, `OnModuleDestroy`, `defer`, `finally`). Every acquire has a release.
 - **API routes without a version prefix in greenfield.** `/users` → `/v1/users`. Version from day one in new projects; in existing codebases, match the existing routing pattern.
@@ -203,7 +205,7 @@ When hardening inherited, legacy, or LLM-generated code:
 - **Confident implementation of an unfamiliar problem.** When the agent cannot name the pattern or the analogous problem (problem type C), generating code at full speed is the anti-pattern. Decompose, try small cases (n=0, n=1, n=2 before n), check edge cases at design time not just test time, and validate each step. Don't trust intuition during execution.
 - **Defensive validation for conditions your own code makes impossible.** Validate at system boundaries (user input, API calls); assert invariants internally. If your algorithm requires `n >= 1` and your own caller guarantees it, an `assert` is correct — a full validation path with error handling is wasted code.
 - **Hallucinating package versions or API methods.** When adding a dependency, check the current registry for the latest version — never fabricate a version number. When calling an API method, verify it exists in the current version of the library. `response.json()` vs `res.send()` vs `c.json()` varies by framework — get it from the docs, not from recall.
-- **Leaking skill-internal nomenclature into output artifacts.** `(R8)`, `(per R5)`, `(S31)` — code comments reference the *pattern*, not the rule number. The output reads as if no skill exists.
+- **Leaking skill-internal nomenclature into output artifacts.** `(R8)`, `(per R5)` — code comments reference the *pattern*, not the rule number. The output reads as if no skill exists.
 - **Claiming authorship the operator didn't grant.** Consistency with the repo wins.
 - **Marketing language.** Reader awards labels.
 - **Filler phrases.** Delete and start over.
