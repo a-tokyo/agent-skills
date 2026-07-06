@@ -20,32 +20,35 @@ Share of runs that ship the correct engineering choice — **bare model → with
 
 | engineering choice (rule) | Haiku | Sonnet | Opus |
 |---------------------------|:-----:|:------:|:----:|
-| **idempotent writes** — no double-charge on retry (R6) | 0% → **90%** | 0% → **70%** | 0% → **70%** |
-| **money as Decimal**, never binary float (R5, R8) | 0% → **80%** | 0% → **100%** | 100% → 100% |
+| **idempotent writes** — no double-charge on retry (R6, n=10) | 0% → **90%** | 0% → **80%** | 0% → **70%** |
+| **money as Decimal**, never binary float (R5, R8) | 40% → **80%** | 0% → **100%** | 100% → 80% |
 | **timezone-aware datetime**, not naive `utcnow()` | 0% → **60%** | 100% → 100% | 0% → **100%** |
 | **optimal complexity** — O(n) hash set, not an O(n²) loop (R4) | 20% → **100%** | 80% → **100%** | 100% → 100% |
 | **no N+1 query** — one batched fetch, not a query per row (R6) | 80% → **100%** | 20% → **80%** | 60% → **100%** |
-| **typed / domain errors**, not bare exceptions (R14) | 50% → **80%** | 50% → **65%** | 50% → **75%** |
 
-Read the zeros: left to its defaults a model **never** makes a money transfer idempotent, stores money
-in floating-point, and compares naive timestamps. `production-grade` is the review layer that turns each
-of those into the correct choice — and it never moves a column backwards. (Tasks both already handle —
-Fibonacci memoization, top-k, parameterized SQL, password-hashing and locking primitives — sit at ~100%
-with or without the skill; they aren't differentiators, so they aren't listed.)
+Read the idempotency row: left to its defaults **no model, at any tier, ever makes a money transfer
+idempotent** — with the skill it becomes the majority choice. (That row combines the two captured
+production-spec runs, n=10 per cell; every other row is n=5.) One cell moves backwards at this sample
+size (Opus money 100%→80%, one run in five) — printed, not hidden; at n=5 a near-ceiling cell can swing
+on a single run. (Tasks both arms already handle — Fibonacci memoization, top-k, parameterized SQL,
+password-hashing and locking primitives — sit at ~100% with or without the skill; they aren't
+differentiators, so they aren't listed.)
 
 ### It also writes less, and stays correct
 
-On five everyday tasks the skill cuts the model's code **2–4×** while holding correctness:
+On five everyday tasks the skill cuts the model's code **1.4–4×** while holding correctness:
 
-| model | median LOC | correctness |
+| model | median LOC (5 tasks) | correctness (4 self-contained tasks) |
 |-------|:----------:|:-----------:|
 | Haiku  | 109 → **40** (−63%) | 100% → 100% |
 | Sonnet | 87 → **23** (−74%) | 90% → **100%** |
 | Opus   | 42 → **29** (−31%) | 100% → 100% |
 
-(Correctness is on the four self-contained everyday tasks; on the fifth — a vague "rate-limit so users
-can't spam" ask — the skill asks about the runtime instead of shipping an in-memory limiter that is
-useless on serverless. That is the senior question, not a wrong answer.)
+On the fifth task — a vague "rate-limit so users can't spam" ask — the skill often asks about the
+runtime instead of shipping an in-memory limiter that is useless on serverless: it ships no code in
+4/5 Haiku, 3/5 Opus, and 2/5 Sonnet runs, which the correctness scorer counts as a miss. That is the
+senior question, not a wrong answer — but counted against it, five-task correctness is 84–92% with the
+skill vs 92–100% without.
 
 ## Scope
 
