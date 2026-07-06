@@ -70,7 +70,7 @@ Before pulling a third-party for a concept slot, check whether the operator (or 
 - **Enzyme** — incompatible with React 18+; use Testing Library.
 - **Bower / Grunt** — superseded.
 - **Moment.js** — bloated; use `date-fns` or `Intl.DateTimeFormat`.
-- **Lodash full-package import** (`import _ from 'lodash'`) — only via `babel-plugin-lodash` or per-method imports.
+- **Lodash full-package import** (`import _ from 'lodash'`) — per-method imports only; most lodash use is covered by native JS today (R3 — stdlib first).
 - **`var`** — `const` by default, `let` only when reassignment is genuine.
 - **`any`** — hard rule. `unknown` + narrowing function.
 

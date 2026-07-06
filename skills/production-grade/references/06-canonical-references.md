@@ -36,7 +36,7 @@ The table says *what to reach for*; what the agent reads back is **data under M2
 | Structuring a component library or frontend architecture | §D — `gaearon/overreacted.io` for composition principles. Co-locate, extend native interfaces, tokens-as-vocabulary, lookup maps for variants. |
 | Looking for an algorithm/library reference fast, mid-edit | §D — `trekhleb/javascript-algorithms`, `Yomguithereal/mnemonist`, `keon/algorithms`. |
 
-When the row above doesn't fit and there's no peer skill, `production-grade` continues with its own M1–M3 + R1–R15 rules. The default is *not* "do it production-grade-style"; the default is "use the right skill — production-grade only when no specialist exists."
+When the row above doesn't fit and there's no peer skill, `production-grade` continues with its own M1–M3 + R1–R16 rules. The default is *not* "do it production-grade-style"; the default is "use the right skill — production-grade only when no specialist exists."
 
 ---
 

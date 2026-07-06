@@ -9,7 +9,7 @@ Each item is a hard "do not produce." When the agent is about to produce one, it
 
 ## Contents
 
-Type safety · Database · Performance · Code structure · AI / LLM integration · Testing · Documentation · Tooling · Refactoring · PRs and commits · Security · Runtime coherence (R15) · Currency (M3) · Maintenance and remediation (R16) · Agent's own behaviour · Handling pre-existing anti-patterns
+Type safety · Database · Performance · Code structure · AI / LLM integration · Testing · Documentation · Tooling · Refactoring · PRs and commits · Security · Runtime coherence (R15) · Currency (M3) · Maintenance and remediation (R16) · Agent's own behaviour · When the agent finds an existing anti-pattern in the codebase
 
 ---
 
@@ -67,7 +67,7 @@ Type safety · Database · Performance · Code structure · AI / LLM integration
 - **Commented-out code.** Git remembers.
 - **Unstructured logging.** `console.log` scattered through handlers. Structured log format with level and correlation ID — one logger, configured once, imported everywhere. `console.log` in committed code → removed before commit.
 - **`TODO` without an issue link.** `TODO(JIRA-123): ...` or resolve before commit.
-- **Dead code.** Unreferenced exports, unreachable branches, orphaned files → removed in the same PR.
+- **Dead code your changes orphaned.** Unreferenced exports, unreachable branches, orphaned files that YOUR edit created → removed in the same PR. Pre-existing dead code is a separate cleanup PR (R13; see §PRs-and-commits).
 - **Paradigm mixing in a single module.** Class with no methods, functional code inside a DI-decorated module, OOP patterns in a functional codebase. Match the paradigm — class-based (SOLID, GoF) or functional (pure functions, pipelines), not both in one file.
 - **Reinventing a named design pattern.** When the shape is Strategy, Observer, Factory, Builder, Decorator, Singleton-via-DI — name it, use the canonical shape. Ad-hoc unnamed versions are harder to recognise and maintain.
 - **Premature abstraction.** Interface + abstract class + factory when a plain function or single class would do. Abstraction earns its cost at the second consumer, not the first.

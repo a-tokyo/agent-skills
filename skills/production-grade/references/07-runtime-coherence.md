@@ -109,7 +109,7 @@ Three questions, every time:
 2. **What's the failure mode on cold-start / scale-out / restart?** If "the cache cold-starts and the next request takes 10s" is unacceptable → layer in an L2.
 3. **Is there a runtime-coherent platform primitive I should use instead?** Cloudflare's KV is not a Redis replacement; it's a Cloudflare-native alternative that knows about the runtime. Reach platform-first.
 
-If any answer is *"I don't know"* → the answer is not "ship and find out." It's "find out before ship." (M3 — context first, every channel.)
+If any answer is *"I don't know"* → the answer is not "ship and find out." It's "find out before ship." (M2 — context first, every channel.)
 
 ---
 
