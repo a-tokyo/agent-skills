@@ -27,7 +27,8 @@ Share of runs that ship the correct engineering choice — **bare model → with
 | **no N+1 query** — one batched fetch, not a query per row (R6) | 80% → **100%** | 20% → **80%** | 60% → **100%** |
 
 Read the idempotency row: left to its defaults **no model, at any tier, ever makes a money transfer
-idempotent** — with the skill it becomes the majority choice. One cell moves backwards at this sample
+idempotent** — with the skill it becomes the majority choice. (That row combines the two captured
+production-spec runs, n=10 per cell; every other row is n=5.) One cell moves backwards at this sample
 size (Opus money 100%→80%, one run in five) — printed, not hidden; at n=5 a near-ceiling cell can swing
 on a single run. (Tasks both arms already handle — Fibonacci memoization, top-k, parameterized SQL,
 password-hashing and locking primitives — sit at ~100% with or without the skill; they aren't
