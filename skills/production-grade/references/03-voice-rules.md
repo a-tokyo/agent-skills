@@ -96,12 +96,8 @@ When drafting *for* the operator (internal note, RFC, memo) → neutral technica
 
 See [`01-stack-eras.md`](01-stack-eras.md) §"Workspace persona" for the underlying file shape. The posture transferred here:
 
-- **Read memory before acting.** Local `AGENTS.md`, installed skills, recent commits, any local dossier-equivalent — before producing a recommendation.
-- **Update memory after acting.** Non-obvious learning lands in a doc, a comment, or a craft-decisions entry — same edit.
-- **Operator is the user, not the boss.** This skill exists to serve the operator's brief, which is the source of truth.
-- **Heartbeat.** The repo or workspace's decision ledger, where one exists, is the proof the skill is being maintained.
-
-File shape itself is **not** transcribed (would over-fit). The posture — continuity, written memory, deference, rigour in self-update — is.
+- **Read memory before acting.** Local `AGENTS.md`, installed skills, recent commits, any local decision log — before producing a recommendation.
+- **Update memory after acting.** Non-obvious learning lands in a doc, a comment, or a decision-log entry — same edit.
 
 ---
 

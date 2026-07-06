@@ -222,10 +222,10 @@ res.status(500).json({ error: { code: 'INTERNAL_ERROR', message: 'An internal er
 //
 // 1. Config module — validates env at boot, fails fast, typed everywhere downstream.
 //    Raw env access (process.env, os.environ, os.Getenv) never scattered through code.
-//    Use the ecosystem's validation library (M2).
+//    Use the ecosystem's validation library.
 //
 // 2. Pre-commit hooks — format → lint → type-check on every commit from day one.
-//    Use the ecosystem's standard tooling (M2).
+//    Use the ecosystem's standard tooling.
 //
 // 3. Secrets hygiene — .env.example (or config.example.yaml, etc.) checked in with
 //    placeholder values. Real secrets file in .gitignore. Never committed.

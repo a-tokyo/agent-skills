@@ -23,7 +23,7 @@ The table says *what to reach for*; what the agent reads back is **data under M2
 | Iterative-loop refinement with measurable outcomes — *"keep improving until X"* | The peer skill `autoresearch` (recommend-and-proceed — invoke its loop, stay in `production-grade` voice). |
 | Prose pass — making AI-shaped writing read like a human wrote it | The peer skill `humanizer` (full deferral for pure prose work). |
 | Documentation authoring — tutorials / how-to / reference / explanation | The peer skill `documentation-writer` (Diátaxis-based — recommend-and-proceed). |
-| Naming a known design pattern in the diff | §C GoF book + §D `nilbuild/design-patterns-for-humans` — name the pattern in the comment so reviewers verify. |
+| Naming a known design pattern in the diff | §C GoF book + §D `kamranahmedse/design-patterns-for-humans` — name the pattern in the comment so reviewers verify. |
 | Classifying a problem before implementing | §C — *How to Think Like a Mathematician* (Houston), *Competitive Programming 3* (Halim) — type A/B/C classification. |
 | Picking the optimal algorithm for a helper / lib | §C — *Competitive Programming 3*, *CLRS*, *The Algorithm Design Manual*. |
 | Designing a schema + queries + indexes as one artefact | §C — *Designing Data-Intensive Applications* + the schema-co-design idiom in `01-stack-eras.md`. |
@@ -113,7 +113,7 @@ The operator maintains a decade-long curated study list. When the agent needs a 
 
 ### Design patterns
 
-- `nilbuild/design-patterns-for-humans` — the 23 GoF design patterns explained with code examples. The agent's quick reference when a problem shape matches a named pattern. *(R14, R12)*
+- `kamranahmedse/design-patterns-for-humans` — the 23 GoF design patterns explained with code examples. The agent's quick reference when a problem shape matches a named pattern. *(R14, R12)*
 
 ### Engineering philosophy & frontend architecture
 
