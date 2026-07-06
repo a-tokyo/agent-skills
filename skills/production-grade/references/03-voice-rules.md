@@ -101,4 +101,4 @@ See [`01-stack-eras.md`](01-stack-eras.md) §"Workspace persona" for the underly
 
 ---
 
-*Search keywords: voice, tone, posture, banned phrases, marketing language, AI vocabulary, attribution, made-with, partner, sentence shape, em-dash, speak as the operator, joystick, partnership, memory, persona OS, IDENTITY, MEMORY, HEARTBEAT.*
+*Search keywords: voice, tone, posture, banned phrases, marketing language, AI vocabulary, attribution, made-with, partner, sentence shape, em-dash, speak as the operator, joystick, partnership, memory, persona OS.*
