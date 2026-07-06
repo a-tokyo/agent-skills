@@ -109,11 +109,13 @@ printf '%s\n' "$PROMPT" > "$RUN/prompt.txt"
 # ---------- run the agent ----------
 START_TS="$(date +%s)"
 set +e
+# stdin MUST be /dev/null: an inherited empty stdin makes the CLI wait 3s, warn, and the agent
+# can read the hiccup as a user interjection and pause mid-pipeline (bit factory-sonnet-2).
 ( cd "$WORK" && perl -e 'alarm shift @ARGV; exec @ARGV' -- "$TIMEOUT" claude -p "$(cat "$RUN/prompt.txt")" \
     --model "$MODEL_ID" \
     --dangerously-skip-permissions \
     --max-turns "$MAX_TURNS" \
-  ) >"$RUN/transcript.txt" 2>&1
+  ) <"/dev/null" >"$RUN/transcript.txt" 2>&1
 EXIT_CODE=$?
 set -e
 END_TS="$(date +%s)"
