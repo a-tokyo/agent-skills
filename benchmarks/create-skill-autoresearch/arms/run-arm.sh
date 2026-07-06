@@ -46,7 +46,7 @@ if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; the
 fi
 
 # Run dirs live OUTSIDE any git repo (scaffolders and git probes must not walk into the parent repo).
-RUNS_ROOT="${BENCH_RUNS_ROOT:-/private/tmp/create-skill-autoresearch-bench}"
+RUNS_ROOT="${BENCH_RUNS_ROOT:-${TMPDIR:-/tmp}/create-skill-autoresearch-bench}"
 RUN="$RUNS_ROOT/$RUN_ID"
 WORK="$RUN/work"
 [ -e "$RUN" ] && { echo "run dir already exists: $RUN (run-ids are one-shot)" >&2; exit 2; }
@@ -111,7 +111,14 @@ START_TS="$(date +%s)"
 set +e
 # stdin MUST be /dev/null: an inherited empty stdin makes the CLI wait 3s, warn, and the agent
 # can read the hiccup as a user interjection and pause mid-pipeline (bit factory-sonnet-2).
-( cd "$WORK" && perl -e 'alarm shift @ARGV; exec @ARGV' -- "$TIMEOUT" claude -p "$(cat "$RUN/prompt.txt")" \
+# env MUST be scrubbed (env -i + allowlist): a --dangerously-skip-permissions agent can printenv,
+# so the caller's unrelated secrets (CI tokens, cloud creds) must never reach the session.
+( cd "$WORK" && perl -e 'alarm shift @ARGV; exec @ARGV' -- "$TIMEOUT" env -i \
+    PATH="$PATH" HOME="$HOME" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" SHELL="${SHELL:-/bin/bash}" \
+    XDG_CONFIG_HOME="$XDG_CONFIG_HOME" XDG_CACHE_HOME="$XDG_CACHE_HOME" XDG_DATA_HOME="$XDG_DATA_HOME" \
+    GIT_CONFIG_GLOBAL="$GIT_CONFIG_GLOBAL" GIT_CEILING_DIRECTORIES="$GIT_CEILING_DIRECTORIES" \
+    CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}" ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    claude -p "$(cat "$RUN/prompt.txt")" \
     --model "$MODEL_ID" \
     --dangerously-skip-permissions \
     --max-turns "$MAX_TURNS" \

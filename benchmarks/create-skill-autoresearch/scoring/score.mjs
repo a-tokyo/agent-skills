@@ -158,7 +158,11 @@ function runExecutorCli(skillText, input, oauthToken) {
     return execFileSync(
       "claude",
       ["-p", EXECUTOR_PROMPT(input), "--model", EXECUTOR_MODEL, "--system-prompt", skillText, "--max-turns", "1"],
-      { env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: "", CLAUDE_CODE_OAUTH_TOKEN: oauthToken }, encoding: "utf8", timeout: 240000, stdio: ["ignore", "pipe", "pipe"] },
+      // allowlisted env only — the caller's unrelated secrets must never reach the executor session
+      {
+        env: { PATH: process.env.PATH, HOME: home, TERM: "dumb", CLAUDE_CODE_OAUTH_TOKEN: oauthToken },
+        encoding: "utf8", timeout: 240000, stdio: ["ignore", "pipe", "pipe"],
+      },
     );
   } catch (err) {
     // The CLI sometimes produces the full answer, then hangs on cleanup until the timeout.

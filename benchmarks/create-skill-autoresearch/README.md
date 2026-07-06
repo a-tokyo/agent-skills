@@ -121,10 +121,11 @@ node scoring/score.mjs runs/bare-sonnet-1/work/output/conventional-commits \
   --executor-out runs/bare-sonnet-1
 ```
 
-Each run executes in an **isolated HOME** under `/private/tmp/create-skill-autoresearch-bench/`
-(fake `$HOME`, own git config, XDG dirs) so a `--dangerously-skip-permissions` builder can never
-touch the maintainer's real config or credentials; skills are injected per-arm as user-level
-skills inside that fake HOME. n ≥ 2 runs per cell; report medians and per-run spread, including
-cells where arms tie (honest negatives).
+Each run executes in an **isolated HOME** under `$BENCH_RUNS_ROOT` (default:
+`$TMPDIR/create-skill-autoresearch-bench`, overridable) — fake `$HOME`, own git config, XDG dirs,
+and a scrubbed `env -i` allowlist — so a `--dangerously-skip-permissions` builder can never touch
+the maintainer's real config, credentials, or unrelated env secrets; skills are injected per-arm
+as user-level skills inside that fake HOME. n ≥ 2 runs per cell; report medians and per-run
+spread, including cells where arms tie (honest negatives).
 
 Prereqs: Node 18+, the `claude` CLI, and a headless credential as above.
