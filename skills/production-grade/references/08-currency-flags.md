@@ -76,7 +76,7 @@ When the agent (or the operator) finds a new conflict between operator-canon-as-
 
 ```
 New currency-flag template:
-- Operator pattern (one line + dossier anchor: research/<n>:<line>)
+- Operator pattern (one line + a pointer into the workspace’s decision log, where one exists)
 - Authored under (era / framework version / year — what was current then)
 - Current state (one line + source: docs URL / peer skill / deprecation note)
 - Reconciliation (legacy-leave / greenfield-adopt / sister-PR-migrate)

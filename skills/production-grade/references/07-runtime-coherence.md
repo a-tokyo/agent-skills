@@ -129,7 +129,7 @@ If any answer is *"I don't know"* → the answer is not "ship and find out." It'
 
 ## §D · How the routing decision shows up in the plan (R1 link)
 
-The R1 plan checklist already covers *Approach* and *Risks*. When the plan touches infra:
+The R1 plan slices already carry *Risks* and *Out of scope*. When the plan touches infra:
 
 ```
 Plan additions for R15:
