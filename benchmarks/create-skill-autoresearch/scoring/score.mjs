@@ -15,8 +15,10 @@
 // Emits METRIC lines to stdout and a JSON report to stderr-adjacent file if --executor-out given.
 // Requires ANTHROPIC_API_KEY for the execution dimension (compliance/craft run without it).
 
-import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync } from "node:fs";
+import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
+import { tmpdir } from "node:os";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -143,6 +145,26 @@ export function checkCraft(skillDir) {
   return { checks, passed, total: names.length, score: passed / names.length };
 }
 
+const EXECUTOR_PROMPT = (input) =>
+  `${input}\n\nUsing the conventional-commits skill above, reply with ONLY the commit message text — no code fences, no commentary.`;
+
+// CLI executor: same contract as the API path (SKILL.md as system prompt), run through
+// `claude -p --system-prompt` under a scratch HOME so the maintainer's skills/config never leak in.
+// Used when only a CLAUDE_CODE_OAUTH_TOKEN (subscription auth) is available. Temperature is not
+// pinnable through the CLI; the answer-key checks are coarse enough that this does not flip results.
+function runExecutorCli(skillText, input, oauthToken) {
+  const home = mkdtempSync(join(tmpdir(), "csa-executor-"));
+  try {
+    return execFileSync(
+      "claude",
+      ["-p", EXECUTOR_PROMPT(input), "--model", EXECUTOR_MODEL, "--system-prompt", skillText, "--max-turns", "1"],
+      { env: { ...process.env, HOME: home, ANTHROPIC_API_KEY: "", CLAUDE_CODE_OAUTH_TOKEN: oauthToken }, encoding: "utf8", timeout: 120000 },
+    );
+  } finally {
+    rmSync(home, { recursive: true, force: true });
+  }
+}
+
 async function runExecutor(skillText, input, apiKey) {
   const res = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
@@ -152,10 +174,7 @@ async function runExecutor(skillText, input, apiKey) {
       max_tokens: 512,
       temperature: 0,
       system: skillText,
-      messages: [{
-        role: "user",
-        content: `${input}\n\nUsing the conventional-commits skill above, reply with ONLY the commit message text — no code fences, no commentary.`,
-      }],
+      messages: [{ role: "user", content: EXECUTOR_PROMPT(input) }],
     }),
   });
   if (!res.ok) throw new Error(`executor API ${res.status}: ${await res.text()}`);
@@ -163,25 +182,25 @@ async function runExecutor(skillText, input, apiKey) {
   return data.content.map((b) => b.text ?? "").join("");
 }
 
-export async function scoreSkill(skillDir, { apiKey, executorOut } = {}) {
+export async function scoreSkill(skillDir, { apiKey, oauthToken, executorOut } = {}) {
   const compliance = checkCompliance(skillDir);
   const craft = checkCraft(skillDir);
   const report = { skillDir, compliance, craft, execution: null, overall: null };
 
   let executionScore = 0;
-  if (compliance.checks.skill_md_exists && apiKey) {
+  if (compliance.checks.skill_md_exists && (apiKey || oauthToken)) {
     const skillText = readFileSync(join(skillDir, "SKILL.md"), "utf8");
     const key = JSON.parse(readFileSync(join(TASK, "holdout", "answer-key.json"), "utf8"));
     const cases = {};
     for (const [id, caseKey] of Object.entries(key)) {
       const input = readFileSync(join(TASK, "holdout", caseKey.input), "utf8");
-      const raw = await runExecutor(skillText, input, apiKey);
+      const raw = apiKey ? await runExecutor(skillText, input, apiKey) : runExecutorCli(skillText, input, oauthToken);
       cases[id] = checkCommitMessage(raw, caseKey);
     }
     executionScore = Object.values(cases).reduce((s, c) => s + c.score, 0) / Object.keys(cases).length;
-    report.execution = { cases, score: executionScore };
-  } else if (!apiKey) {
-    console.error("WARN: no ANTHROPIC_API_KEY — execution dimension scored 0; compliance/craft only");
+    report.execution = { cases, score: executionScore, executor: apiKey ? "api" : "claude-cli" };
+  } else if (!apiKey && !oauthToken) {
+    console.error("WARN: no ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN — execution dimension scored 0; compliance/craft only");
   }
 
   report.overall =
@@ -203,7 +222,10 @@ if (isMain) {
   }
   const outIdx = process.argv.indexOf("--executor-out");
   const executorOut = outIdx > -1 ? process.argv[outIdx + 1] : null;
-  const report = await scoreSkill(skillDir, { apiKey: process.env.ANTHROPIC_API_KEY, executorOut });
+  let oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
+  const tokenFile = join(HERE, "..", ".auth-token");
+  if (!oauthToken && existsSync(tokenFile)) oauthToken = readFileSync(tokenFile, "utf8").trim();
+  const report = await scoreSkill(skillDir, { apiKey: process.env.ANTHROPIC_API_KEY, oauthToken, executorOut });
   console.log(`METRIC compliance=${report.compliance.score.toFixed(3)}`);
   console.log(`METRIC craft=${report.craft.score.toFixed(3)}`);
   console.log(`METRIC execution=${(report.execution?.score ?? 0).toFixed(3)}`);

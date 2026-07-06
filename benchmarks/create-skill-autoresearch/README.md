@@ -37,7 +37,10 @@ benchmark measures what users install.
   SKILL.md as its system prompt and each holdout diff summary as the user message; the emitted
   commit message is parsed field-by-field against `task/holdout/answer-key.json` (format, type,
   scope, breaking markers, subject style, bullet body, revert SHA reference, keywords).
-  **No LLM judge anywhere** — the answer key is the ground truth.
+  **No LLM judge anywhere** — the answer key is the ground truth. With an `ANTHROPIC_API_KEY`
+  the executor is a direct API call; with only a `CLAUDE_CODE_OAUTH_TOKEN` it falls back to
+  `claude -p --system-prompt` under a scratch HOME (temperature not pinnable there; the checks
+  are coarse enough that this does not flip results — the report records which executor ran).
 - **compliance (0.25)** — platform + brief constraints on the skill files: frontmatter, name
   rules, description limits, `disable-model-invocation: true` (the brief demands a user-invoked
   skill), body < 150 lines, references one level deep.
