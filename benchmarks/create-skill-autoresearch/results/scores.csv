@@ -1,0 +1,13 @@
+run_id,arm,model,compliance,craft,execution,overall,wall_seconds,executor,note
+bare-sonnet-1,bare,sonnet,1,0.667,0.911,0.896,206,claude-cli,
+bare-sonnet-2,bare,sonnet,1,0.667,0.911,0.896,123,claude-cli,
+sc-sonnet-1,skill-creator,sonnet,1,0.667,0.869,0.871,343,claude-cli,
+sc-sonnet-2,skill-creator,sonnet,1,0.667,0.952,0.921,1498,claude-cli,
+factory-sonnet-1,factory,sonnet,1,0.667,0.869,0.871,1629,claude-cli,paused after Phase 3 (pre-hardened prompt); pipeline truncated
+factory-sonnet-2,factory,sonnet,1,1,0.869,0.921,2977,claude-cli,"paused after 1 autoresearch iteration (stdin hiccup, pre-stdin-fix); phases 1-4 partial"
+factory-sonnet-3,factory,sonnet,1,0.333,0.952,0.871,3690,claude-cli,full 5-phase run: 6 autoresearch iterations + premortem + panel
+bare-haiku-1,bare,haiku,1,1,0.911,0.946,54,claude-cli,
+bare-haiku-2,bare,haiku,0.75,1,0.952,0.909,39,claude-cli,
+sc-haiku-1,skill-creator,haiku,1,0.333,0.869,0.821,60,claude-cli,
+sc-haiku-2,skill-creator,haiku,1,0.667,0.869,0.871,103,claude-cli,
+factory-haiku-1,factory,haiku,1,0.667,0.911,0.896,3692,claude-cli,full 5-phase run incl. panel (craft-decisions.md)

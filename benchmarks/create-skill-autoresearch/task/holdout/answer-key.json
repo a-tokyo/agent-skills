@@ -1,0 +1,29 @@
+{
+  "h1": {
+    "input": "input-h1.md",
+    "expected_types": ["feat", "refactor", "fix"],
+    "expected_scope": "web",
+    "breaking": true,
+    "expect_bullets": true,
+    "subject_keywords": ["cookie"],
+    "revert": null
+  },
+  "h2": {
+    "input": "input-h2.md",
+    "expected_types": ["build"],
+    "expected_scope": "deps",
+    "breaking": false,
+    "expect_bullets": true,
+    "subject_keywords": ["axios", "1.7.2"],
+    "revert": null
+  },
+  "h3": {
+    "input": "input-h3.md",
+    "expected_types": ["revert"],
+    "expected_scope": null,
+    "breaking": false,
+    "expect_bullets": false,
+    "subject_keywords": [],
+    "revert": { "sha": "4e8d21c", "inner_types": ["feat", "fix"], "inner_scope": "api", "inner_keywords": ["webhook"] }
+  }
+}
