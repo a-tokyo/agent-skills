@@ -333,14 +333,22 @@ else if (stack === 'springboot') cat3Springboot();
 // ============================================================================
 const tracked = gitLsFiles(repoDir);
 const lockfileByStack = { next: 'package-lock.json', nest: 'package-lock.json', django: 'uv.lock', go: 'go.sum', rust: 'Cargo.lock', springboot: 'gradle.lockfile' };
-const toolchainByStack = { next: '.nvmrc', nest: '.nvmrc', django: '.python-version', go: 'go.mod', rust: 'rust-toolchain.toml', springboot: '.sdkmanrc' };
+const toolchainByStack = { next: '.nvmrc', nest: '.nvmrc', django: '.python-version', go: 'go.mod', rust: 'rust-toolchain.toml', springboot: 'build.gradle java{toolchain{...}}' };
 
 probe('supply', 'audit_configured', 3, gatesInput.audit.mode !== 'missing', `audit gate mode=${gatesInput.audit.mode}`);
 probe('supply', 'lockfile_committed', 2, tracked.includes(lockfileByStack[stack]), `expected ${lockfileByStack[stack]}`);
-const toolchainFile = toolchainByStack[stack];
-let toolchainPinned = exists(toolchainFile);
-if (stack === 'go' && toolchainPinned) toolchainPinned = grepAny(readFileSafe(path.join(repoDir, 'go.mod')), [/^toolchain\s+go/m]);
-probe('supply', 'toolchain_pinned', 3, toolchainPinned, `expected ${toolchainFile}`);
+let toolchainPinned;
+if (stack === 'go') {
+  toolchainPinned = exists('go.mod') && grepAny(readFileSafe(path.join(repoDir, 'go.mod')), [/^toolchain\s+go/m]);
+} else if (stack === 'springboot') {
+  // The REAL pin is Gradle's java{toolchain{languageVersion}} block; .sdkmanrc is only the
+  // optional exact-patch pin and must not satisfy the probe alone (Copilot review R4, PR #14).
+  const gradle = readFileSafe(path.join(repoDir, 'build.gradle')) || readFileSafe(path.join(repoDir, 'build.gradle.kts'));
+  toolchainPinned = !!gradle && /JavaLanguageVersion\.of\(/.test(gradle);
+} else {
+  toolchainPinned = exists(toolchainByStack[stack]);
+}
+probe('supply', 'toolchain_pinned', 3, toolchainPinned, `expected ${toolchainByStack[stack]}`);
 
 // ============================================================================
 // Cat 5 — CI + Sonar (10)
