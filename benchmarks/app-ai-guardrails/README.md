@@ -125,6 +125,15 @@ surprising cell.
   default scaffold name, or a new stack added to `task/stacks.json`, should double-check
   `lib/detect-gates.mjs` picks the right directory before trusting its scored rows.
 
+## Ledger contract (results/scores.tsv)
+
+Append-only. A `run_id` may appear more than once: superseded scorings are RETAINED with an audit
+status (`scored_prescorerfix`, `scored_predetectfix`, `scored_invalid_*`) rather than rewritten —
+the benchmark's own instrument fixes are part of its record. Consumers take the LAST `scored` row
+per run_id (summarize.mjs does this). Post-review probe tightenings (hooks both-classes, per-line
+SHA-pin — PR #14 review) were verified against the scored runs' artifacts: no published cell
+changes; the golden/bare self-test bands re-validated after the change.
+
 ## Reproduce
 
 **Offline (no API key, no agent runs) — verify the scorer itself:**

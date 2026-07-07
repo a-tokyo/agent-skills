@@ -28,9 +28,9 @@ pinning, and an agent-ready `AGENTS.md` + `CLAUDE.md` + skills install set. Cove
 
 - **Deep, benchmarked:** Next.js — full templates, live-verified fixes.
 - **Solid, benchmarked:** NestJS, Django, Go, Rust — per-stack templates from verified research.
-- **Solid, benchmarked:** Spring Boot — per-stack templates from live-verified research (sonnet n3, median 89, all gates green)
-  (Initializr probe, Maven Central/Gradle Plugin Portal, a real `./gradlew` run); rotates into
-  the benchmark matrix next.
+- **Solid, benchmarked:** Spring Boot — per-stack templates from live-verified research
+  (Initializr probe, Maven Central/Gradle Plugin Portal, a real `./gradlew` run); benchmarked
+  at sonnet n3, median 89, all gates green.
 - **Discovery, unbenchmarked:** any other stack — the skill derives the mechanisms from live docs
   and demonstrates gate teeth once per gate to verify the fresh mapping. It has no benchmark median;
   the run's report says so.

@@ -6,7 +6,7 @@ description: >-
   Scaffold a new production application with the full agentic-AI guardrail canon baked in
   from commit #1: a uniform 7-gate interface (lint, typecheck, test, coverage, build, e2e,
   audit) on each stack's native runner, strict types, maximal static analysis, coverage
-  thresholds with teeth plus seed tests, pre-commit hooks, hardened CI with SonarCloud,
+  thresholds with teeth plus seed tests, pre-commit hooks, hardened CI with optional SonarCloud,
   supply-chain pinning, and an agent-ready AGENTS.md — every gate verified green before the
   first commit. Native adapters: Next.js, NestJS, Django, Go, Rust, Spring Boot; a discovery
   method maps the canon to other stacks. USE FOR: creating or scaffolding a new app, service, or API

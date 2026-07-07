@@ -348,7 +348,10 @@ const workflowText = workflows.join('\n---\n');
 const ciRunsGates = workflows.length > 0 && GATE_NAMES.every((g) => workflowText.includes(g));
 probe('ci', 'ci_runs_gates', 4, ciRunsGates, `${workflows.length} workflow file(s), all 7 gate names present`);
 const shaLines = (workflowText.match(/uses:\s*\S+/g) || []);
-const shaPinned = shaLines.length > 0 && shaLines.every((l) => /@[0-9a-f]{40}(\s|$)/.test(l) || /# TODO\(pin\)/.test(workflowText));
+// per-LINE check: each uses: must be SHA-pinned or carry its own `# TODO(pin)` annotation —
+// a global grep let one TODO anywhere bless every line (Copilot review, PR #14).
+const usesFullLines = workflowText.split('\n').filter((l) => /^\s*(-\s*)?uses:\s*\S+/.test(l));
+const shaPinned = usesFullLines.length > 0 && usesFullLines.every((l) => /@[0-9a-f]{40}(\s|$)/.test(l) || /# TODO\(pin\)/.test(l));
 const hardened = shaPinned && workflowText.includes('contents: read') && workflowText.includes('concurrency');
 probe('ci', 'ci_hardened', 3, hardened, `uses: lines=${shaLines.length}`);
 const sonarWired = grepAny(workflowText, ['sonarqube-scan-action', 'sonarqube-quality-gate-action']) && workflowText.includes('SONAR_ENABLED');
@@ -360,18 +363,24 @@ probe('ci', 'sonar_wired', 3, sonarWired, 'scan+quality-gate steps, SONAR_ENABLE
 function cat6() {
   if (stack === 'next' || stack === 'nest') {
     const hookFile = readFileSafe(path.join(repoDir, '.husky', 'pre-commit'));
-    const present = !!hookFile && grepAny(hookFile, ['lint', 'test']);
+    // canon trio = typecheck + lint-staged (+ test-staged): require BOTH signal classes,
+    // not either (Copilot review, PR #14 — lint-staged-only hooks must not fully score).
+    const present = !!hookFile && grepAny(hookFile, ['lint']) && grepAny(hookFile, ['tsc', 'typecheck', 'test']);
     probe('hooks', 'hook_present', 3, present, '.husky/pre-commit');
     const pkg = readJsonSafe(path.join(repoDir, 'package.json')) || {};
     probe('hooks', 'hook_install_wired', 2, (pkg.scripts || {}).prepare === 'husky', 'package.json scripts.prepare=="husky"');
   } else if (stack === 'django') {
     const cfg = readFileSafe(path.join(repoDir, '.pre-commit-config.yaml'));
-    probe('hooks', 'hook_present', 3, !!cfg && grepAny(cfg, ['ruff', 'mypy']), '.pre-commit-config.yaml');
+    probe('hooks', 'hook_present', 3, !!cfg && cfg.includes('ruff') && cfg.includes('mypy'), '.pre-commit-config.yaml has BOTH ruff and mypy (Copilot review, PR #14)');
     const doc = (readFileSafe(path.join(repoDir, 'AGENTS.md')) || '') + (readFileSafe(path.join(repoDir, 'README.md')) || '');
     probe('hooks', 'hook_install_wired', 2, doc.includes('pre-commit install'), 'documented `pre-commit install` step');
   } else {
     const cfg = readFileSafe(path.join(repoDir, 'lefthook.yml'));
-    probe('hooks', 'hook_present', 3, !!cfg && grepAny(cfg, ['lint', 'test']), 'lefthook.yml');
+    // canon lefthook = lint-class + format-class commands (go: golangci-lint+gofmt;
+    // springboot: checkstyle/pmd+spotless; rust: clippy+fmt) — require both classes
+    // (Copilot review, PR #14).
+    const present = !!cfg && grepAny(cfg, ['lint', 'clippy']) && grepAny(cfg, ['fmt', 'format', 'spotless']);
+    probe('hooks', 'hook_present', 3, present, 'lefthook.yml has lint-class AND format-class commands');
     const doc = (readFileSafe(path.join(repoDir, 'AGENTS.md')) || '') + (readFileSafe(path.join(repoDir, 'README.md')) || '');
     probe('hooks', 'hook_install_wired', 2, doc.includes('lefthook install'), 'documented `lefthook install` step');
   }

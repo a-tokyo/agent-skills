@@ -2,3 +2,7 @@
 node_modules/
 *.log
 .env
+
+# never commit local benchmark auth tokens
+.auth-token
+**/.auth-token

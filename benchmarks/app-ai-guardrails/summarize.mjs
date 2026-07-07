@@ -17,10 +17,16 @@ const median = (xs) => {
   return s.length % 2 ? s[m] : (s[m - 1] + s[m]) / 2;
 };
 
+// Ledger contract: scores.tsv is APPEND-ONLY — a run_id may appear more than once when a
+// scoring was superseded (old row keeps an audit status like scored_prescorerfix). For the
+// `scored` status the LAST row per run_id wins; tools must never assume raw uniqueness.
+const lastScored = new Map();
+for (const r of rows) if (r.status === 'scored') lastScored.set(r.run_id, r);
 const cells = new Map();
 const excluded = [];
 for (const r of rows) {
   if (r.status !== 'scored') { excluded.push(r); continue; }
+  if (lastScored.get(r.run_id) !== r) { excluded.push({ ...r, status: 'superseded_by_rescoring' }); continue; }
   const key = `${r.arm}|${r.model}|${r.stack}|${r.pm}`;
   if (!cells.has(key)) cells.set(key, []);
   cells.get(key).push({ score: Number(r.guardrail_score), gates: Number(r.all_gates_pass) });

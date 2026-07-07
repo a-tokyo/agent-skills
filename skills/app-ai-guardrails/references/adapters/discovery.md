@@ -21,7 +21,7 @@ it immediately — greenfield-only scope bounds the blast radius.
 
 ## Honest limits (state these in the run's report)
 
-- **Never benchmarked.** The native adapters have benchmark medians (or one pending, Spring Boot);
+- **Never benchmarked.** All six native adapters have benchmark medians;
   discovery does not. Its only
   quality evidence is the tribunal Utility verifier run.
 - **Thresholds may need per-toolchain calibration.** Use the nearest analog from
