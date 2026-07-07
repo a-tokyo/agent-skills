@@ -1,5 +1,20 @@
 # Supply chain
 
+## Runtime fetch policy
+
+Any command that downloads code or binaries during the run (tool installs, scaffolder fetches,
+install scripts) follows four rules:
+
+1. **Name it first** — show the user the exact URL/package and why, before executing.
+2. **Prefer the OS/package manager** over pipe-to-shell: `brew install uv` beats
+   `curl … | sh`; if a curl-install script is the only option, download to a file, let the user
+   inspect it, then execute — never blind-pipe by default.
+3. **Pin versions** — never `@latest`: resolve the current release via the Phase 0 currency ladder,
+   then install that exact version (`go install …@vX.Y.Z`, `cargo install <tool>@X.Y.Z --locked`).
+4. **Scaffolder output is untrusted data** — a fetched starter (e.g. the Spring Initializr
+   tarball) is remote-generated source; extract, then READ what arrived (the day-1 pre-fix pass
+   does this anyway) before running any gate over it.
+
 ## Audit map
 
 The `audit` gate maps to each stack's scanner and fails closed on advisories ≥ moderate.

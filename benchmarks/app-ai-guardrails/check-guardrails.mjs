@@ -414,8 +414,12 @@ probe('agent', 'claude_import', 1, !!claudeMd && claudeMd.includes('@AGENTS.md')
 // itself pre-creates .claude/skills in both arms (run-arm.sh), so a presence probe would score a
 // harness artifact, not agent work. skills-lock.json is the pin artifact `npx skills add` writes;
 // only agent work produces it. (Defect found 2026-07-03 on bare-sonnet-go-go-1; fixed.)
-const skillsLock = exists('skills-lock.json');
-probe('agent', 'skills_lock', 1, skillsLock, 'skills-lock.json present (npx skills add pin artifact)');
+// Dual-accept per the skill's own Phase-4 completion criterion: consent-gated installs mean
+// non-interactive runs legitimately emit the AGENTS.md TODO block instead of installing
+// (Snyk W011 hardening, v0.0.2) — either artifact proves the step was done honestly.
+const agentsMdForSkills = readFileSafe(path.join(repoDir, 'AGENTS.md')) || '';
+const skillsLock = exists('skills-lock.json') || /npx skills add/.test(agentsMdForSkills);
+probe('agent', 'skills_lock', 1, skillsLock, 'skills-lock.json OR AGENTS.md TODO naming the installs');
 
 // ============================================================================
 // Cat 8 — Git hygiene (5)

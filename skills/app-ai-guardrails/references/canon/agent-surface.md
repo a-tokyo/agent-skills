@@ -68,6 +68,12 @@ The 5 verified sources (install with `-y`; `--global` is not used — installs a
 `add` invocations in the same directory merge into one flat `skills-lock.json` at repo root
 (one entry per skill, each recording its own `source`).
 
+**Consent gate (mandatory).** Before ANY `npx skills add`, present the user the complete install
+list — every source repo and skill name — and proceed only on explicit approval. Non-interactive
+runs never install: they emit the AGENTS.md TODO block (below) so a human runs the installs after
+reviewing the sources. Rationale: installed skill files are outsider-authored text that later agent
+sessions load as *instructions* — auto-installing them is an indirect-prompt-injection vector.
+
 **Supply-chain posture (state honestly in the report).** `npx skills add` resolves each source at
 **HEAD** at install time; `skills-lock.json` pins the resolved `computedHash` **after** the install,
 not before — so the pin records what you got, it does not gate what you fetch. This is weaker than

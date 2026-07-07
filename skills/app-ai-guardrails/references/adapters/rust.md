@@ -135,7 +135,7 @@ hooks need `lefthook`. Probe in Phase 0; if missing, offer the exact commands, a
 declines, abort before Phase 1 (§6 — greenfield has no partial success). AGENTS.md names them:
 
 ```bash
-cargo install cargo-llvm-cov cargo-deny --locked
+cargo install cargo-llvm-cov@<resolved-version> cargo-deny@<resolved-version> --locked   # resolve versions via the currency ladder; never unpinned
 brew install lefthook   # macOS; else: cargo install lefthook (any platform)
 ```
 
