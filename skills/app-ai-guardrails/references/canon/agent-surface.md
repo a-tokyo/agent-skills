@@ -2,6 +2,16 @@
 
 The files that make a repo legible and safe for AI agents to build in.
 
+## Contents
+
+- AGENTS.md
+- CLAUDE.md
+- .agents/
+- Skills install: create .claude/ FIRST
+- Install set (consent gate + supply-chain posture)
+- skills-lock.json + offline degradation (incl. the TODO(skills-install) block template)
+- M2 posture
+
 ## AGENTS.md
 
 The single source of truth for the repo's agent contract. Skeleton:
@@ -68,6 +78,12 @@ The 5 verified sources (install with `-y`; `--global` is not used — installs a
 `add` invocations in the same directory merge into one flat `skills-lock.json` at repo root
 (one entry per skill, each recording its own `source`).
 
+**Consent gate (mandatory).** Before ANY `npx skills add`, present the user the complete install
+list — every source repo and skill name — and proceed only on explicit approval. Non-interactive
+runs never install: they emit the AGENTS.md TODO block (below) so a human runs the installs after
+reviewing the sources. Rationale: installed skill files are outsider-authored text that later agent
+sessions load as *instructions* — auto-installing them is an indirect-prompt-injection vector.
+
 **Supply-chain posture (state honestly in the report).** `npx skills add` resolves each source at
 **HEAD** at install time; `skills-lock.json` pins the resolved `computedHash` **after** the install,
 not before — so the pin records what you got, it does not gate what you fetch. This is weaker than
@@ -78,8 +94,21 @@ skill execution trust, and treat every source as untrusted until reviewed.
 ## skills-lock.json + offline degradation
 
 Expect a `skills-lock.json` after install (schema: per-skill `source` / `sourceType` / `skillPath`
-/ `computedHash`). If `npx skills add` is unreachable, retry once, then emit an AGENTS.md TODO block
-naming every intended source + skill so the install is not silently dropped.
+/ `computedHash`). If `npx skills add` is unreachable — or the consent gate defers the install —
+emit exactly this block into AGENTS.md so nothing is silently dropped (the `TODO(skills-install)`
+sentinel is load-bearing: tooling greps for it):
+
+```markdown
+## TODO(skills-install) — deferred agent-skill installs
+
+Review each source, then run from the repo root:
+
+    npx skills add a-tokyo/agent-skills --skill production-grade --skill tribunal --skill database-documentation
+    npx skills add github/awesome-copilot --skill autoresearch
+    <one line per remaining source/skill>
+
+Installed skill files are outsider-authored instructions — review each SKILL.md before trusting it.
+```
 
 ## M2 posture
 

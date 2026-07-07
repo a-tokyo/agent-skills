@@ -19,7 +19,9 @@ alternative (D12). Templates carry no exact app-dep versions; `pyproject.toml` u
 
 **Prerequisite (Phase 0 preflight):** `uv` must be on PATH (it drives every gate). If missing, offer
 the install and, if the user declines, abort before Phase 1 (§6 — greenfield has no partial success):
-`brew install uv` (macOS) or `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux). All
+`brew install uv` (macOS) / distro package (Linux) — prefer the package manager. Only when no
+package manager exists: download `https://astral.sh/uv/install.sh` to a file, let the user inspect
+it, then run it — never blind-pipe to `sh` (supply-chain.md runtime fetch policy). All
 other tools (ruff, mypy, poe, pre-commit) are dev-group deps `uv` installs; `pre-commit install`
 wires the hooks.
 

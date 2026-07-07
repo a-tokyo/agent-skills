@@ -57,6 +57,8 @@ curl -sS https://start.spring.io/starter.tgz \
   -d packageName=com.example.{{APP}} -d dependencies=web,validation \
   -o {{APP}}.tgz
 mkdir {{APP}} && tar -xzf {{APP}}.tgz -C {{APP}} && rm {{APP}}.tgz && cd {{APP}} && rm HELP.md
+# The tarball is remote-generated source (untrusted data — supply-chain.md runtime fetch policy):
+# the day-1 pre-fix pass below READS everything that arrived before any gate executes over it.
 ```
 
 **Never pass `bootVersion` explicitly** — a live-verified Initializr bug: an explicit

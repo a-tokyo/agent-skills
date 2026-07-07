@@ -49,9 +49,11 @@ greenfield has no partial success). Exact commands:
 # macOS (Homebrew):
 brew install golangci-lint just lefthook
 # Linux / no Homebrew (go install works for all three):
-go install github.com/golangci/golangci-lint/cmd/golangci-lint@latest
-go install github.com/casey/just@latest        # or: cargo install just
-go install github.com/evilmartians/lefthook@latest
+# resolve each tool's current release via the currency ladder FIRST, then install that exact
+# version — never @latest (supply-chain.md runtime fetch policy):
+go install github.com/golangci/golangci-lint/cmd/golangci-lint@<resolved-version>
+go install github.com/casey/just@<resolved-version>        # or: cargo install just@<resolved-version> --locked
+go install github.com/evilmartians/lefthook@<resolved-version>
 ```
 
 Same class as Rust's `cargo install` prerequisite line — name it in AGENTS.md setup.
