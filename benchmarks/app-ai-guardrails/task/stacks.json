@@ -1,0 +1,57 @@
+{
+  "_comment": "stack name -> {{STACK}} slot wording + runner/pm/lockfile facts. Source: research/00-synthesis.md §a/§c/§e, DESIGN.md §8.1-8.11. runner_prefix is the literal command prefix a gate is invoked with (R <gate>); manifest/lockfile drive stack auto-detection in lib/detect-gates.mjs and evaluate.sh.",
+  "next": {
+    "label": "Next.js (App Router, TypeScript)",
+    "runner_prefix": "npm run",
+    "pm_default": "npm",
+    "manifest": "package.json",
+    "lockfile": "package-lock.json",
+    "gate_source": "package.json#scripts",
+    "scaffold_hint": "npx create-next-app@latest . --ts --app --tailwind --eslint --src-dir --import-alias \"@/*\" --use-npm --disable-git --yes"
+  },
+  "nest": {
+    "label": "NestJS",
+    "runner_prefix": "npm run",
+    "pm_default": "npm",
+    "manifest": "package.json",
+    "lockfile": "package-lock.json",
+    "gate_source": "package.json#scripts",
+    "scaffold_hint": "nest new . --strict --package-manager npm --skip-git"
+  },
+  "django": {
+    "label": "Django",
+    "runner_prefix": "uv run poe",
+    "pm_default": "uv",
+    "manifest": "pyproject.toml",
+    "lockfile": "uv.lock",
+    "gate_source": "pyproject.toml#tool.poe.tasks",
+    "scaffold_hint": "uv init --app . && uv run django-admin startproject config ."
+  },
+  "go": {
+    "label": "Go (net/http) HTTP service",
+    "runner_prefix": "just",
+    "pm_default": "go",
+    "manifest": "go.mod",
+    "lockfile": "go.sum",
+    "gate_source": "justfile#recipes",
+    "scaffold_hint": "go mod init <module> && mkdir -p cmd/app internal"
+  },
+  "rust": {
+    "label": "Rust (axum) HTTP service",
+    "runner_prefix": "cargo",
+    "pm_default": "cargo",
+    "manifest": "Cargo.toml",
+    "lockfile": "Cargo.lock",
+    "gate_source": "Cargo.toml#alias (via .cargo/config.toml)",
+    "scaffold_hint": "cargo new . --bin"
+  },
+  "springboot": {
+    "label": "Spring Boot (Gradle, Java 21) HTTP service",
+    "runner_prefix": "./gradlew",
+    "pm_default": "gradle",
+    "manifest": "build.gradle",
+    "lockfile": "gradle.lockfile",
+    "gate_source": "build.gradle#tasks.register (+ Gradle's native test/build tasks)",
+    "scaffold_hint": "curl -sS https://start.spring.io/starter.tgz -d type=gradle-project -d language=java -d javaVersion=21 -d dependencies=web,validation -o app.tgz && tar -xzf app.tgz"
+  }
+}
