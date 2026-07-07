@@ -2,6 +2,16 @@
 
 The files that make a repo legible and safe for AI agents to build in.
 
+## Contents
+
+- AGENTS.md
+- CLAUDE.md
+- .agents/
+- Skills install: create .claude/ FIRST
+- Install set (consent gate + supply-chain posture)
+- skills-lock.json + offline degradation (incl. the TODO(skills-install) block template)
+- M2 posture
+
 ## AGENTS.md
 
 The single source of truth for the repo's agent contract. Skeleton:
