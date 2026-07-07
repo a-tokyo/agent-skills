@@ -247,7 +247,7 @@ EOF
   npm pkg set scripts.prepare="husky"
   npm pkg set scripts.format="prettier --write ." 2>/dev/null || true
 
-  printf '22\n' > .nvmrc
+  printf '24\n' > .nvmrc
   npm pkg set engines.node=">=20 <25"
   printf 'min-release-age=7\n' > .npmrc
 

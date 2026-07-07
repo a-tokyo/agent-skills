@@ -3,8 +3,8 @@
 #
 #   arm     bare | with-skill
 #   model   haiku | sonnet | opus   (mapped to exact model ids below)
-#   stack   next | nest | django | go | rust
-#   pm      npm | pnpm | bun | uv | go | cargo   (recorded; JS stacks may vary the prompt's PM wording)
+#   stack   next | nest | django | go | rust | springboot
+#   pm      npm | pnpm | yarn | bun | uv | go | cargo | gradle   (recorded; JS stacks may vary the prompt's PM wording)
 #   run-id  unique id for this run; everything lands in runs/<run-id>/
 #
 # Launches ONE fresh `claude -p` benchmark run in runs/<run-id>/work/ under full containment (D6):

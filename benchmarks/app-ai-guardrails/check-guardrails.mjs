@@ -193,6 +193,11 @@ function teethProbeSafe(gateName, points) {
     fs.cpSync(repoDir, tmpRoot, { recursive: true });
     const rel = path.relative(repoDir, target);
     const copyTarget = path.join(tmpRoot, rel);
+    // symlink guard (Copilot review, PR #14): never append through a symlink — an agent-produced
+    // repo could plant one with a source extension pointing outside the temp copy.
+    if (fs.lstatSync(copyTarget).isSymbolicLink()) {
+      return probe('teeth', gateName, points, false, `mutation target ${rel} is a symlink — refused`);
+    }
     fs.appendFileSync(copyTarget, snippet);
     const res = run(info.cmd, tmpRoot, 240000);
     const failedAsExpected = res.status !== 0 && res.status !== null;
@@ -216,8 +221,10 @@ function teethCoverageProbe(points) {
   const testFiles = all.filter((f) => TEST_MARKERS.some((m) => f.includes(m)) && /\.(ts|tsx|py|go|rs|java)$/.test(f));
   if (testFiles.length === 0) return probe('teeth', 'coverage', points, false, 'no test files found to delete');
   // delete the LARGEST test file — the biggest honest regression available in-repo
-  testFiles.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
-  const target = testFiles[0];
+  const realFiles = testFiles.filter((f) => { try { return !fs.lstatSync(f).isSymbolicLink(); } catch { return false; } });
+  if (realFiles.length === 0) return probe('teeth', 'coverage', points, false, 'only symlinked test files found — refused');
+  realFiles.sort((a, b) => fs.statSync(b).size - fs.statSync(a).size);
+  const target = realFiles[0];
   const tmpRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'guardrails-teeth-'));
   try {
     fs.cpSync(repoDir, tmpRoot, { recursive: true });

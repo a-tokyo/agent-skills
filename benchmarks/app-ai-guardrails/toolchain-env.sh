@@ -5,8 +5,9 @@
 # the referee couldn't run the gates it was judging. Source this from both sides so the toolchain
 # the gates see is identical by construction.
 #
-# Usage: BENCH_HERE must be set to the benchmarks/ dir before sourcing.
-: "${BENCH_HERE:?source with BENCH_HERE=<benchmarks dir>}"
+# Usage: BENCH_HERE must be set to THIS benchmark's directory (the one containing cache/,
+# e.g. .../benchmarks/app-ai-guardrails) before sourcing.
+: "${BENCH_HERE:?source with BENCH_HERE=<this benchmark dir (containing cache/)>}"
 
 _CACHE="$BENCH_HERE/cache"
 mkdir -p "$_CACHE/npm" "$_CACHE/pnpm-store" "$_CACHE/pnpm-home" "$_CACHE/bun" "$_CACHE/uv" \

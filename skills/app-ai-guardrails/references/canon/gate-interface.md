@@ -24,8 +24,9 @@ npm/cargo/poe have no such restriction). Semantic per gate, not just "run the to
 - `typecheck` — a check-only pass (`tsc --noEmit` / `mypy --strict` / `go vet` / `cargo check`).
   **Distinct from `build`** — it produces no artifact.
 - `test` — unit tests, e2e excluded so local iteration stays fast.
-- `coverage` — **enforce** thresholds and exit non-zero under the floor. Not report-only. This
-  is the capexlog-vs-everyone gap.
+- `coverage` — **enforce** thresholds and exit non-zero under the floor. Not report-only. Most
+  repos that "have coverage" only report it; enforcement-with-teeth is the single most commonly
+  missing guardrail this skill exists to install.
 - `build` — produce the artifact (`next build` / `collectstatic` / `go build` / `cargo build`).
 - `e2e` — in-process or API end-to-end against the real app.
 - `audit` — **fail closed** on advisories ≥ moderate.

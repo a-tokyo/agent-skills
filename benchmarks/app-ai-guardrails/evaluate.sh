@@ -18,6 +18,18 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # (uniform capped-50 rust/springboot rows, 2026-07-06). Single source of truth with run-arm.sh:
 BENCH_HERE="$HERE" source "$HERE/toolchain-env.sh"
 
+# Scorer-side containment (Copilot review, PR #14): gate commands execute REPO-DEFINED scripts from
+# an untrusted agent-produced repo. Run them under an isolated throwaway HOME/XDG/GIT_CONFIG_GLOBAL
+# so they can never read or write the maintainer's real config/credentials. Shared toolchain caches
+# above are exported EXPLICITLY and survive the HOME switch.
+EVAL_HOME="$(mktemp -d "${TMPDIR:-/tmp}/guardrails-eval-home.XXXXXX")"
+trap 'rm -rf "$EVAL_HOME"' EXIT
+export HOME="$EVAL_HOME"
+export XDG_CONFIG_HOME="$EVAL_HOME/.config" XDG_CACHE_HOME="$EVAL_HOME/.cache" XDG_DATA_HOME="$EVAL_HOME/.local/share"
+mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
+export GIT_CONFIG_GLOBAL="$EVAL_HOME/.gitconfig"
+printf '[user]\n\tname = guardrails-scorer\n\temail = scorer@localhost\n' > "$GIT_CONFIG_GLOBAL"
+
 REPO_ARG="${1:?usage: evaluate.sh <repo-dir> [--e2e]}"
 shift || true
 E2E=0
