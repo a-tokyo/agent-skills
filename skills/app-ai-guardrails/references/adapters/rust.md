@@ -46,7 +46,7 @@ components = ["clippy", "rustfmt"]
 `[lints]` in `Cargo.toml`. `priority = -1` is required when a lint group is combined with individual
 overrides so the specific override outranks the group. `pedantic`/`nursery` are **warn, never deny**
 (nursery lints are pre-stabilization and churn across releases). `cognitive_complexity` moved to
-`restriction` in Aug 2025 — it must be opted into per-lint (never enable `restriction` as a group).
+`restriction` — it must be opted into per-lint (never enable `restriction` as a group); verify the lint's current group at generation time via the currency ladder.
 
 ```toml
 [lints.rust]
@@ -145,5 +145,5 @@ Same class as golangci-lint/just for Go.
 
 `dtolnay/rust-toolchain` → `Swatinem/rust-cache@v2` (after the toolchain step; its key derives from
 the active rustc) → `taiki-e/install-action` (SHA-pinned) for cargo-llvm-cov + cargo-deny. Rust is
-first-party on SonarCloud since 2025: `sonar.rust.lcov.reportPaths=lcov.info` +
+first-party on SonarCloud (no community plugin): `sonar.rust.lcov.reportPaths=lcov.info` +
 `sonar.rust.clippy.enabled=true`.

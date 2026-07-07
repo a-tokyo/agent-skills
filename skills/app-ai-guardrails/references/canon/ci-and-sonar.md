@@ -48,21 +48,23 @@ A single `runs-on` decision at Phase 0, no matrix/conditional runner switching.
 
 ## SonarCloud wiring
 
-- Scan action: `SonarSource/sonarqube-scan-action` (**@v8** current; pin to SHA). Do **not** copy
-  older `@v7` snippets.
+- Scan action: `SonarSource/sonarqube-scan-action` — resolve the latest major via the Phase 0
+  currency ladder, then pin to its SHA. Do **not** copy version tags from old snippets.
 - Run the scan **without** `-Dsonar.qualitygate.wait=true` (Sonar's docs recommend against it on
   PRs — it inflates workflow duration), then add a separate
   `SonarSource/sonarqube-quality-gate-action` step to block on the result.
 - Gate the whole sonar job on `vars.SONAR_ENABLED == 'true'` so CI is green before an org exists.
-- Per-language coverage property (one file, reused by the local gate and the scan — no duplicate
-  coverage run):
+- Per-language coverage property. The scan reuses the SAME report file the `coverage` gate
+  produced — never a second coverage run. When the sonar job is separate from the job that ran
+  `coverage` (the skeleton above), pass the report between jobs with
+  `actions/upload-artifact`/`download-artifact`; same-job scans just read the file:
 
 | Language | Property | Format |
 |---|---|---|
 | JS/TS | `sonar.javascript.lcov.reportPaths` | LCOV (covers TS too; `sonar.typescript.*` is deprecated) |
 | Python | `sonar.python.coverage.reportPaths` | Cobertura XML (from `pytest-cov --cov-report=xml`) |
 | Go | `sonar.go.coverage.reportPaths` | native `go test -coverprofile` file (no conversion) |
-| Rust | `sonar.rust.lcov.reportPaths` | LCOV (from `cargo-llvm-cov --lcov`); Rust is first-party since 2025 |
+| Rust | `sonar.rust.lcov.reportPaths` | LCOV (from `cargo-llvm-cov --lcov`); Rust analysis is first-party (no community plugin needed) |
 | Spring Boot | `sonar.coverage.jacoco.xmlReportPaths` | JaCoCo XML; the `org.sonarqube` Gradle plugin auto-infers `sonar.java.binaries`/`sources`/`tests`/`junit.reportPaths` from the Gradle model — lighter than every other stack |
 
 ## Human checklist (emit in the Phase 7 report)
