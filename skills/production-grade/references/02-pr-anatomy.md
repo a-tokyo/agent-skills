@@ -89,7 +89,7 @@ Detect from `git log -50`. Two shapes:
 
 ## Branches
 
-`feat/` · `fix/` · `chore/` · `refactor/` · `perf/` · `security/` · `docs/` · `release/` · `hotfix/` · `autoresearch/` — each followed by `<scope>-<slug>` (kebab-case, ≤4 words; scope = package / module / app). `release/<version>` for release branches.
+`feat/` · `fix/` · `chore/` · `refactor/` · `perf/` · `security/` · `docs/` · `release/` · `hotfix/` — each followed by `<scope>-<slug>` (kebab-case, ≤4 words; scope = package / module / app). `release/<version>` for release branches.
 
 ---
 

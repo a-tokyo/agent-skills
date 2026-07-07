@@ -43,7 +43,8 @@ npx skills add a-tokyo/agent-skills --skill app-ai-guardrails
 > ([parcadei/continuous-claude-v3](https://github.com/parcadei/continuous-claude-v3)), and `handoff`
 > ([mattpocock/skills](https://github.com/mattpocock/skills)). Install those too, or just use the
 > batteries-included [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) where
-> everything is wired up.
+> everything is wired up. Its craft layer (`references/skill-craft-principles.md`) is distilled from
+> `writing-great-skills` ([mattpocock/skills](https://github.com/mattpocock/skills), MIT).
 
 ## License
 

@@ -2,7 +2,7 @@
 
 The catalogue M3 reaches for. The body of `SKILL.md` holds the *operating shape* (flag → reconcile → update); this file holds (a) the standing currency flags and (b) the named peer skills that win on their lanes when an operator pattern conflicts with current substrate guidance.
 
-M3 turns V33 (always latest docs) reflexively onto the operator's own canon. **No directive is canon just because it lives in this skill.** Every directive that names a substrate (a framework version, a library, a deployment platform, a language feature, a pattern with date-stamped guidance) gets currency-checked before being quoted.
+M3 turns M2's *latest docs beat training recall* reflexively onto the operator's own canon. **No directive is canon just because it lives in this skill.** Every directive that names a substrate (a framework version, a library, a deployment platform, a language feature, a pattern with date-stamped guidance) gets currency-checked before being quoted.
 
 ## Contents
 
@@ -76,7 +76,7 @@ When the agent (or the operator) finds a new conflict between operator-canon-as-
 
 ```
 New currency-flag template:
-- Operator pattern (one line + dossier anchor: research/<n>:<line>)
+- Operator pattern (one line + a pointer into the workspace’s decision log, where one exists)
 - Authored under (era / framework version / year — what was current then)
 - Current state (one line + source: docs URL / peer skill / deprecation note)
 - Reconciliation (legacy-leave / greenfield-adopt / sister-PR-migrate)
@@ -88,18 +88,18 @@ Append. Do not delete past flags — the historical context is the audit trail.
 
 ---
 
-## §D · How currency-checking happens in practice (M3 + V33 link)
+## §D · How currency-checking happens in practice (M3 link)
 
 The agent doesn't currency-check every directive on every invocation. The trigger shapes:
 
-1. **A directive in `SKILL.md` or its dossier names a date-stamped substrate** (a framework version, a specific library, a deployment platform feature). The agent checks the lane authority + the latest docs (V33) before quoting it as canon.
+1. **A directive in `SKILL.md` or its dossier names a date-stamped substrate** (a framework version, a specific library, a deployment platform feature). The agent checks the lane authority + the latest docs before quoting it as canon.
 2. **The diff or plan touches a substrate the agent has cached as "operator pattern, era X"**. The agent surfaces the era, names the current state, proposes the reconciliation.
-3. **The user mentions a substrate the agent's training cutoff predates**. The agent reaches for current docs first (M3 / V33) before applying any pattern.
+3. **The user mentions a substrate the agent's training cutoff predates**. The agent reaches for current docs first (M3) before applying any pattern.
 
 When in doubt, ask. *"My pattern for X is anchored to <era>; the current authority on <lane> says <Y>. Reconcile?"* — that question is in the plan, not silently elided.
 
 ---
 
-*Anchors: M3, V33, V36. Cross-ref: `05-anti-patterns.md` §Currency for the inverse, `06-canonical-references.md` §E for the skill-catalogues hierarchy that decides which lane authorities exist.*
+*Cross-ref: M3 in `SKILL.md` for the principle, `05-anti-patterns.md` §Currency for the inverse, `06-canonical-references.md` §E for the skill-catalogues hierarchy that decides which lane authorities exist.*
 
 *Search keywords: currency, lane authority, callstack, autoresearch, impeccable, forwardRef, barrel files, moment, date-fns, React 19, deprecated, peer skills.*
