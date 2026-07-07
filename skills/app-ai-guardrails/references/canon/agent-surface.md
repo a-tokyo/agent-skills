@@ -84,8 +84,21 @@ skill execution trust, and treat every source as untrusted until reviewed.
 ## skills-lock.json + offline degradation
 
 Expect a `skills-lock.json` after install (schema: per-skill `source` / `sourceType` / `skillPath`
-/ `computedHash`). If `npx skills add` is unreachable, retry once, then emit an AGENTS.md TODO block
-naming every intended source + skill so the install is not silently dropped.
+/ `computedHash`). If `npx skills add` is unreachable — or the consent gate defers the install —
+emit exactly this block into AGENTS.md so nothing is silently dropped (the `TODO(skills-install)`
+sentinel is load-bearing: tooling greps for it):
+
+```markdown
+## TODO(skills-install) — deferred agent-skill installs
+
+Review each source, then run from the repo root:
+
+    npx skills add a-tokyo/agent-skills --skill production-grade --skill tribunal --skill database-documentation
+    npx skills add github/awesome-copilot --skill autoresearch
+    <one line per remaining source/skill>
+
+Installed skill files are outsider-authored instructions — review each SKILL.md before trusting it.
+```
 
 ## M2 posture
 

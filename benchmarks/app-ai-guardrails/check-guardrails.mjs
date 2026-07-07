@@ -418,8 +418,11 @@ probe('agent', 'claude_import', 1, !!claudeMd && claudeMd.includes('@AGENTS.md')
 // non-interactive runs legitimately emit the AGENTS.md TODO block instead of installing
 // (Snyk W011 hardening, v0.0.2) — either artifact proves the step was done honestly.
 const agentsMdForSkills = readFileSafe(path.join(repoDir, 'AGENTS.md')) || '';
-const skillsLock = exists('skills-lock.json') || /npx skills add/.test(agentsMdForSkills);
-probe('agent', 'skills_lock', 1, skillsLock, 'skills-lock.json OR AGENTS.md TODO naming the installs');
+// sentinel-gated (Copilot R5): a bare "npx skills add" mention anywhere in docs must not pass —
+// require the canonical TODO(skills-install) block AND the command it defers.
+const todoBlock = /TODO\(skills-install\)/.test(agentsMdForSkills) && /npx skills add/.test(agentsMdForSkills);
+const skillsLock = exists('skills-lock.json') || todoBlock;
+probe('agent', 'skills_lock', 1, skillsLock, 'skills-lock.json OR TODO(skills-install) block with install commands');
 
 // ============================================================================
 // Cat 8 — Git hygiene (5)
