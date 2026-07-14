@@ -13,7 +13,7 @@ jobs:
   zip-and-release:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
 
       - name: Zip each skill folder
         run: |
@@ -26,14 +26,14 @@ jobs:
           ls -la dist
 
       - name: Publish skill zips to the rolling release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@fe965f7af51af5f2602596916f38a38df2e33de0 # v3.0.2
         with:
           tag_name: skills-latest
           name: Skill downloads (Claude Desktop)
           body: >-
             One `.zip` per skill in `skills/`, rebuilt on every push to `main`. Download the one
             you want and upload it in Claude Desktop under Settings → Capabilities. See the
-            "Download for Claude Desktop" table in the [README](../../blob/main/README.md) for
-            direct links per skill.
+            "Download" column in the [Skills table](../../blob/main/README.md#skills) for direct
+            links per skill.
           make_latest: true
           files: dist/*.zip
