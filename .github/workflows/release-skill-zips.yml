@@ -1,0 +1,40 @@
+name: Release skill zips
+
+on:
+  push:
+    branches: [main]
+    paths: ["skills/**", ".github/workflows/release-skill-zips.yml"]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+jobs:
+  zip-and-release:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+
+      - name: Zip each skill folder
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          for dir in skills/*/; do
+            name="$(basename "$dir")"
+            (cd skills && zip -rq "../dist/${name}.zip" "${name}")
+          done
+          ls -la dist
+
+      - name: Publish skill zips to the rolling release
+        uses: softprops/action-gh-release@fe965f7af51af5f2602596916f38a38df2e33de0 # v3.0.2
+        with:
+          tag_name: skills-latest
+          name: Skill downloads (Claude Desktop)
+          body: >-
+            One `.zip` per skill in `skills/`, rebuilt whenever a skill changes on `main`.
+            Download the one you want and upload it in Claude Desktop under Settings →
+            Capabilities. See the "Download" column in the [Skills
+            table](../../blob/main/README.md#skills) for direct links per skill.
+          make_latest: true
+          overwrite_files: true
+          files: dist/*.zip
