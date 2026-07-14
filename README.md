@@ -7,8 +7,8 @@ Reusable agent skills for AI coding assistants. Compatible with Cursor, Claude C
 ## Skills
 
 `Download` grabs a ready-to-upload `.zip` of just that skill — for Claude Desktop (Settings →
-Capabilities), which has no CLI and can't run `npx skills`. Rebuilt from `skills/<name>/` on every
-push to `main`.
+Capabilities), which has no CLI and can't run `npx skills`. Rebuilt whenever a skill changes on
+`main`.
 
 | Skill | Description | Download |
 |-------|-------------|----------|

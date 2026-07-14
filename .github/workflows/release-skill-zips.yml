@@ -31,9 +31,10 @@ jobs:
           tag_name: skills-latest
           name: Skill downloads (Claude Desktop)
           body: >-
-            One `.zip` per skill in `skills/`, rebuilt on every push to `main`. Download the one
-            you want and upload it in Claude Desktop under Settings → Capabilities. See the
-            "Download" column in the [Skills table](../../blob/main/README.md#skills) for direct
-            links per skill.
+            One `.zip` per skill in `skills/`, rebuilt whenever a skill changes on `main`.
+            Download the one you want and upload it in Claude Desktop under Settings →
+            Capabilities. See the "Download" column in the [Skills
+            table](../../blob/main/README.md#skills) for direct links per skill.
           make_latest: true
+          overwrite_files: true
           files: dist/*.zip
