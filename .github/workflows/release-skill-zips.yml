@@ -3,7 +3,7 @@ name: Release skill zips
 on:
   push:
     branches: [main]
-    paths: ["skills/**"]
+    paths: ["skills/**", ".github/workflows/release-skill-zips.yml"]
   workflow_dispatch: {}
 
 permissions:
