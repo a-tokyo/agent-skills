@@ -13,10 +13,11 @@ server to run — the "product" is the skill files; the "tests" are benchmarks.
 ## Repo structure (monorepo)
 
 ```
-skills/<name>/        a shippable skill: SKILL.md (+ optional references/, README.md)
-benchmarks/<name>/    benchmark for that skill — OUTSIDE skills/ so it doesn't ship on install
-docs/                 contributor guides (this contract links into them)
-README.md             user-facing skill catalogue + install
+skills/<name>/                     a shippable skill: SKILL.md (+ optional references/, README.md)
+benchmarks/<name>/                 benchmark for that skill — OUTSIDE skills/ so it doesn't ship on install
+docs/                              contributor guides (this contract links into them)
+.claude-plugin/marketplace.json    Claude Code plugin marketplace — one entry per skill in skills/
+README.md                          user-facing skill catalogue + install
 ```
 
 The closest `AGENTS.md` wins; this root file governs the whole repo.
@@ -82,4 +83,8 @@ implementation. Never commit secrets; `.env` is git-ignored.
   `SKILL.md`.
 - Keep diffs surgical — one concern per PR; a rename ships separately from a feature.
 - Bump the skill's `version` in its frontmatter when its behaviour changes.
+- A new skill needs an entry in both the README table and `.claude-plugin/marketplace.json`
+  (`source: "./"`, `skills: ["./skills/<name>"]`, `strict: false`). When you bump a skill's
+  `version`, update that same skill's entry in `marketplace.json` to match — the two are
+  independent fields Claude Code doesn't sync automatically.
 - Commit subject in imperative mood; explain *why* in the body.

@@ -46,6 +46,36 @@ npx skills add a-tokyo/agent-skills --skill app-ai-guardrails
 > everything is wired up. Its craft layer (`references/skill-craft-principles.md`) is distilled from
 > `writing-great-skills` ([mattpocock/skills](https://github.com/mattpocock/skills), MIT).
 
+### Download for Claude Desktop
+
+Claude Desktop has no CLI, so it can't run `npx skills`. Instead, download the skill's `.zip`
+below and upload it in Claude Desktop under **Settings → Capabilities**. Each zip is rebuilt from
+`skills/<name>/` on every push to `main`, so it always matches `main`.
+
+| Skill | Download |
+|-------|----------|
+| production-grade | [production-grade.zip](https://github.com/a-tokyo/agent-skills/releases/download/skills-latest/production-grade.zip) |
+| tailwind-v3-to-v4-migration | [tailwind-v3-to-v4-migration.zip](https://github.com/a-tokyo/agent-skills/releases/download/skills-latest/tailwind-v3-to-v4-migration.zip) |
+| create-skill-autoresearch | [create-skill-autoresearch.zip](https://github.com/a-tokyo/agent-skills/releases/download/skills-latest/create-skill-autoresearch.zip) |
+| tribunal | [tribunal.zip](https://github.com/a-tokyo/agent-skills/releases/download/skills-latest/tribunal.zip) |
+| database-documentation | [database-documentation.zip](https://github.com/a-tokyo/agent-skills/releases/download/skills-latest/database-documentation.zip) |
+| app-ai-guardrails | [app-ai-guardrails.zip](https://github.com/a-tokyo/agent-skills/releases/download/skills-latest/app-ai-guardrails.zip) |
+
+### Claude Code plugin
+
+Alternative to `npx skills` for Claude Code / IDE users — install via the native plugin system:
+
+```
+/plugin marketplace add a-tokyo/agent-skills
+/plugin install production-grade@a-tokyo-skills
+```
+
+Or install every skill at once:
+
+```
+/plugin install all-skills@a-tokyo-skills
+```
+
 ## License
 
 MIT [Ahmed Tokyo](https://www.ahmedtokyo.com)
