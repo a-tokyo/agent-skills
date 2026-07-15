@@ -1,6 +1,6 @@
 ---
 name: app-ai-guardrails
-version: 0.0.2
+version: 0.0.3
 license: MIT
 description: >-
   Scaffold a new production application with the full agentic-AI guardrail canon baked in
@@ -12,7 +12,7 @@ description: >-
   method maps the canon to other stacks. USE FOR: creating or scaffolding a new app, service, or API
   from scratch; bootstrapping a greenfield repo that AI
   agents will build in. DO NOT USE FOR: retrofitting an existing codebase or scaffolding a new
-  package into an existing monorepo (both assume repo-root ownership, v0.2), LLM-safety or
+  package into an existing monorepo (both assume repo-root ownership), LLM-safety or
   content-moderation guardrails, or adding a single tool to an existing project.
 compatibility: >-
   Needs network access (scaffolders, package registries, docs) and git. Parallel subagents
@@ -35,7 +35,7 @@ adapters have benchmark medians (Spring Boot: sonnet n3, median 89, all gates gr
 **discovery is unbenchmarked and says so**.
 Retrofitting the canon onto an existing codebase — or scaffolding a new package **inside** an
 existing monorepo (every mechanism here assumes repo-root ownership: hooks, CI, commit #1,
-`.claude/` all at root) — is **v0.2**. If asked, decline politely and say why (an agent under a
+`.claude/` all at root) — is **out of scope**. If asked, decline politely and say why (an agent under a
 "make gates green" mandate inside real code can weaken tests/code to pass; greenfield bounds that
 blast radius), and leave value behind: point the user at `references/canon/gate-interface.md` for
 the 7-gate contract they can wire by hand today.
@@ -81,21 +81,26 @@ Hold these on every run; the session diff must contain no violation of them.
 Run these in order. Each phase ends on ONE completion criterion — do not advance until it holds.
 
 **Phase 0 — Resolve parameters + currency.** Collect: stack · app name · package manager
-(JS default npm) · SonarCloud org/key **or defer** · runner label (`ubuntu-latest` |
+(JS default npm) · SonarCloud org/key **or placeholders** · lint source (**org preset if one exists** — see the
+stack adapter's "Org preset" section — else inline canon) · runner label (`ubuntu-latest` |
 `ubicloud-standard-2`) · toolchain pin version · commit strategy (amend the Phase-1 init commit
 so guardrails literally land in commit #1, vs a fresh follow-up commit — every adapter disables
 the scaffolder's own git, so there is no scaffolder commit to amend; "amend" means the init
 commit Phase 1 creates). Confirm the scaffolder invocation against live docs via the currency
 ladder (§6) — never training recall. **Load the stack's adapter file now** (§5).
-If the user is unreachable or gave no parameters (cron/CI/SDK with no AskUserQuestion), apply
+**Non-interactive means no reply can arrive in this session** (one-shot/print mode, cron, CI,
+no question-asking tool available). In that mode, asking anything IS the failure — a question
+with no reply channel ends the run with nothing scaffolded. Apply declared defaults and proceed;
+the consent gate's non-interactive branch is the `TODO(skills-install)` block, never a question.
+If the user is unreachable or gave no parameters, apply
 declared defaults — never silent inference: stack = **ask, or abort if unreachable** (never guess
 a stack), name = derived from the request, PM = npm, runner = `ubuntu-latest`, toolchain =
-current stable resolved live via §6, sonar = deferred, commit = fresh. Label each `defaulted` in
+current stable resolved live via §6, sonar = placeholders, lint source = inline, commit = fresh. Label each `defaulted` in
 the echoed block. **Preflight the stack's required tools** (§5 adapter prerequisites) before
 Phase 1: any missing binary → offer the exact install command; user declines → abort here (§6),
 never a partial scaffold.
-*Complete when:* the parameter block is echoed with a value for **every** parameter (deferred
-and defaulted are values; silently-inferred is not) AND the scaffolder command is confirmed via
+*Complete when:* the parameter block is echoed with a value for **every** parameter (`placeholders`
+and `defaulted` are values; silently-inferred is not) AND the scaffolder command is confirmed via
 the ladder AND every required stack tool is on PATH (or its install was consented to).
 
 **Phase 1 — Scaffold + baseline.** Run the adapter's official scaffolder with explicit flags.

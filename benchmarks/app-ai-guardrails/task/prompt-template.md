@@ -15,3 +15,4 @@ example an input-validation or classification handler that responds differently 
 invalid input. Set the project up to the standard you would expect for a codebase a team will
 maintain long-term and hand off to other engineers and to CI: it should be well-tested and in a
 clean, working, committed state when you finish.
+Do not ask questions; proceed with sensible defaults for anything unspecified.

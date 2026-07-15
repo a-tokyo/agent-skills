@@ -14,11 +14,11 @@ duplication (the config block *is* the artifact). They do not appear in SKILL.md
 
 | Stack | Tool | Axes | Threshold(s) |
 |---|---|---|---|
-| Next / Nest | vitest v8 | statements, branches, functions, lines | **statements 85 · branches 71 · functions 76 · lines 86** |
-| Django | coverage.py (`branch=true`) | statements + branches (blended); no functions metric | **single `--cov-fail-under=85`** |
-| Go | `go tool cover` | statements only | **single statements-total 80** over app packages |
-| Rust | cargo-llvm-cov | lines, functions, regions (no stable branch) | **lines 86 · functions 76 · regions 71** |
-| Spring Boot | JaCoCo | instruction, branch, method, line (all 4 native — least-degraded non-JS stack) | **instruction 85 · branch 71 · method 76 · line 86** |
+| Next / Nest | vitest v8 | statements, branches, functions, lines | **statements 90 · branches 85 · functions 90 · lines 90** |
+| Django | coverage.py (`branch=true`) | statements + branches (blended); no functions metric | **single `--cov-fail-under=90`** |
+| Go | `go tool cover` | statements only | **single statements-total 90** over app packages |
+| Rust | cargo-llvm-cov | lines, functions, regions (no stable branch) | **lines 90 · functions 90 · regions 85** |
+| Spring Boot | JaCoCo | instruction, branch, method, line (all 4 native — least-degraded non-JS stack) | **instruction 90 · branch 85 · method 90 · line 90** |
 
 ## Denominator rule
 

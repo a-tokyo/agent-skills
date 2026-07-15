@@ -114,7 +114,7 @@ test:
 
 coverage:
     go test -covermode=atomic -coverpkg=./internal/... -coverprofile=coverage.out ./...
-    ./scripts/coverage-gate.sh coverage.out 80
+    ./scripts/coverage-gate.sh coverage.out 90
 
 build:
     go build ./...
@@ -162,7 +162,7 @@ Go ships one number (statements only) — never fabricate a branches axis (`refe
 
 `govulncheck ./...` (reachability-aware) is the `audit` gate. `go.sum` is auto-verified (GOSUMDB
 on) — never disable it (`references/canon/supply-chain.md` Go don'ts). No native min-release-age
-(honest negative; `gomod-age` is a v0.2 candidate, not adopted).
+(honest negative; the third-party `gomod-age` tool exists but is not adopted — stdlib-first).
 
 ## Hooks (verbatim)
 

@@ -118,6 +118,9 @@ Each is one line; this doubles as a lint-the-lints checklist for future adapters
 - missing `--max-warnings=0` (eslint) — warn-severity findings pass.
 - `ignoreFailures = true` (Checkstyle/PMD/JaCoCo verification, Spring Boot) — swallows the failure.
 - a meta-runner file duplicating a native one (a justfile in a JS or Rust repo) — two sources of truth.
+- a severity-only ESLint override of a rule an earlier spread configured WITH OPTIONS — flat
+  config retains the old options, silently keeping an allow-list alive (pass explicit options,
+  e.g. `['error', {}]`).
 
 ## Unknown-repo probe order
 

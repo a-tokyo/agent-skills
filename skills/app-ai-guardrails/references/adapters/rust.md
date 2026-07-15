@@ -77,7 +77,7 @@ The `lint` alias carries `-D warnings` (belt-and-suspenders with the declarative
 lint      = "clippy --all-targets --all-features -- -D warnings"
 typecheck = "check --all-targets"
 test      = "test --workspace --lib --bins"
-coverage  = "llvm-cov --workspace --lcov --output-path lcov.info --fail-under-lines 86 --fail-under-functions 76 --fail-under-regions 71"
+coverage  = "llvm-cov --workspace --lcov --output-path lcov.info --fail-under-lines 90 --fail-under-functions 90 --fail-under-regions 85"
 e2e       = "test --workspace --test e2e"
 build     = "build --release"
 audit     = "deny check"

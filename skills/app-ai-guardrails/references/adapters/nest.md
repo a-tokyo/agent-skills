@@ -84,7 +84,7 @@ block — the `e2e` gate runs `vitest run --config vitest.config.e2e.ts`.
 `references/canon/coverage.md`):
 
 ```js
-export const COVERAGE_THRESHOLDS = { statements: 85, branches: 71, functions: 76, lines: 86 };
+export const COVERAGE_THRESHOLDS = { statements: 90, branches: 85, functions: 90, lines: 90 };
 ```
 
 ## ESLint (append)
@@ -95,6 +95,10 @@ Nest's config is already `tseslint.config(...)`, so append one block (last-objec
 `bootstrap()` idiom — keep `@typescript-eslint/no-floating-promises` at `warn`, Nest's default).
 Swap `...globals.jest` → `...globals.vitest` (one-line key change). `lint` passes `--max-warnings=0`.
 Pin `"eslint-plugin-unicorn": "^65"` with the same rationale comment as Next (eslint 9.x compat).
+Reuse Next's rule details verbatim where they apply here: explicit options `{}` on any rule an
+earlier spread configured (option-retention), the `**/*.d.ts` `no-var`/`vars-on-top` override,
+`sonarjs/no-alphabetical-sort` off in the test-relaxation block (+ `e2e/**` in its globs), and
+the "Org preset instead of inline config" section (the factory would be `nest({...})`).
 
 ## Coverage exclusions
 
