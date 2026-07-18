@@ -162,8 +162,9 @@ export default next({
 - Private presets distribute fine as a git tag dependency
   (`"@your-org/javascript": "github:your-org/javascript#0.1.1"`) — no registry needed.
 - Turning a strict shared bar on over existing code surfaces a backlog: burn it down, or use
-  ESLint's native suppressions (`--suppress-all`, prune with `--pass-on-unpruned-suppressions`)
-  as a shrinking baseline — never weaken the preset itself.
+  ESLint's native suppressions as a shrinking baseline (`--suppress-all` to record it, prune with
+  `--pass-on-unpruned-suppressions`; verify the flags against `eslint --help` at use time — §6
+  currency rule) — never weaken the preset itself.
 
 If no preset exists: use the inline config above; an org with more than one repo should extract
 one (this section is the target shape).

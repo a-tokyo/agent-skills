@@ -1,5 +1,5 @@
 {
-  "name": "agent-skills",
+  "name": "a-tokyo-skills",
   "owner": { "name": "Ahmed Tokyo" },
   "description": "Reusable agent skills for AI coding assistants — install one skill at a time, or all of them.",
   "plugins": [

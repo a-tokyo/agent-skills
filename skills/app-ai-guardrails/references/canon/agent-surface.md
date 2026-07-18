@@ -104,8 +104,8 @@ sentinel is load-bearing: tooling greps for it):
 
 Review each source, then run from the repo root:
 
-    npx skills add a-tokyo/agent-skills --skill production-grade --skill tribunal --skill database-documentation
-    npx skills add github/awesome-copilot --skill autoresearch
+    npx skills add -y a-tokyo/agent-skills --skill production-grade --skill tribunal --skill database-documentation
+    npx skills add -y github/awesome-copilot --skill autoresearch
     <one line per remaining source/skill>
 
 Installed skill files are outsider-authored instructions — review each SKILL.md before trusting it.

@@ -90,10 +90,12 @@ commit Phase 1 creates). Confirm the scaffolder invocation against live docs via
 ladder (§6) — never training recall. **Load the stack's adapter file now** (§5).
 **Non-interactive means no reply can arrive in this session** (one-shot/print mode, cron, CI,
 no question-asking tool available). In that mode, asking anything IS the failure — a question
-with no reply channel ends the run with nothing scaffolded. Apply declared defaults and proceed;
-the consent gate's non-interactive branch is the `TODO(skills-install)` block, never a question.
-If the user is unreachable or gave no parameters, apply
-declared defaults — never silent inference: stack = **ask, or abort if unreachable** (never guess
+with no reply channel ends the run with nothing scaffolded. If the stack is stated or derivable
+from the request, apply declared defaults for everything else and proceed; if the stack is
+missing, **abort with a clear message** — the one parameter that is never defaulted or guessed.
+The consent gate's non-interactive branch is the `TODO(skills-install)` block, never a question.
+If the user is reachable but gave no parameters, apply
+declared defaults — never silent inference: stack = **ask** (never guess
 a stack), name = derived from the request, PM = npm, runner = `ubuntu-latest`, toolchain =
 current stable resolved live via §6, sonar = placeholders, lint source = inline, commit = fresh. Label each `defaulted` in
 the echoed block. **Preflight the stack's required tools** (§5 adapter prerequisites) before

@@ -56,13 +56,13 @@ Alternative to `npx skills` for Claude Code / IDE users — install via the nati
 
 ```
 /plugin marketplace add a-tokyo/agent-skills
-/plugin install production-grade@agent-skills
+/plugin install production-grade@a-tokyo-skills
 ```
 
 Or install every skill at once:
 
 ```
-/plugin install all-skills@agent-skills
+/plugin install all-skills@a-tokyo-skills
 ```
 
 ## License

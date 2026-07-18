@@ -135,11 +135,17 @@ versions_json() {
 # ---------- run the agent ----------
 START_TS="$(date +%s)"
 set +e
-# portable timeout: macOS ships no coreutils `timeout`; perl's alarm+exec is always available.
-( cd "$WORK" && perl -e 'alarm shift @ARGV; exec @ARGV' -- 2400 claude -p "$(cat "$RUN/prompt.txt")" \
+# hard watchdog: SIGALRM proved soft (runs observed hanging 60-99min past the 2400s alarm —
+# the CLI survives it). TERM at the deadline, KILL 30s later, wait reaps the survivor's code.
+( cd "$WORK" && claude -p "$(cat "$RUN/prompt.txt")" \
     --model "$MODEL_ID" \
     --dangerously-skip-permissions \
     --max-turns 150 \
+    & CLAUDE_PID=$!
+    ( sleep 2400 && kill -TERM "$CLAUDE_PID" 2>/dev/null && sleep 30 && kill -KILL "$CLAUDE_PID" 2>/dev/null ) & WATCHDOG=$!
+    wait "$CLAUDE_PID"; RC=$?
+    kill "$WATCHDOG" 2>/dev/null
+    exit "$RC"
   ) 2>&1 | tee "$RUN/transcript.txt"
 EXIT_CODE=${PIPESTATUS[0]}
 set -e
