@@ -256,8 +256,16 @@ function cat3Next() {
   let maximal = grepAny(eslintText, ['sonarjs', 'eslint-plugin-unicorn', 'unicorn']);
   let complexity = grepAny(eslintText, [/cognitive-complexity["'\s:,]+["']?error["']?[\s,\]]*15/, /"sonarjs\/cognitive-complexity"\s*:\s*\[\s*"error"\s*,\s*15/, /cognitive-complexity.{0,20}15/s]);
   if (eslintCfg && (!maximal || !complexity)) {
-    const probeFile = ['src/app/page.tsx', 'src/main.ts', 'src/index.ts'].find((f) => exists(f)) || 'src/app/page.tsx';
-    const res = run(`npx --no-install eslint --print-config ${probeFile}`, repoDir, 120000);
+    // resolve against a REAL source file — the old fixed-path fallback passed a nonexistent
+    // path on non-src layouts, failing --print-config and false-negating preset repos
+    // (Copilot R2, PR #17). Reuse the mutation-target walker; no file -> keep text verdicts.
+    const probeFile = (() => {
+      const fixed = ['src/app/page.tsx', 'src/main.ts', 'src/index.ts'].find((f) => exists(f));
+      if (fixed) return fixed;
+      const t = pickMutationTarget(EXT_BY_STACK[stack] || ['.ts', '.tsx']);
+      return t ? path.relative(repoDir, t) : null;
+    })();
+    const res = probeFile ? run(`npx --no-install eslint --print-config "${probeFile}"`, repoDir, 120000) : { status: 1 };
     if (res.status === 0) {
       try {
         const resolved = JSON.parse(res.stdout);

@@ -142,7 +142,8 @@ set +e
     --dangerously-skip-permissions \
     --max-turns 150 \
     & CLAUDE_PID=$!
-    ( sleep 2400 && kill -TERM "$CLAUDE_PID" 2>/dev/null && sleep 30 && kill -KILL "$CLAUDE_PID" 2>/dev/null ) & WATCHDOG=$!
+    ( sleep 2400 && kill -TERM "$CLAUDE_PID" 2>/dev/null && sleep 30 && \
+      case "$(ps -p "$CLAUDE_PID" -o comm= 2>/dev/null)" in *claude*|*node*) kill -KILL "$CLAUDE_PID" 2>/dev/null ;; esac ) & WATCHDOG=$!
     wait "$CLAUDE_PID"; RC=$?
     kill "$WATCHDOG" 2>/dev/null
     exit "$RC"
