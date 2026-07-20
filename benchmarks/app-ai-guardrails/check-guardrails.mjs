@@ -250,11 +250,35 @@ teethProbeSafe('typecheck', 4);
 function cat3Next() {
   const eslintCfg = exists('eslint.config.mjs') ? 'eslint.config.mjs' : (exists('eslint.config.js') ? 'eslint.config.js' : null);
   const eslintText = eslintCfg ? readFileSafe(path.join(repoDir, eslintCfg)) : null;
-  const maximal = grepAny(eslintText, ['sonarjs', 'eslint-plugin-unicorn', 'unicorn']);
-  probe('static', 'maximal_ruleset', 4, maximal, `eslint config=${eslintCfg}`);
-
-  const complexity = grepAny(eslintText, [/cognitive-complexity["'\s:,]+["']?error["']?[\s,\]]*15/, /"sonarjs\/cognitive-complexity"\s*:\s*\[\s*"error"\s*,\s*15/, /cognitive-complexity.{0,20}15/s]);
-  probe('static', 'complexity_15', 3, complexity, 'sonarjs/cognitive-complexity threshold 15');
+  // Preset-composed configs (org preset package, v0.0.3) contain an import specifier instead of
+  // the literal plugin names — resolve the RULES when the text grep misses, so a thin-consumer
+  // config scores the same as an inline one. `--print-config` is authoritative for both shapes.
+  let maximal = grepAny(eslintText, ['sonarjs', 'eslint-plugin-unicorn', 'unicorn']);
+  let complexity = grepAny(eslintText, [/cognitive-complexity["'\s:,]+["']?error["']?[\s,\]]*15/, /"sonarjs\/cognitive-complexity"\s*:\s*\[\s*"error"\s*,\s*15/, /cognitive-complexity.{0,20}15/s]);
+  if (eslintCfg && (!maximal || !complexity)) {
+    // resolve against a REAL source file — the old fixed-path fallback passed a nonexistent
+    // path on non-src layouts, failing --print-config and false-negating preset repos
+    // (Copilot R2, PR #17). Reuse the mutation-target walker; no file -> keep text verdicts.
+    const probeFile = (() => {
+      const fixed = ['src/app/page.tsx', 'src/main.ts', 'src/index.ts'].find((f) => exists(f));
+      if (fixed) return fixed;
+      const t = pickMutationTarget(EXT_BY_STACK[stack] || ['.ts', '.tsx']);
+      return t ? path.relative(repoDir, t) : null;
+    })();
+    const res = probeFile ? run(`npx --no-install eslint --print-config "${probeFile}"`, repoDir, 120000) : { status: 1 };
+    if (res.status === 0) {
+      try {
+        const resolved = JSON.parse(res.stdout);
+        const rules = resolved.rules || {};
+        const sonarActive = Object.keys(rules).filter((r) => r.startsWith('sonarjs/')).length;
+        if (!maximal) maximal = sonarActive >= 10;
+        const cc = rules['sonarjs/cognitive-complexity'];
+        if (!complexity) complexity = Array.isArray(cc) && Number(cc[1]) === 15;
+      } catch { /* fall through to text-grep verdicts */ }
+    }
+  }
+  probe('static', 'maximal_ruleset', 4, maximal, `eslint config=${eslintCfg} (text or resolved)`);
+  probe('static', 'complexity_15', 3, complexity, 'sonarjs/cognitive-complexity threshold 15 (text or resolved)');
 
   const tsconfig = readJsonSafe(path.join(repoDir, 'tsconfig.json'));
   const strict = !!(tsconfig && tsconfig.compilerOptions && tsconfig.compilerOptions.strict === true);

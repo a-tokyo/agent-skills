@@ -240,10 +240,10 @@ jacocoTestCoverageVerification {
     }
     violationRules {
         rule {
-            limit { counter = 'INSTRUCTION'; value = 'COVEREDRATIO'; minimum = 0.85 }
-            limit { counter = 'BRANCH';      value = 'COVEREDRATIO'; minimum = 0.71 }
-            limit { counter = 'METHOD';      value = 'COVEREDRATIO'; minimum = 0.76 }
-            limit { counter = 'LINE';        value = 'COVEREDRATIO'; minimum = 0.86 }
+            limit { counter = 'INSTRUCTION'; value = 'COVEREDRATIO'; minimum = 0.90 }
+            limit { counter = 'BRANCH';      value = 'COVEREDRATIO'; minimum = 0.85 }
+            limit { counter = 'METHOD';      value = 'COVEREDRATIO'; minimum = 0.90 }
+            limit { counter = 'LINE';        value = 'COVEREDRATIO'; minimum = 0.90 }
         }
     }
 }
@@ -253,7 +253,7 @@ tasks.register('coverage') {
 ```
 
 JaCoCo genuinely has all 4 axes (unlike Go/Django's real degradations) — thresholds reuse the
-N/Ne numbers verbatim (85/71/76/86), mapped `statements`→`INSTRUCTION` (the one honest proxy:
+N/Ne numbers verbatim (90/85/90/90), mapped `statements`→`INSTRUCTION` (the one honest proxy:
 bytecode-instruction granularity, JaCoCo has no separate source-statement counter),
 `branches`→`BRANCH`, `functions`→`METHOD`, `lines`→`LINE` (all three exact). `*Application.class`
 excluded from both the report and verification denominator — the bootstrap-exclusion rule

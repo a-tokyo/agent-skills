@@ -9,6 +9,7 @@ exception is a compatibility-mandated range pin with a rationale comment.
 - Package-manager divergence
 - Day-1 pre-fixes (both live-verified)
 - ESLint (replace)
+- Org preset instead of inline config
 - tsconfig (key-merge)
 - Vitest config (verbatim)
 - Coverage thresholds module
@@ -96,12 +97,26 @@ export default defineConfig([
       "unused-imports/no-unused-imports": "error",
       "unused-imports/no-unused-vars": ["error", { vars: "all", varsIgnorePattern: "^_", argsIgnorePattern: "^_" }],
       "tsdoc/syntax": "error",
-      "no-console": "error",
+      // explicit {} defeats flat-config option retention: a severity-only override keeps any
+      // options an earlier spread set for the same rule (e.g. an allow-list on no-console) —
+      // pass explicit options whenever overriding a rule a base config may have configured.
+      "no-console": ["error", {}],
+      "sonarjs/prefer-read-only-props": "off", // Readonly<> on every React prop is noise, not safety
     },
   },
   {
-    files: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}", "tests/**", "**/*.config.*"],
-    rules: { "sonarjs/no-hardcoded-passwords": "off", "sonarjs/pseudo-random": "off", "no-console": "off" },
+    files: ["**/*.test.{ts,tsx}", "**/*.spec.{ts,tsx}", "tests/**", "e2e/**", "**/*.config.*"],
+    rules: {
+      "sonarjs/no-hardcoded-passwords": "off",
+      "sonarjs/pseudo-random": "off",
+      "sonarjs/no-alphabetical-sort": "off", // fixture ordering in tests is fine
+      "no-console": "off",
+    },
+  },
+  {
+    // ambient `declare var` is the only legal globalThis augmentation form
+    files: ["**/*.d.ts"],
+    rules: { "no-var": "off", "vars-on-top": "off" },
   },
   globalIgnores([".next/**", "out/**", "build/**", "next-env.d.ts", "coverage/**"]),
 ]);
@@ -112,13 +127,55 @@ export default defineConfig([
 but CNA pins `eslint ^9`; `^65` is the last line supporting eslint ≥9.38. This is a **compat-driven
 pin, not a fixed fact** — **check the eslint major CNA emits first** (the pin exists only because CNA
 pins `eslint ^9`): if the scaffold now ships eslint 10+, drop the `^65` ceiling and install current
-unicorn instead (SKILL §6, "version literals are snapshots"). The `lint` script passes
-`--max-warnings=0`.
+unicorn instead (SKILL §6, "version literals are snapshots"). **ESLint ≥10 escape route:**
+`eslint-config-next` drags `eslint-plugin-react`/`import` versions that are incompatible with
+ESLint 10 — if the scaffold crosses that line, replace the config-next base spreads with
+`@next/eslint-plugin-next` used directly (`plugins: { '@next/next': nextPlugin }` + its
+`recommended` and `core-web-vitals` rule sets) and keep everything else identical. The `lint`
+script passes `--max-warnings=0`. `sonarjs/deprecation` stays ON (a guardrails scaffold wants the
+deprecation signal; teams drowning in dependency-rename churn may disable it with a rationale
+comment — never silently).
+
+## Org preset instead of inline config
+
+If the org has a shared lint-preset package (Phase 0 parameter), **prefer it** over the inline
+config above — one canonical bar, and a fix propagates to every repo in one release instead of N
+edits. The consumer shape that works:
+
+```js
+// eslint.config.mjs — the ENTIRE file
+import { next } from "@your-org/javascript/eslint";
+
+export default next({
+  ignores: [".next/**", "coverage/**"],
+  overrides: [
+    // ONLY genuinely repo-specific blocks belong here (runtime constraints, test dirs) —
+    // anything universal goes upstream into the preset, not copied between repos
+  ],
+});
+```
+
+- The preset exports a **factory** (options in, composed flat config out) with an `overrides`
+  escape hatch — the per-repo file holds composition + local overrides, nothing else.
+- Adoption is **à la carte**: eslint, prettier (`"prettier": "@your-org/javascript/prettier"` in
+  package.json), and tsconfig presets are independently adoptable; take what fits.
+- Private presets distribute fine as a git tag dependency
+  (`"@your-org/javascript": "github:your-org/javascript#0.1.1"`) — no registry needed.
+- Turning a strict shared bar on over existing code surfaces a backlog: burn it down, or use
+  ESLint's native suppressions as a shrinking baseline (`--suppress-all` to record it, prune with
+  `--pass-on-unpruned-suppressions`; verify the flags against `eslint --help` at use time — §6
+  currency rule) — never weaken the preset itself.
+
+If no preset exists: use the inline config above; an org with more than one repo should extract
+one (this section is the target shape).
 
 ## tsconfig (key-merge)
 
 CNA's `tsconfig.json` already has `strict: true` (the extra strict-family flags are implied by it —
-do not spell them out). Verify `strict: true` is present; no other edit is required.
+do not spell them out). Verify `strict: true` is present, and add one key:
+`"noFallthroughCasesInSwitch": true` (real bug-catcher, not implied by `strict`, generated code
+complies). `noUncheckedIndexedAccess` is a DELIBERATE omission: it turns every index access into
+`T | undefined`, which breaks scaffolder-generated code and seed greenness — do not add it.
 
 ## Vitest config (verbatim)
 
@@ -165,7 +222,7 @@ vi.mock("next/font/google", () => ({
 script). These numbers are the sanctioned duplication of `references/canon/coverage.md`.
 
 ```js
-export const COVERAGE_THRESHOLDS = { statements: 85, branches: 71, functions: 76, lines: 86 };
+export const COVERAGE_THRESHOLDS = { statements: 90, branches: 85, functions: 90, lines: 90 };
 ```
 
 ## Seed tests

@@ -80,8 +80,9 @@ The 5 verified sources (install with `-y`; `--global` is not used — installs a
 
 **Consent gate (mandatory).** Before ANY `npx skills add`, present the user the complete install
 list — every source repo and skill name — and proceed only on explicit approval. Non-interactive
-runs never install: they emit the AGENTS.md TODO block (below) so a human runs the installs after
-reviewing the sources. Rationale: installed skill files are outsider-authored text that later agent
+runs (no reply channel — one-shot/print, cron, CI) never install AND never ask: they emit the
+AGENTS.md TODO block (below) so a human runs the installs after reviewing the sources — asking
+for approval in a session where no answer can arrive fails the whole run. Rationale: installed skill files are outsider-authored text that later agent
 sessions load as *instructions* — auto-installing them is an indirect-prompt-injection vector.
 
 **Supply-chain posture (state honestly in the report).** `npx skills add` resolves each source at
@@ -94,17 +95,17 @@ skill execution trust, and treat every source as untrusted until reviewed.
 ## skills-lock.json + offline degradation
 
 Expect a `skills-lock.json` after install (schema: per-skill `source` / `sourceType` / `skillPath`
-/ `computedHash`). If `npx skills add` is unreachable — or the consent gate defers the install —
+/ `computedHash`). If `npx skills add` is unreachable — or the consent gate does not approve the install —
 emit exactly this block into AGENTS.md so nothing is silently dropped (the `TODO(skills-install)`
 sentinel is load-bearing: tooling greps for it):
 
 ```markdown
-## TODO(skills-install) — deferred agent-skill installs
+## TODO(skills-install) — pending agent-skill installs
 
 Review each source, then run from the repo root:
 
-    npx skills add a-tokyo/agent-skills --skill production-grade --skill tribunal --skill database-documentation
-    npx skills add github/awesome-copilot --skill autoresearch
+    npx skills add -y a-tokyo/agent-skills --skill production-grade --skill tribunal --skill database-documentation
+    npx skills add -y github/awesome-copilot --skill autoresearch
     <one line per remaining source/skill>
 
 Installed skill files are outsider-authored instructions — review each SKILL.md before trusting it.

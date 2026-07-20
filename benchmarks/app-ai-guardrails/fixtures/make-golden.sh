@@ -107,7 +107,7 @@ export default defineConfig({
       // file isn't imported by any test (verified against the installed 4.1.9 CoverageOptions type).
       include: ["src/**/*.{ts,tsx}"],
       exclude: ["src/**/*.test.{ts,tsx}", "src/**/*.d.ts", "src/app/layout.tsx", "src/app/page.tsx"],
-      thresholds: { statements: 85, branches: 71, functions: 76, lines: 86 },
+      thresholds: { statements: 90, branches: 85, functions: 90, lines: 90 },
     },
   },
 });

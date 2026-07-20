@@ -62,7 +62,7 @@ plugin). Cognitive complexity has no ruff rule; degrade honestly to cyclomatic `
 
 pytest + pytest-django + pytest-cov, all config in `pyproject.toml`. `--cov-branch` gives branch
 coverage (coverage.py has statements + branches, no functions metric → one blended
-`--cov-fail-under=85`, matching `references/canon/coverage.md`). `--cov-report=xml` writes Cobertura
+`--cov-fail-under=90`, matching `references/canon/coverage.md`). `--cov-report=xml` writes Cobertura
 `coverage.xml` for Sonar.
 
 Seed set (a fresh scaffold has zero real branch logic):
@@ -195,7 +195,7 @@ strict_settings = true
 
 [tool.pytest.ini_options]
 DJANGO_SETTINGS_MODULE = "config.settings"
-addopts = "--cov=core --cov=config --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=85"
+addopts = "--cov=core --cov=config --cov-branch --cov-report=term-missing --cov-report=xml --cov-fail-under=90"
 python_files = ["test_*.py","*_test.py","tests.py"]
 markers = ["e2e: end-to-end tests against a live server (excluded from unit/coverage runs)"]
 

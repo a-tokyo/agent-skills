@@ -74,9 +74,9 @@ org-level step the skill cannot perform:
 
 ## Scope
 
-Greenfield only in v1. **Retrofitting** the canon onto an existing codebase — or scaffolding a new
+Greenfield only. **Retrofitting** the canon onto an existing codebase — or scaffolding a new
 package/service **inside an existing monorepo** (every mechanism assumes repo-root ownership: hooks,
-CI, commit #1, `.claude/` all at root) — is planned for **v0.2** (an agent under a "make gates green"
+CI, commit #1, `.claude/` all at root) — is **out of scope** (an agent under a "make gates green"
 mandate inside real code can weaken tests/code to pass; greenfield bounds that blast radius). This
 skill is not for LLM-safety/content-moderation guardrails, nor for adding a single tool to an
 existing project.
