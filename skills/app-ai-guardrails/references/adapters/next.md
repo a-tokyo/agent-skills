@@ -138,15 +138,16 @@ comment — never silently).
 
 ## Org preset instead of inline config
 
-If the org has a shared lint-preset package (Phase 0 parameter), **prefer it** over the inline
-config above — one canonical bar, and a fix propagates to every repo in one release instead of N
-edits. The consumer shape that works:
+If the org has a shared lint-preset package (Phase 0 parameter — e.g. the published
+`@zoldytech/javascript`), **prefer it** over the inline config above — one canonical bar, and a fix
+propagates to every repo in one release instead of N edits. The consumer shape that works:
 
 ```js
 // eslint.config.mjs — the ENTIRE file
-import { next } from "@your-org/javascript/eslint";
+import { next } from "@zoldytech/javascript/eslint";
 
 export default next({
+  typeChecked: true, // if the preset gates a type-aware ruleset (needs tsconfig include in sync)
   ignores: [".next/**", "coverage/**"],
   overrides: [
     // ONLY genuinely repo-specific blocks belong here (runtime constraints, test dirs) —
@@ -157,10 +158,16 @@ export default next({
 
 - The preset exports a **factory** (options in, composed flat config out) with an `overrides`
   escape hatch — the per-repo file holds composition + local overrides, nothing else.
-- Adoption is **à la carte**: eslint, prettier (`"prettier": "@your-org/javascript/prettier"` in
+- **The preset owns its own peer floors** — ESLint, `unicorn`, Node. Adopting one means matching
+  its required versions (e.g. `@zoldytech/javascript` requires ESLint 10.4+ and bundles its own
+  `unicorn`); **drop the inline `eslint-plugin-unicorn` pin above** and don't re-pin those peers by
+  hand — the preset resolves them. That inline pin applies only to the no-preset path.
+- Adoption is **à la carte**: eslint, prettier (`"prettier": "@zoldytech/javascript/prettier"` in
   package.json), and tsconfig presets are independently adoptable; take what fits.
-- Private presets distribute fine as a git tag dependency
-  (`"@your-org/javascript": "github:your-org/javascript#0.1.1"`) — no registry needed.
+- Published presets install from the registry
+  (`"@zoldytech/javascript": "^0.1.4"`) like any dependency. Private/unpublished presets distribute
+  fine as a git tag dependency instead (`"@zoldytech/javascript": "github:zoldytech/javascript#0.1.4"`)
+  — no registry needed.
 - Turning a strict shared bar on over existing code surfaces a backlog: burn it down, or use
   ESLint's native suppressions as a shrinking baseline (`--suppress-all` to record it, prune with
   `--pass-on-unpruned-suppressions`; verify the flags against `eslint --help` at use time — §6
