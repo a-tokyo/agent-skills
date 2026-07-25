@@ -180,14 +180,35 @@ const instructsReportAddress = (raw) =>
 // Letting the combined form set both flags was a false-PASS vector (caught in review): a
 // dispatch that never mentions the doer budget would have scored as carrying it.
 
-const ROUND = "(?:round|iteration|cycle|panel pass|pass)";
+// Plural matters: ledgers write "max 3 panel rounds", and \bround\b does not match "rounds".
+const ROUND = "(?:round|iteration|cycle|panel pass|pass)e?s?";
 const RE_ROUND_COMBINED = new RegExp(`\\b${ROUND}\\b.{0,20}?\\b(\\d+)\\s*(?:\\/|of|out of)\\s*(\\d+)\\b`, "i");
 const RE_ROUND_INDEX = new RegExp(
   `\\b${ROUND}\\b.{0,20}?[#:]?\\s*(\\d+)\\b|\\b(\\d+)(?:st|nd|rd|th)\\s+(?:panel\\s+)?${ROUND}\\b`,
   "i",
 );
-const RE_BUDGET =
-  /\bbudget\b.{0,40}?\d+|\d+.{0,40}?\bbudget\b|\b\d+\s+(?:doer\s+)?(?:dispatch(?:es)?|round(?:s)?|iteration(?:s)?|attempt(?:s)?)\s+(?:remaining|left)\b|\b(?:remaining|left)\b.{0,30}?\b\d+\b/i;
+// Forms observed in real captures, which the first draft of this regex missed entirely:
+//   "Budgets: max 3 panel rounds, max 5 doer dispatches"   (plural — \bbudget\b fails)
+//   "Budgets used: 3 of 3 panel rounds, 3 of 5 doer dispatches"
+//   "doer dispatch #2 of a 5-dispatch budget"
+//   "doer dispatch #1 of 5 used"
+// An orchestrator that is tracking spend says "#2 of 5", not "3 remaining"; requiring the
+// word "remaining" was measuring a phrasing rather than the behaviour.
+const RE_BUDGET = new RegExp(
+  [
+    String.raw`\bbudgets?\b.{0,60}?\d+`,
+    String.raw`\d+.{0,60}?\bbudgets?\b`,
+    // NOTE: "round" is deliberately absent from these two. "round 2 of 3" is the panel
+    // cap, not the doer-dispatch budget — admitting it here would re-open the false PASS
+    // fixed earlier, where a dispatch that never mentions the doer budget scores as
+    // carrying it.
+    String.raw`\b(?:dispatch|iteration|attempt)e?s?\s*#?\s*\d+\s*(?:of|out of|\/)\s*\d+`,
+    String.raw`\b\d+\s*(?:of|out of|\/)\s*\d+\s+(?:doer\s+)?(?:dispatch|iteration|attempt)`,
+    String.raw`\b\d+\s+(?:doer\s+)?(?:dispatch|round|iteration|attempt)e?s?\s+(?:remaining|left|used)\b`,
+    String.raw`\b(?:remaining|left)\b.{0,30}?\b\d+\b`,
+  ].join("|"),
+  "i",
+);
 
 function budgetSignals(rawTexts) {
   let round = false;
@@ -213,6 +234,11 @@ try {
 const read = (f) => readFileSync(join(dir, f), "utf8");
 
 const doerFile = files.find((f) => /^doer\.txt$/i.test(f));
+// Every doer dispatch, not just round 1's. Iteration is where the counters become
+// load-bearing: on the FIRST dispatch nothing has been spent yet, so a round-1-only scan
+// looks for evidence that cannot exist. Real captures state "doer dispatch #2 of a
+// 5-dispatch budget" on the re-dispatches — which a doer.txt-only scan never sees.
+const doerFiles = files.filter((f) => /^doer(-\d+)?\.txt$/i.test(f)).sort();
 const reportFile = files.find((f) => /^doer[-_]report\.txt$/i.test(f));
 const verifierFiles = files.filter((f) => /^verifier[-_].*\.txt$/i.test(f)).sort();
 const ledgerFiles = files.filter((f) => /^ledger\.(txt|md)$/i.test(f));
@@ -275,11 +301,7 @@ for (const f of verifierFiles) {
 }
 
 // --- 4. round index + remaining budget travel in the dispatch or ledger ---
-const budgetTexts = [
-  ...(doerFile ? [read(doerFile)] : []),
-  ...verifierFiles.map(read),
-  ...ledgerFiles.map(read),
-];
+const budgetTexts = [...doerFiles.map(read), ...verifierFiles.map(read), ...ledgerFiles.map(read)];
 const sig = budgetSignals(budgetTexts);
 const r = note(sig.round, "no panel-round index in the dispatch or ledger");
 const b = note(

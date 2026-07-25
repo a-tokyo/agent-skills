@@ -127,9 +127,9 @@ for (const c of cases) {
 // directory is built by extract-dispatch.mjs, and a bug there costs a paid capture — it
 // already ate one during development, by filing the doer prompt under the panel because a
 // v0.0.3 doer prompt legitimately mentions the verifiers. This replays the whole chain
-// offline. The envelope below mirrors Claude Code's `--output-format stream-json --verbose`;
-// it is a MODEL of that format, not proof of it, so the shape stays unconfirmed until the
-// first live capture.
+// offline. The envelope below was verified against a live `--output-format stream-json
+// --verbose` capture — `tool_use` blocks carry id/name/input, and `tool_result.content` may
+// be a bare string or an array of typed blocks.
 // ---------------------------------------------------------------------------
 
 function synthStream(fixtureDir) {
@@ -293,7 +293,46 @@ for (const [phrase, want, why] of recognition) {
   );
 }
 
-const total = cases.length + plumbing.length + recognition.length;
+// ---------------------------------------------------------------------------
+// Budget phrasing, transcribed verbatim from a live v0.0.3 capture.
+//
+// The first draft of RE_BUDGET failed ALL of these and passed the run as
+// budget_carried=0 while the orchestrator was in fact tracking spend meticulously in its
+// ledger — a false FAIL on the metric most likely to be mistaken for a skill regression.
+// The lesson: an orchestrator tracking spend writes "#2 of 5", not "3 remaining".
+// ---------------------------------------------------------------------------
+
+const budgetPhrases = [
+  ["Budgets: max 3 panel rounds, max 5 doer dispatches", 1, "ledger header, plural 'Budgets'"],
+  ["Budgets used: 3 of 3 panel rounds, 3 of 5 doer dispatches", 1, "ledger footer"],
+  ["doer dispatch #2 of a 5-dispatch budget; panel round 1 of 3 already ran", 1, "re-dispatch preamble"],
+  ["doer dispatch #1 of 5 used", 1, "ledger round entry"],
+  ["Doer dispatch budget: 4 of 5 remaining.", 1, "the fixture phrasing"],
+  ["", 0, "a round index alone is not the doer budget"],
+  ["Score each dimension 1-10 with confidence 0.0-1.0.", 0, "scoring scale is not a budget"],
+];
+
+// The round index is held CONSTANT across these so budget_carried isolates the budget half
+// (it is the AND of both signals). Without that, a case would fail for the wrong reason.
+for (const [phrase, want, why] of budgetPhrases) {
+  const d = mkdtempSync(join(tmpdir(), "handoff-selftest-budget-"));
+  writeFileSync(join(d, "doer.txt"), `Commit it and report the commit SHA.\nPanel round 1 of 3.\n${phrase}\n`);
+  writeFileSync(join(d, "doer-report.txt"), "DONE. Committed as 4f2c1a9e0b7d3c8f5e6a2b4c9d0e1f3a5b7c8d92.\n");
+  writeFileSync(join(d, "verifier-quality.txt"), `Role: quality verifier. Artifact: commit 4f2c1a9. Panel round 1 of 3. ${phrase}\n`);
+
+  let out = "";
+  try {
+    out = execFileSync("node", [check, d], { encoding: "utf8" });
+  } catch (e) {
+    out = (e.stdout || "") + (e.stderr || "");
+  }
+  const got = parseMetrics(out).budget_carried;
+  const ok = got === want;
+  if (!ok) bad++;
+  console.log(`${ok ? "ok  " : "FAIL"}  budget "${(phrase || "(round index only)").slice(0, 46)}…" -> ${got} (expected ${want}) — ${why}`);
+}
+
+const total = cases.length + plumbing.length + recognition.length + budgetPhrases.length;
 if (bad) {
   console.log(`\n${bad} self-test case(s) failed — the checker is not sound.`);
   process.exit(1);
