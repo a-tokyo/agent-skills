@@ -201,7 +201,50 @@ for (const p of plumbing) {
   for (const m of problems) console.log(`        ${m}`);
 }
 
-const total = cases.length + plumbing.length;
+// ---------------------------------------------------------------------------
+// Address recognition: "branch <word>" is also ordinary English.
+//
+// The branch form is the loosest of the four address kinds, and it errs in BOTH directions:
+// too strict and a real `branch feature-x` handoff reads as path-only; too loose and a
+// v0.0.2 report that merely says "the branch we discussed" scores as having reported an
+// address — which would erase the very difference the arms exist to measure. Both
+// directions are pinned here.
+// ---------------------------------------------------------------------------
+
+const recognition = [
+  ["branch slice/retry-after", 1, "ref with a slash"],
+  ["branch feature-x", 1, "ref with a hyphen"],
+  ["branch main", 1, "conventional branch name"],
+  ["tag v1.2.3", 1, "tag with digits"],
+  ["the branch we discussed", 0, "prose, not a ref"],
+  ["review the branch a doer created", 0, "prose, not a ref"],
+  ["work is on the branch", 0, "prose ending a sentence"],
+];
+
+for (const [phrase, want, why] of recognition) {
+  const d = mkdtempSync(join(tmpdir(), "handoff-selftest-addr-"));
+  writeFileSync(join(d, "doer.txt"), "Commit it and report the address.\nRound 1/3, doer budget 4 of 5 remaining.\n");
+  writeFileSync(join(d, "doer-report.txt"), `DONE. Work is on ${phrase}.\n`);
+  writeFileSync(
+    join(d, "verifier-quality.txt"),
+    `Role: quality verifier. Artifact: ${phrase}. Round 1/3, doer budget 4 of 5 remaining.\n`,
+  );
+
+  let out = "";
+  try {
+    out = execFileSync("node", [check, d], { encoding: "utf8" });
+  } catch (e) {
+    out = (e.stdout || "") + (e.stderr || "");
+  }
+  const got = parseMetrics(out).artifact_address_reported;
+  const ok = got === want;
+  if (!ok) bad++;
+  console.log(
+    `${ok ? "ok  " : "FAIL"}  address "${phrase}" -> reported=${got} (expected ${want}) — ${why}`,
+  );
+}
+
+const total = cases.length + plumbing.length + recognition.length;
 if (bad) {
   console.log(`\n${bad} self-test case(s) failed — the checker is not sound.`);
   process.exit(1);

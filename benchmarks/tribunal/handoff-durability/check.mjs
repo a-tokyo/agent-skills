@@ -71,7 +71,28 @@ const RE_SHA40 = /\b[0-9a-f]{40}\b/gi;
 const RE_SHA_ANCHORED =
   /\b(?:commit(?:s|ted|ting)?|sha|hash|rev|revision|ref|head|checkout|tree|push(?:es|ed)?)\b.{0,40}?\b([0-9a-f]{7,40})\b/gi;
 const RE_BRANCH = /\b(?:refs\/(?:heads|tags)\/[\w.\/-]+|origin\/[\w.\/-]+)\b/gi;
-const RE_BRANCH_WORD = /\b(?:branch|tag)\s+[`'"]?([\w][\w.\/-]{1,})[`'"]?/gi;
+const RE_BRANCH_WORD = /\b(?:branch|tag)\s+[`'"]?([\w][\w.\/-]*)[`'"]?/gi;
+// "branch <word>" is also ordinary English ("the branch WE discussed", "the branch OF the
+// tree"), so the captured word must actually look like a ref before it counts as an
+// address: either it carries ref punctuation / a digit, or it is a conventional branch
+// name. Without this, a v0.0.2 report that merely mentions a branch in passing scores as
+// having reported an address — a false PASS on the metric that most separates the arms.
+const CONVENTIONAL_BRANCHES = new Set([
+  "main", "master", "develop", "dev", "trunk", "staging", "stage", "prod", "production",
+  "release", "head",
+]);
+// `.` `/` `-` are legal inside a ref, so the capture class must include them — which means
+// it also swallows the sentence's full stop ("on branch x." captures "x."). Trim trailing
+// separators first, or every prose mention that ends a sentence acquires a "." and passes
+// the ref test on that alone.
+const trimRef = (name) => name.replace(/[./-]+$/, "");
+const looksLikeRef = (raw) => {
+  const name = trimRef(raw);
+  return (
+    name.length > 0 &&
+    (/[/\-_.]/.test(name) || /\d/.test(name) || CONVENTIONAL_BRANCHES.has(name.toLowerCase()))
+  );
+};
 const RE_URI = /\b(?:https?|ssh|file|s3|gs):\/\/\S+|\bgit@[\w.-]+:\S+/gi;
 const RE_PR =
   /\b(?:PR|MR|pull request|merge request)\s*[#!]?\s*(\d+)\b|\/(?:pull|merge_requests)\/(\d+)/gi;
@@ -92,7 +113,7 @@ function addressesIn(raw) {
     if (id.length === 40 || hasDigit(id)) push("sha", id);
   }
   for (const m of t.matchAll(RE_BRANCH)) push("branch", m[0]);
-  for (const m of t.matchAll(RE_BRANCH_WORD)) push("branch", m[1]);
+  for (const m of t.matchAll(RE_BRANCH_WORD)) if (looksLikeRef(m[1])) push("branch", trimRef(m[1]));
   // RE_URI ends in \S+, so it swallows whatever punctuation the prose wrapped it in.
   // Backticks and quotes matter most: models routinely write `<url>` in a report and the
   // bare url in a dispatch, and an unstripped backtick makes those two compare unequal.
