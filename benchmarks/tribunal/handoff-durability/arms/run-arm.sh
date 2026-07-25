@@ -138,8 +138,34 @@ ENV_FAILURE=0
 # that scores as a clean FAIL. That happened on the first batch — two runs were scored 0
 # after dying in ~2 minutes — which is precisely the never-score-an-env-failure policy being
 # defeated by a detector that did not know the failure existed.
-if grep -qiE "you've hit your (session|usage) limit|session limit ·|\"rate_limit\"|rate_limit_event|usage limit reached" \
-    "$RUN/transcript.jsonl" "$RUN/stderr.txt" 2>/dev/null; then
+# Env failure is decided by the FINAL result event, and deliberately NOT gated on the exit
+# code — `claude` exits 0 while reporting "API Error: Unable to connect to API (ENOTFOUND)",
+# and it exits 0 after "You've hit your session limit". Both leave a transcript with no
+# dispatches, which downstream looks identical to "the orchestrator never convened a panel"
+# — a damning skill result invented by a dead network.
+#
+# It must be the LAST event, not a transcript-wide grep: Claude Code emits informational
+# rate_limit_event warnings mid-run (approaching the allowance) that are not fatal, and a
+# blunt grep voids runs that completed perfectly — the opposite error, equally damaging,
+# because it silently deletes valid data.
+if node -e '
+  const fs = require("fs");
+  const p = process.argv[1];
+  if (!fs.existsSync(p)) process.exit(1);
+  let last = null;
+  for (const l of fs.readFileSync(p, "utf8").split("\n")) {
+    if (!l.trim()) continue;
+    try { const o = JSON.parse(l); if (o.type === "result") last = String(o.result ?? ""); } catch {}
+  }
+  // stream-json always terminates with a `result` event. Its absence means the process was
+  // killed (timeout, interrupt, reboot) — an incomplete capture, never a finding.
+  if (last === null) process.exit(0);
+  process.exit(
+    /you.?ve hit your (session|usage) limit|usage limit reached/i.test(last) ||
+    /API Error|Unable to connect|ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|fetch failed|Connection (error|closed)|overloaded/i.test(last)
+      ? 0 : 1,
+  );
+' "$RUN/transcript.jsonl" 2>/dev/null; then
   ENV_FAILURE=1
 fi
 if [ "$ENV_FAILURE" = "0" ] && [ "$EXIT_CODE" -ne 0 ]; then
