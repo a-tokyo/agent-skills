@@ -33,6 +33,19 @@ run_one() {
 
   [ -f "$ABORT" ] && { echo "$run_id,$arm,$model,not_run,,,,,," >> "$RESULTS"; return 0; }
 
+  # RESUMABLE: a 14-capture batch runs for hours and gets interrupted — usage limits, a
+  # dropped network, a reboot. Already-scored runs are kept; anything else is re-run from
+  # scratch, since run-arm.sh treats run-ids as one-shot and a half-written run dir would
+  # otherwise abort the cell permanently.
+  if grep -q "^$run_id,.*,scored," "$RESULTS" 2>/dev/null; then
+    echo "# $run_id: already scored, skipping" >&2
+    return 0
+  fi
+  if [ -e "$BENCH/runs/$run_id" ]; then
+    rm -rf "$(readlink "$BENCH/runs/$run_id" 2>/dev/null)" "$BENCH/runs/$run_id"
+    sed -i '' "/^$run_id,/d" "$RESULTS" 2>/dev/null || true
+  fi
+
   out="$("$HERE/run-arm.sh" "$arm" "$model" "$run_id" 2>&1)"; rc=$?
   if [ "$rc" -eq 75 ]; then
     # An account-level limit is not transient: retrying burns the rest of the queue against
