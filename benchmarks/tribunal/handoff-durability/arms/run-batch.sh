@@ -17,9 +17,11 @@ set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH="$(cd "$HERE/.." && pwd)"
 
-CONCURRENCY="${1:-3}"
+CONCURRENCY="${1:-1}"   # sequential by default: concurrent tribunal runs (4 working subagents each) exhaust the account session allowance fast
 TAG="${2:-batch}"
 RESULTS="$BENCH/results/metrics.csv"
+ABORT="$BENCH/results/.batch-aborted-$TAG"
+rm -f "$ABORT"
 mkdir -p "$BENCH/results"
 [ -f "$RESULTS" ] || echo "run_id,arm,model,status,doer_materialize_instruction,artifact_address_reported,verifier_count,verifier_address_propagation,budget_carried,handoff_durability" > "$RESULTS"
 
@@ -29,8 +31,20 @@ run_one() {
   local run_id="${TAG}-${arm}-${model}-${n}"
   local out rc
 
+  [ -f "$ABORT" ] && { echo "$run_id,$arm,$model,not_run,,,,,," >> "$RESULTS"; return 0; }
+
   out="$("$HERE/run-arm.sh" "$arm" "$model" "$run_id" 2>&1)"; rc=$?
   if [ "$rc" -eq 75 ]; then
+    # An account-level limit is not transient: retrying burns the rest of the queue against
+    # a wall and, worse, produces truncated captures that look like clean FAILs. Abort the
+    # whole batch and let the operator resume after the reset.
+    local R; R="$(readlink "$BENCH/runs/$run_id" 2>/dev/null || echo "")"
+    if [ -n "$R" ] && grep -qiE "you've hit your (session|usage) limit|usage limit reached" "$R/transcript.jsonl" 2>/dev/null; then
+      touch "$ABORT"
+      echo "$run_id,$arm,$model,env_failure_usage_limit,,,,,," >> "$RESULTS"
+      echo "# $run_id: ACCOUNT USAGE LIMIT — aborting batch. $(grep -ohiE "resets [^\"]*" "$R/transcript.jsonl" | head -1)" >&2
+      return 0
+    fi
     echo "# $run_id: env failure, retrying once" >&2
     run_id="${run_id}r"
     out="$("$HERE/run-arm.sh" "$arm" "$model" "$run_id" 2>&1)"; rc=$?
@@ -61,10 +75,13 @@ run_one() {
 }
 
 echo "# batch $TAG: 14 captures, concurrency $CONCURRENCY" >&2
-for arm in v002 v003; do
-  for spec in "haiku 3" "sonnet 3" "opus 1"; do
-    set -- $spec; model="$1"; reps="$2"
-    for n in $(seq 1 "$reps"); do
+# ARMS ARE INTERLEAVED (v002 then v003 for the same model+rep) so that if the batch stops
+# early — usage limit, machine reboot — what has completed is still a MATCHED comparison
+# rather than "all of one arm and none of the other", which is uninterpretable.
+for spec in "haiku 3" "sonnet 3" "opus 1"; do
+  set -- $spec; model="$1"; reps="$2"
+  for n in $(seq 1 "$reps"); do
+    for arm in v002 v003; do
       while [ "$(jobs -rp | wc -l)" -ge "$CONCURRENCY" ]; do wait -n 2>/dev/null || sleep 5; done
       run_one "$arm" "$model" "$n" &
     done

@@ -133,7 +133,16 @@ WALL=$((END_TS - START_TS))
 
 # ---------- env-failure detection (policy: rerun once, never score an env_failure) ----------
 ENV_FAILURE=0
-if [ "$EXIT_CODE" -ne 0 ]; then
+# "session limit" / rate_limit is checked REGARDLESS of exit code and even on exit 0: a run
+# can dispatch a doer, exhaust the account allowance, and stop early with a partial capture
+# that scores as a clean FAIL. That happened on the first batch — two runs were scored 0
+# after dying in ~2 minutes — which is precisely the never-score-an-env-failure policy being
+# defeated by a detector that did not know the failure existed.
+if grep -qiE "you've hit your (session|usage) limit|session limit ·|\"rate_limit\"|rate_limit_event|usage limit reached" \
+    "$RUN/transcript.jsonl" "$RUN/stderr.txt" 2>/dev/null; then
+  ENV_FAILURE=1
+fi
+if [ "$ENV_FAILURE" = "0" ] && [ "$EXIT_CODE" -ne 0 ]; then
   if grep -qiE 'ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network error|socket hang up|503 Service|429 Too Many|fetch failed|API Error: Connection closed|overloaded_error|Not logged in|Invalid API key' \
       "$RUN/transcript.jsonl" "$RUN/stderr.txt" 2>/dev/null; then
     ENV_FAILURE=1
