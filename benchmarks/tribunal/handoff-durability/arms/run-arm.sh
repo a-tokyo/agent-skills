@@ -27,12 +27,13 @@ ARM="${1:?usage: run-arm.sh <v002|v003> <model> <run-id>}"
 MODEL_ALIAS="${2:?missing model}"
 RUN_ID="${3:?missing run-id}"
 
-# Model ids are copied from the sibling harnesses; re-verify they are current before a capture
-# batch (`claude --help` / the models doc) — a stale alias silently scores a different tier.
+# Pinned full model ids, not bare aliases: `--model opus` follows whatever is current and would
+# silently change tier between capture batches. Re-verify before each batch — the sibling
+# harnesses still pin claude-opus-4-8, which is a generation stale.
 case "$MODEL_ALIAS" in
   haiku)  MODEL_ID="claude-haiku-4-5-20251001" ;;
   sonnet) MODEL_ID="claude-sonnet-5" ;;
-  opus)   MODEL_ID="claude-opus-4-8" ;;
+  opus)   MODEL_ID="claude-opus-5" ;;
   *) echo "unknown model alias: $MODEL_ALIAS" >&2; exit 2 ;;
 esac
 case "$ARM" in v002|v003) ;; *) echo "unknown arm: $ARM (expected v002|v003)" >&2; exit 2 ;; esac
