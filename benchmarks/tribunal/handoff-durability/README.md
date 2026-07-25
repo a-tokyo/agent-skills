@@ -89,7 +89,10 @@ from `/dev/null`, `perl alarm` timeout, `exit 75` on env failure) is inherited f
 read that file's comments before changing this one. The work dir gets its own `git init`,
 without which the v003 arm would fail for the wrong reason.
 
-`extract-dispatch.mjs` recovers the dispatched prompts from the `stream-json` transcript,
+`extract-dispatch.mjs` recovers the dispatched prompts from the `stream-json` transcript
+(envelope verified against a live capture; it handles both synchronous dispatch, where the
+tool_result is the report, and asynchronous dispatch, where the tool_result is only a launch
+acknowledgement and the report arrives as subagent events under `parent_tool_use_id`),
 so — unlike `propagation-fidelity/`, which asks the agent to save its own prompts — the
 agent is never told its dispatch is under inspection. The raw transcript is kept, so a
 parser fix can be replayed offline without re-spending a capture.

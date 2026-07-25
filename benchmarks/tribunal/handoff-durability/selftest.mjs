@@ -160,16 +160,65 @@ function synthStream(fixtureDir) {
     .join("\n");
 }
 
+// The ASYNC dispatch envelope, transcribed from a live capture. Here the doer's tool_result
+// is only a launch acknowledgement and the real report arrives as assistant events tagged
+// with `parent_tool_use_id`. Mistaking the stub for the report yields a well-formed
+// doer-report.txt containing no address — which would score artifact_address_reported=0 on
+// every run of BOTH arms, a uniform and confidently wrong result. This case exists so that
+// can never regress silently.
+function synthAsyncStream(fixtureDir) {
+  const f = (n) => readFileSync(join(here, fixtureDir, n), "utf8");
+  const tu = (id, description, prompt) => ({
+    type: "assistant",
+    message: {
+      content: [
+        { type: "tool_use", id, name: "Agent", input: { description, subagent_type: "general-purpose", prompt } },
+      ],
+    },
+  });
+  const tr = (id, text) => ({
+    type: "user",
+    message: { content: [{ type: "tool_result", tool_use_id: id, content: [{ type: "text", text }] }] },
+  });
+  const subagentSays = (parent, text) => ({
+    type: "assistant",
+    parent_tool_use_id: parent,
+    subagent_type: "general-purpose",
+    message: { content: [{ type: "text", text }] },
+  });
+  return [
+    { type: "system", subtype: "init", session_id: "selftest" },
+    tu("t1", "doer: implement the parseRetryAfter slice", f("doer.txt")),
+    { type: "system", subtype: "task_started", task_id: "k1", tool_use_id: "t1" },
+    tr("t1", "Async agent launched successfully. The agent is working in the background. You will be notified automatically when it completes."),
+    subagentSays("t1", f("doer-report.txt")),
+    { type: "system", subtype: "task_notification", task_id: "k1", tool_use_id: "t1", status: "completed" },
+    tu("t2", "quality verifier", f("verifier-quality.txt")),
+    tu("t3", "adversary verifier", f("verifier-adversary.txt")),
+    tr("t2", "scores omitted"),
+    tr("t3", "scores omitted"),
+    { type: "result", subtype: "success", result: "Verdict: SHIP" },
+  ]
+    .map((o) => JSON.stringify(o))
+    .join("\n");
+}
+
 const plumbing = [
   { fixture: "fixtures/pass", expect: 0, why: "a durable-handoff run survives extraction and PASSes" },
   { fixture: "fixtures/fail-no-address", expect: 1, why: "a path-only run survives extraction and still FAILs" },
+  {
+    fixture: "fixtures/pass",
+    async: true,
+    expect: 0,
+    why: "async dispatch: the report is recovered from the subagent's own output, not the launch stub",
+  },
 ];
 
 for (const p of plumbing) {
   const tmp = mkdtempSync(join(tmpdir(), "handoff-selftest-"));
   const stream = join(tmp, "stream.jsonl");
   const out = join(tmp, "dispatched");
-  writeFileSync(stream, synthStream(p.fixture) + "\n");
+  writeFileSync(stream, (p.async ? synthAsyncStream(p.fixture) : synthStream(p.fixture)) + "\n");
 
   const problems = [];
   try {
@@ -197,7 +246,7 @@ for (const p of plumbing) {
 
   const ok = problems.length === 0;
   if (!ok) bad++;
-  console.log(`${ok ? "ok  " : "FAIL"}  extract+check ${p.fixture} — ${p.why}`);
+  console.log(`${ok ? "ok  " : "FAIL"}  extract+check ${p.fixture}${p.async ? " (async)" : ""} — ${p.why}`);
   for (const m of problems) console.log(`        ${m}`);
 }
 

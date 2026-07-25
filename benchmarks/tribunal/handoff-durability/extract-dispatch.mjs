@@ -48,6 +48,24 @@ if (!events.length) {
 
 const toolUses = []; // { id, name, input }
 const toolResults = new Map(); // tool_use_id -> text
+const subagentText = new Map(); // parent_tool_use_id -> [text, …] streamed BY the subagent
+
+// Subagent dispatch has two shapes on the wire, and only one of them puts the report in
+// the tool_result:
+//
+//   synchronous  — the Task/Agent tool_result IS the subagent's report.
+//   asynchronous — the tool_result is a LAUNCH ACKNOWLEDGEMENT ("Async agent launched
+//                  successfully… you will be notified"), and the subagent's real output
+//                  arrives later as assistant events carrying `parent_tool_use_id`.
+//
+// Verified against a live `--output-format stream-json --verbose` capture. Treating the
+// async stub as the report is the dangerous case: it is a perfectly well-formed file
+// containing no address, so `artifact_address_reported` would read 0 on every run of BOTH
+// arms — a confident, uniform, and completely wrong number. Hence the explicit detection.
+const isLaunchStub = (t) =>
+  /async agent launched|agent is working in the background|you will be notified automatically/i.test(
+    t,
+  );
 
 function textOf(content) {
   if (typeof content === "string") return content;
@@ -75,6 +93,29 @@ function walk(node) {
   for (const v of Object.values(node)) walk(v);
 }
 events.forEach(walk);
+
+// Second pass at EVENT level: `parent_tool_use_id` lives on the event envelope, not on the
+// content blocks, so the recursive walk above cannot see which dispatch a message belongs to.
+for (const e of events) {
+  const parent = e?.parent_tool_use_id;
+  if (!parent || e.type !== "assistant") continue;
+  for (const c of e.message?.content ?? []) {
+    if (c?.type === "text" && typeof c.text === "string" && c.text.trim()) {
+      if (!subagentText.has(parent)) subagentText.set(parent, []);
+      subagentText.get(parent).push(c.text);
+    }
+  }
+}
+
+// The report for a dispatch: its tool_result when that is genuinely the report, otherwise
+// everything the subagent itself said under that dispatch.
+function reportFor(id) {
+  const direct = toolResults.get(id);
+  if (direct && !isLaunchStub(direct)) return direct;
+  const streamed = subagentText.get(id);
+  if (streamed?.length) return streamed.join("\n\n");
+  return null;
+}
 
 // ---------- select the subagent dispatches ----------
 
@@ -168,7 +209,7 @@ for (const [i, d] of dispatches.entries()) {
   if (isDoer) {
     doerSeen++;
     write(doerSeen === 1 ? "doer.txt" : `doer-${doerSeen}.txt`, promptOf(d.input));
-    const report = toolResults.get(d.id);
+    const report = reportFor(d.id);
     if (report) write(doerSeen === 1 ? "doer-report.txt" : `doer-report-${doerSeen}.txt`, report);
   } else {
     verifierSeen++;
@@ -188,7 +229,8 @@ console.error(`extracted ${written.length} file(s) into ${outDir}: ${written.joi
 // artifact_address_reported.
 if (written.includes("doer.txt") && !written.includes("doer-report.txt")) {
   console.error(
-    `\nERROR: no tool_result found for the doer dispatch, so doer-report.txt is missing.\n` +
+    `\nERROR: no report recoverable for the doer dispatch (no usable tool_result, and no\n` +
+      `subagent output under its parent_tool_use_id), so doer-report.txt is missing.\n` +
       `This capture is NOT scorable. The raw transcript is retained — fix the parser and\n` +
       `re-run this extractor offline rather than re-spending the run.`,
   );
