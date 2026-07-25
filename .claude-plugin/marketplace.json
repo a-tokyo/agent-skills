@@ -32,7 +32,7 @@
       "source": "./",
       "skills": ["./skills/tribunal"],
       "strict": false,
-      "version": "0.0.2",
+      "version": "0.0.3",
       "description": "Doer to verifier-panel to consensus delivery verification for any artifact (code slices, plans, documents, audits). An orchestrator freezes acceptance criteria before implementation, dispatches a doer, then convenes a context-walled panel of independent verifiers — including an adversary with a must-oppose mandate — for evidence-anchored review adjudicated to SHIP / SHIP_WITH_CAVEATS / ITERATE / BLOCK / ESCALATE. Platform-agnostic; degrades to sequential fresh-context sessions without subagents."
     },
     {
