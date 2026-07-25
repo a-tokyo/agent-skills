@@ -1,0 +1,7 @@
+# Runtime dispatch capture (live runs) — never committed.
+dispatched*/
+# Run dirs / symlinks and the per-run results ledger.
+runs/
+results/
+# Headless OAuth token minted with `claude setup-token` — a secret.
+.auth-token

@@ -1,6 +1,6 @@
 # Anti-Patterns — symptom, then fix
 
-Seventeen ways tribunal runs go wrong, each with the observable symptom.
+Nineteen ways tribunal runs go wrong, each with the observable symptom.
 
 ## Slop output (files left in the tree)
 - SYMPTOM: the run leaves ledger / scorecard / scratch files (e.g. `.tribunal-gates.md`,
@@ -85,6 +85,22 @@ Seventeen ways tribunal runs go wrong, each with the observable symptom.
 - SYMPTOM: detailed craft feedback on code that builds the wrong thing.
 - FIX: spec compliance (missing / extra / misunderstood) first; a spec failure caps
   the verdict at ITERATE regardless of craft scores.
+
+## Ephemeral artifact
+- SYMPTOM: the panel is dispatched against uncommitted state in the doer's sandbox, or
+  verifiers receive bare local paths (`src/http/retry.ts`) as "the artifact". On a shared
+  filesystem this merely looks fragile; on an isolated or torn-down sandbox the verifiers
+  score a path they cannot open, or silently review the wrong tree.
+- FIX: the doer materializes the artifact durably (commit / push / publish) and reports a
+  fetchable address; the orchestrator hands that address — not a path — to every verifier.
+  DONE without an address is NEEDS_CONTEXT.
+
+## Budget amnesia across resumes
+- SYMPTOM: a resumed or restarted orchestrator re-panels a slice that already spent its
+  rounds, because the counts lived only in the context that ended; the slice never
+  converges and never escalates.
+- FIX: carry the round index and remaining doer budget in the handoff or a durable ledger,
+  and state both in every dispatch — a cap that only exists in context is not a cap.
 
 ## Counter conflation
 - SYMPTOM: doer re-dispatches logged as panel rounds (or vice versa); a slice

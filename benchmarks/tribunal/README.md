@@ -11,6 +11,7 @@ real subagents — not a single `promptfoo` command. Three suites:
 | [`recall-task/`](recall-task/) | cross-file defect recall on a 6-module TypeScript codebase (cause in one file, failure in another) + correct verdict + zero false positives | deterministic recall vs `ANSWER-KEY.md` (O1/O2) + blind LLM judge for process (P1–P7), per [`judge-rubric.md`](judge-rubric.md) |
 | [`build-task/`](build-task/) | build-and-verify a 3-slice CLI against a 17-criterion spec; catch a seeded spec contradiction | deterministic AC re-execution (`JUDGING.md`) + blind judge for process |
 | [`propagation-fidelity/`](propagation-fidelity/) | does an **operative skill** (e.g. `production-grade`) actually reach the doer and panel, and is the tribunal skill never nested? | fully deterministic — string/structure checks on the dispatched prompts, self-tested offline |
+| [`handoff-durability/`](handoff-durability/) | is the **artifact** handed over by a fetchable address rather than a working-tree path, and do the round index and doer budget travel in the handoff? | fully deterministic — string/structure checks on the dispatched prompts and the doer's report, self-tested offline |
 
 ## Method
 
@@ -71,6 +72,30 @@ Under the pre-edit skill, even a capable orchestrator carried the standard to th
 only and to **none** of the panel — so the panel would score against a weaker bar than
 the work was built to. That is the exact gap the change closes.
 
+### Handoff durability (tribunal ≥ v0.0.3)
+
+Deterministic, not a score: the doer is told to materialize the artifact durably and
+report a **fetchable address**; that address — not a working-tree path — reaches every
+verifier; and the round index plus remaining doer budget travel in the handoff rather
+than in orchestrator context. See `handoff-durability/`.
+
+Production provenance for the failure mode: on a live detached run a doer completed its
+slice but left the spec uncommitted, and the orchestrator had to catch it and re-dispatch
+([lqa-app#3506](https://github.com/LeadingQuality/lqa-app/pull/3506)). On a shared
+filesystem that is fragile; under a torn-down or namespace-isolated sandbox the panel
+would score a path it cannot open.
+
+| Skill version | doer materialize instruction | address reported | verifiers carrying the address | budget carried | `handoff_durability` |
+|---|---|---|---|---|---|
+| `v0.0.2` | — | — | — | — | *live capture pending* |
+| `v0.0.3` | — | — | — | — | *live capture pending* |
+
+The offline checker and its four fixtures are complete and self-tested
+(`node handoff-durability/selftest.mjs`); the live `v0.0.2`-vs-`v0.0.3` cells are filled
+in from `arms/run-arm.sh` captures (n=3 Haiku, n=3 Sonnet, n=1 Opus per arm) and are
+**deliberately left empty until those runs exist** rather than estimated. `v0.0.3` ships
+only if no cell regresses against `v0.0.2`.
+
 ## Reading the numbers
 
 Honest caveats, straight from the harness analysis:
@@ -95,12 +120,31 @@ fixtures don't involve an operative skill, so it isn't expected to move recall/c
 — but those suites do **not** test it. The `propagation-fidelity/` eval is the targeted
 test for the new behavior; re-running recall/build for regression is a follow-up.
 
+### Scope of these numbers vs. the v0.0.3 change
+
+Same shape, same honesty. `v0.0.3`'s handoff invariants are additive — the doer is asked
+for an address in addition to the diff, and the counters are restated in each dispatch —
+and none of the recall/build fixtures involves a second sandbox, so the change is not
+expected to move recall/composite. Those suites were **not** re-run, and no figure above
+has been restated or softened to accommodate the new version. `handoff-durability/` is
+the targeted test; re-running recall/build for regression remains a follow-up.
+
+Note the arms differ from the recall/build suites: `handoff-durability/` and
+`propagation-fidelity/` both A/B **one skill version against another** rather than skill
+against no skill, because both measure an additive protocol change that has no bare-arm
+counterpart.
+
 ## Reproduce
 
 ```bash
 # Deterministic, offline — no API key needed:
 node propagation-fidelity/selftest.mjs          # the checker is sound
 node propagation-fidelity/check.mjs <dispatched> --skill production-grade
+node handoff-durability/selftest.mjs            # checker + dispatch extractor are sound
+node handoff-durability/check.mjs <dispatched>
+
+# Live handoff-durability arms (needs a headless credential; see that suite's README):
+handoff-durability/arms/run-arm.sh v003 sonnet v003-sonnet-1
 
 # Quality suites (agent-orchestrated, needs an agent with parallel subagents):
 #  1. recall-task: give an agent recall-task/prompt.md + recall-task/spec.md +

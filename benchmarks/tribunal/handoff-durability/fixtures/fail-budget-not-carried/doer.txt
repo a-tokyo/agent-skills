@@ -1,0 +1,17 @@
+You are the doer in a tribunal run. Implement exactly this slice — do not read any
+plan file, everything you need is below.
+
+SLICE SPEC
+Add a `parseRetryAfter(header)` helper to src/http/retry.mjs that returns the delay
+in milliseconds. Accept both delta-seconds ("120") and an HTTP-date. Reject anything
+else with a typed error. Run `node --test test/retry.test.mjs` and report the verbatim output.
+
+HANDOFF
+When the work is done, materialize it durably before you report: commit it on a branch
+and give me the resulting commit SHA. The verifiers run in separate sessions and cannot
+see your working tree, so a file path is not an artifact — report the address they can
+fetch (commit SHA, branch, or URL) alongside the diff summary. A DONE with no address
+will be sent straight back to you.
+
+Report: a diff summary, the verbatim test output, the artifact's fetchable address, and
+exactly one status (DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED).
