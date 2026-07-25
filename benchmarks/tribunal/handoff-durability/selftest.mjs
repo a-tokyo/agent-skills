@@ -35,6 +35,22 @@ const cases = [
     },
   },
   {
+    // Regression guard (found in review): the report and the dispatches spell the same
+    // address differently — backticked URI vs bare, refs/heads/x vs origin/x. Equivalent
+    // spellings must not read as a broken handoff. The adversary prompt carries ONLY the
+    // origin/ branch form, so branch normalization is genuinely exercised, not masked by
+    // the SHA also matching.
+    dir: "fixtures/pass-address-forms",
+    expect: 0,
+    why: "equivalent address spellings across report and dispatch still count as the same address",
+    metrics: {
+      artifact_address_reported: 1,
+      verifier_address_propagation: 1,
+      budget_carried: 1,
+      handoff_durability: 1,
+    },
+  },
+  {
     dir: "fixtures/fail-no-address",
     expect: 1,
     why: "pre-v0.0.3 dispatch: no materialize instruction, so the report gives only paths",

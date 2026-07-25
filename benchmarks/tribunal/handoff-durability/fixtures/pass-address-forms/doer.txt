@@ -1,0 +1,17 @@
+You are the doer in a tribunal run. Implement exactly this slice — everything you need
+is below.
+
+SLICE SPEC
+Add a `parseRetryAfter(header)` helper to src/http/retry.mjs returning the delay in
+milliseconds. Accept delta-seconds and an HTTP-date; reject anything else with a typed
+error. Run `node --test test/retry.test.mjs`.
+
+HANDOFF
+Commit and push the work, then report the commit URL — the panel runs elsewhere and
+cannot see your files.
+
+BUDGET
+Panel round 1/3. Doer dispatch budget: 4 of 5 remaining.
+
+Report: a diff summary, the verbatim test output, the artifact's fetchable address, and
+exactly one status (DONE / DONE_WITH_CONCERNS / NEEDS_CONTEXT / BLOCKED).

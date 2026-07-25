@@ -1,0 +1,12 @@
+STATUS: DONE
+
+ARTIFACT
+Pushed to `https://github.com/acme/repo/commit/abc1234def5678`, on branch
+`refs/heads/slice/retry-after`.
+
+VERBATIM OUTPUT
+$ node --test test/retry.test.mjs
+Tests: 4 passed, 4 total
+
+BUDGET
+Panel round 1/3; doer dispatch budget 4 of 5 remaining.

@@ -25,9 +25,11 @@ Given the prompts the orchestrator actually dispatched, plus the doer's report:
 2. **Address reported** — the doer's report contains a fetchable address, not only
    working-tree paths.
 3. **Address propagated** — every verifier prompt carries *that* address.
-4. **Budget carried** — the round index and remaining budget appear in the dispatch, or
-   in a durable ledger the run wrote (`.tribunal/`). The orchestrator's closing summary
-   does **not** count: the whole point is that it survives the orchestrator.
+4. **Budget carried** — the round index **and** the remaining doer-dispatch budget appear
+   in the dispatch, or in a durable ledger the run wrote (`.tribunal/`). Invariant 6 names
+   two counters, so a round cap alone (`"round 1/3"`) does not satisfy the budget half.
+   The orchestrator's closing summary does **not** count either: the whole point is that
+   it survives the orchestrator.
 
 The check is **deterministic** — string/structure assertions on the prompts, no LLM judge,
 no network. `check.mjs`'s header records exactly what counts as an address (SHA forms,
@@ -55,6 +57,7 @@ exit-code test while being useless on a live run:
 | fixture | breaks | story |
 |---|---|---|
 | `pass/` | — | committed, address propagated to both verifiers, budget carried |
+| `pass-address-forms/` | — | the report and the dispatches spell the same address differently (backticked URI vs bare, `refs/heads/x` vs `origin/x`) — equivalent spellings are one address, not a broken handoff |
 | `fail-no-address/` | `doer_materialize_instruction`, `artifact_address_reported`, `verifier_address_propagation` | the **pre-`v0.0.3`** dispatch: nothing asked the doer to materialize, so the report offers only paths |
 | `fail-ephemeral-path/` | `verifier_address_propagation` | the doer *did* commit, but the panel was pointed at its working tree |
 | `fail-budget-not-carried/` | `budget_carried` | durable handoff, but the counters live only in orchestrator context |

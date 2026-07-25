@@ -2,6 +2,27 @@
 
 Nineteen ways tribunal runs go wrong, each with the observable symptom.
 
+## Contents
+
+- Role and dispatch: [Slop output](#slop-output-files-left-in-the-tree) ·
+  [Orchestrator self-executing](#orchestrator-self-executing-role-collapse) ·
+  [Trusting agent success reports](#trusting-agent-success-reports) ·
+  [Ephemeral artifact](#ephemeral-artifact)
+- Panel independence: [Context-wall leaks](#context-wall-leaks) ·
+  [Consensus pressure](#consensus-pressure) · [Score anchoring](#score-anchoring) ·
+  [Rubber-stamp panel](#rubber-stamp-panel) ·
+  [Adversary drift to agreement](#adversary-drift-to-agreement)
+- Evidence and scoring: [Generic skepticism](#generic-skepticism) ·
+  [Evidence-free findings](#evidence-free-findings) ·
+  [Averaging away disagreement](#averaging-away-disagreement) ·
+  [Halo inflation](#halo-inflation)
+- Verdicts and criteria: [Over-blocking](#over-blocking) ·
+  [Verifying without pre-declared criteria](#verifying-without-pre-declared-criteria) ·
+  [Wrong review order](#wrong-review-order)
+- Iteration limits: [Unbounded debate](#unbounded-debate) ·
+  [Budget amnesia across resumes](#budget-amnesia-across-resumes) ·
+  [Counter conflation](#counter-conflation)
+
 ## Slop output (files left in the tree)
 - SYMPTOM: the run leaves ledger / scorecard / scratch files (e.g. `.tribunal-gates.md`,
   per-verifier dumps, temp dirs) scattered in the repo; the deliverable is buried in clutter.

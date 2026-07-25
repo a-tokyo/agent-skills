@@ -93,7 +93,10 @@ function addressesIn(raw) {
   }
   for (const m of t.matchAll(RE_BRANCH)) push("branch", m[0]);
   for (const m of t.matchAll(RE_BRANCH_WORD)) push("branch", m[1]);
-  for (const m of t.matchAll(RE_URI)) push("uri", m[0].replace(/[.,;)\]]+$/, ""));
+  // RE_URI ends in \S+, so it swallows whatever punctuation the prose wrapped it in.
+  // Backticks and quotes matter most: models routinely write `<url>` in a report and the
+  // bare url in a dispatch, and an unstripped backtick makes those two compare unequal.
+  for (const m of t.matchAll(RE_URI)) push("uri", m[0].replace(/[`'"<>.,;:)\]}]+$/, ""));
   for (const m of t.matchAll(RE_PR)) push("pr", m[1] ?? m[2]);
 
   return out;
@@ -114,6 +117,13 @@ function carries(t, addr) {
     // tolerate a trailing-slash / .git difference between report and dispatch
     const norm = (u) => u.replace(/\.git$/, "").replace(/\/+$/, "").toLowerCase();
     return found.some((f) => f.kind === "uri" && norm(f.value) === norm(addr.value));
+  }
+  if (addr.kind === "branch") {
+    // `refs/heads/slice/x`, `origin/slice/x` and `branch slice/x` all name ONE branch.
+    // Comparing them literally fails a run purely because the report and the dispatch
+    // chose different (equivalent) spellings, which is not a handoff defect.
+    const norm = (b) => b.replace(/^refs\/(?:heads|tags)\//, "").replace(/^origin\//, "").toLowerCase();
+    return found.some((f) => f.kind === "branch" && norm(f.value) === norm(addr.value));
   }
   return found.some((f) => f.kind === addr.kind && f.value === addr.value);
 }
@@ -142,8 +152,12 @@ const instructsReportAddress = (raw) =>
 //                    "panel pass 2", "2nd round"
 //   remaining budget "budget 4 remaining", "remaining budget: 4", "3 dispatches left",
 //                    "doer budget 5", "budget: 4/5"
-// A combined form ("round 2/3", "iteration 2 of 3") encodes index AND cap, so it
-// satisfies both — that is the phrasing the SKILL.md skeleton produces.
+//
+// Invariant 6 names TWO counters — panel rounds and the doer-dispatch budget — and says
+// every dispatch states both. So "round 2/3" alone does NOT satisfy the budget signal: it
+// gives the round index and the round cap, while saying nothing about the doer budget.
+// Letting the combined form set both flags was a false-PASS vector (caught in review): a
+// dispatch that never mentions the doer budget would have scored as carrying it.
 
 const ROUND = "(?:round|iteration|cycle|panel pass|pass)";
 const RE_ROUND_COMBINED = new RegExp(`\\b${ROUND}\\b.{0,20}?\\b(\\d+)\\s*(?:\\/|of|out of)\\s*(\\d+)\\b`, "i");
@@ -158,10 +172,7 @@ function budgetSignals(rawTexts) {
   let round = false;
   let budget = false;
   for (const t of rawTexts.map(flat)) {
-    if (RE_ROUND_COMBINED.test(t)) {
-      round = true;
-      budget = true;
-    }
+    if (RE_ROUND_COMBINED.test(t)) round = true;
     if (RE_ROUND_INDEX.test(t)) round = true;
     if (RE_BUDGET.test(t)) budget = true;
   }
@@ -250,7 +261,10 @@ const budgetTexts = [
 ];
 const sig = budgetSignals(budgetTexts);
 const r = note(sig.round, "no panel-round index in the dispatch or ledger");
-const b = note(sig.budget, "no remaining budget / round cap in the dispatch or ledger");
+const b = note(
+  sig.budget,
+  "no remaining doer-dispatch budget in the dispatch or ledger (a round cap like \"round 1/3\" is not the doer budget)",
+);
 const budgetOk = r && b;
 
 // ---------- report ----------
