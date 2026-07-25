@@ -50,7 +50,7 @@ Prints `METRIC handoff_durability=1|0` plus `doer_materialize_instruction`,
 node selftest.mjs
 ```
 
-Four fixtures, and the self-test asserts **which metric** each one breaks — not merely
+Five fixtures, and the self-test asserts **which metric** each one breaks — not merely
 that it exits non-zero, since a checker that fails everything wholesale would pass a naive
 exit-code test while being useless on a live run:
 
@@ -102,8 +102,10 @@ at all. A mixed result is a fix list, not a footnote.
 
 ## Scope — what this can and cannot show
 
-Claude Code is synchronous with a shared filesystem, so it **cannot** demonstrate the
-*consequence* of a path-based handoff: here a path usually still resolves. That is by
+Claude Code's subagents share a filesystem with the orchestrator, so this harness
+**cannot** demonstrate the *consequence* of a path-based handoff: here a path usually
+still resolves. (Dispatch itself may well be asynchronous — verified during development —
+but that changes when the report arrives, not whether the path is reachable.) That is by
 design. This eval measures the **form** of the handoff in the dispatched prompts, which is
 host-neutral and observable on any runtime — the same reason `propagation-fidelity/` works
 on prompts rather than outcomes. The consequence is evidenced separately by the field case
