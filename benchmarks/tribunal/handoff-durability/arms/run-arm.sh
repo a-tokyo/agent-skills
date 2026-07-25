@@ -47,6 +47,18 @@ MAX_TURNS=120
 if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -f "$BENCH/.auth-token" ]; then
   CLAUDE_CODE_OAUTH_TOKEN="$(cat "$BENCH/.auth-token")"; export CLAUDE_CODE_OAUTH_TOKEN
 fi
+# Validate the token's SHAPE before spending anything. `claude setup-token` writes to a TTY,
+# so a redirect captures the whole interactive session — spinner frames, the OAuth URL, and
+# the token on one line among sixty — and an interrupted redirect can corrupt the first byte.
+# Both happened here; the second cost a full 14-capture batch to "401 Invalid bearer token",
+# once per run, before anyone looked. A malformed token is an operator error, not a result.
+if [ -n "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] &&
+   ! printf '%s' "$CLAUDE_CODE_OAUTH_TOKEN" | grep -qE '^sk-ant-[A-Za-z0-9_-]+$'; then
+  echo "run-arm.sh: CLAUDE_CODE_OAUTH_TOKEN is not a bare token (got ${#CLAUDE_CODE_OAUTH_TOKEN} chars)." >&2
+  echo "  \$BENCH/.auth-token must contain ONLY the sk-ant-… line from \`claude setup-token\`," >&2
+  echo "  with no ANSI escapes, surrounding output, or trailing newline damage." >&2
+  exit 2
+fi
 if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
   echo "run-arm.sh: no CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY (and no .auth-token file); aborting" >&2
   exit 2
