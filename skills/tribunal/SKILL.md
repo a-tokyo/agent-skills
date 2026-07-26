@@ -1,6 +1,6 @@
 ---
 name: tribunal
-version: 0.0.2
+version: 0.0.3
 license: MIT
 description: >-
   Runs a doer -> verifier-panel -> consensus loop to verify a deliverable before it ships.
@@ -11,8 +11,10 @@ description: >-
   multi-agent verification of any artifact - code slices, plans, documents, audits -
   whenever asked to verify a deliverable, vet a plan, run a consensus review or independent
   review, set up a doer-verifier loop, or gate a ship decision. Works on any platform with
-  parallel subagents; degrades to sequential fresh-context sessions without them. Not for
-  trivial single-file edits or ordinary code review.
+  parallel subagents; degrades to sequential fresh-context sessions without them; on
+  detached, sandboxed or asynchronous runtimes the artifact is handed over by fetchable
+  address and the budgets travel in the handoff. Not for trivial single-file edits or
+  ordinary code review.
 ---
 
 # Tribunal
@@ -48,8 +50,10 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
    instruction to load them (load production-grade, etc.) — if it cannot load a named
    skill it says so rather than proceeding. If the orchestrator writes or edits the
    deliverable, there is no independent artifact to verify and the run collapses to one
-   context. The doer implements, runs the verification commands, and reports a diff
-   summary, verbatim output, and exactly one status (table below).
+   context. The doer implements, runs the verification commands, materializes the artifact
+   durably — committed, pushed, or published so it outlives the doer's session — and
+   reports a diff summary, verbatim output, the artifact's fetchable address, and exactly
+   one status (table below). DONE without an address is not DONE.
 3. Check the report against the actual diff yourself; dispatch the panel in parallel, context-walled.
 4. Adjudicate per [consensus-mechanics.md](references/consensus-mechanics.md); record
    verdict, dissents, caveats, and round count in the ledger.
@@ -63,8 +67,11 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
    NO scores itself), the doer, and each verifier. One agent never plays two roles (shared
    context = shared blind spots = no triangulation, the entire point). The doer finishes
    first; then the
-   verifiers run in parallel, each RECEIVING exactly: frozen criteria; the artifact
-   (diff + new-file paths, or the document + its predecessor); reference materials;
+   verifiers run in parallel, each RECEIVING exactly: frozen criteria; the artifact by
+   **fetchable address** — a commit SHA, branch, or URI a verifier in a *different*
+   sandbox can retrieve on its own, plus the diff (or the document and its predecessor)
+   inline; bare working-tree paths are insufficient, since they resolve only inside the
+   doer's session and die with it; reference materials;
    permission to run the verification commands; known risks; the operative skills
    (named, to load). Verifiers NEVER receive:
    the doer's reasoning or self-assessment, design rationale, each other's first-round
@@ -89,11 +96,14 @@ against pre-declared criteria, adjudicated to a ship decision). Never nest tribu
    evidence; agent-reported success is checked against the actual artifact and diff.
 6. **Bounded iteration.** Max 3 panel rounds per slice (fresh verifiers each round)
    plus a separate doer-dispatch budget (default 5, complexity-weighted); whichever
-   exhausts first -> ESCALATE to the human with the full evidence package.
+   exhausts first -> ESCALATE to the human with the full evidence package. Both counters
+   travel in the handoff or a durable ledger, never in orchestrator context alone — every
+   dispatch states the round index and the remaining budget. A cap an orchestrator restart
+   or context reset forgets is not a cap: the run re-panels indefinitely.
 
 | Doer status | Orchestrator handling |
 |---|---|
-| DONE | Verify diff exists and commands ran; proceed to panel. |
+| DONE | Verify the diff exists, the commands ran, and the reported address resolves; a DONE with no fetchable address is NEEDS_CONTEXT — send it back to materialize. Then panel. |
 | DONE_WITH_CONCERNS | Correctness/scope concerns: address before panel. Observations: log, proceed. |
 | NEEDS_CONTEXT | Supply the missing context; re-dispatch the same model. |
 | BLOCKED | Triage in order: more context, a more capable model, decompose the slice, escalate. Never retry the same model unchanged — change at least one of context, model, task size. |
@@ -137,7 +147,7 @@ the artifact itself, as-is.
 [Adversary only: You MUST oppose — build the strongest case against shipping;
 name the exact failure scenario per concern. Write "ESCALATE: <reason>" for a
 correctness/safety concern you believe cannot be rebutted.]
-Inputs: frozen criteria; dimensions/weights/target; artifact; references; verification commands (you may run them); known risks; operative skills (named — load them; if you cannot, say so).
+Inputs: frozen criteria; dimensions/weights/target; artifact (fetchable address — commit/branch/URI — plus the diff inline); round index and remaining budget; references; verification commands (you may run them); known risks; operative skills (named — load them; if you cannot, say so).
 Rules: score each dimension separately, 1-10, with confidence 0.0-1.0; every
 claim cites a verbatim quote, file:line, or command output. Citations WILL be
 grepped against the artifact and spec — one that does not exist verbatim
@@ -151,8 +161,10 @@ recommendation SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK; escalation if any.
 The deliverable is the ONLY durable artifact a tribunal run produces. Report the
 verdict, dissents (incl. refuted, verbatim), caveats (fixed | deferred + reason), and
 panel-round counts in your closing summary — and fold them into the PR description or
-commit message when one exists. Never leave loose files in the tree. If a run genuinely
-needs working files (a running ledger across many slices, temp fixtures), put them ALL
+commit message when one exists. **Delivering that report to the requester, over the
+channel the request arrived on, is a step of the loop, not a side effect of finishing** —
+a verdict nobody received is not a verdict. Never leave loose files in the tree. If a run
+genuinely needs working files (a running ledger across many slices, temp fixtures), put them ALL
 inside a single gitignored `.tribunal/` directory and never commit it; nothing else is
 written. Never silently drop a caveat.
 
@@ -172,6 +184,14 @@ receives. One agent playing every role forfeits the triangulation benefit — me
 equal to no panel at all (a weak model self-simulating a panel scores at its solo floor);
 use only when no separate-session option exists, and label the verdict "single-context
 (no independence)".
+
+Detached orchestration (the run outlives, or is suspended by, any single turn): where the
+runtime's wait primitive ends the orchestrator's turn, whatever is passed to that
+primitive is bookkeeping, not communication — nobody has been told anything yet. Carry
+the artifact address, round index and remaining budget in the handoff, since the resumed
+orchestrator may not be the one that wrote them. On resume, re-establish what the
+requester has actually received before deciding the next move: a run ending is not
+delivery.
 
 End-to-end example: [worked-example.md](references/worked-example.md).
 Failure catalogue: [anti-patterns.md](references/anti-patterns.md).
