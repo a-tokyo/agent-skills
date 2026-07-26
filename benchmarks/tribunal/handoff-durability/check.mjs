@@ -34,7 +34,11 @@
 //           English words that happen to be hex ("acceded", "defaced") without
 //           rejecting real short SHAs (a digit-free 7-hex SHA occurs ~0.1% of the time).
 //   branch  `branch <name>`, `refs/heads/<name>`, `refs/tags/<name>`, `origin/<name>`
-//   uri     https:// http:// ssh:// file:// s3:// gs:// or git@host:path
+//   uri     https:// http:// ssh:// s3:// gs:// or git@host:path — schemes that name a
+//           REMOTE. `file://` is deliberately NOT accepted: it is a local path wearing a
+//           scheme, so `file:///tmp/run/work` is exactly the ephemeral-artifact failure
+//           this eval exists to catch, and accepting it would be a false PASS on the most
+//           on-point case there is.
 //   pr      `PR #123`, `MR !123`, `pull request #123`, or a `/pull/123` URL path —
 //           the repo is implicit in a tribunal ledger, and this is how doers on real
 //           runtimes most often name the artifact.
@@ -93,7 +97,8 @@ const looksLikeRef = (raw) => {
     (/[/\-_.]/.test(name) || /\d/.test(name) || CONVENTIONAL_BRANCHES.has(name.toLowerCase()))
   );
 };
-const RE_URI = /\b(?:https?|ssh|file|s3|gs):\/\/\S+|\bgit@[\w.-]+:\S+/gi;
+// `file` is absent by design — see the address rules above.
+const RE_URI = /\b(?:https?|ssh|s3|gs):\/\/\S+|\bgit@[\w.-]+:\S+/gi;
 const RE_PR =
   /\b(?:PR|MR|pull request|merge request)\s*[#!]?\s*(\d+)\b|\/(?:pull|merge_requests)\/(\d+)/gi;
 

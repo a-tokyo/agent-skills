@@ -266,6 +266,9 @@ const recognition = [
   ["branch main", 1, "conventional branch name"],
   ["tag v1.2.3", 1, "tag with digits"],
   ["the branch we discussed", 0, "prose, not a ref"],
+  // file:// is a local path wearing a scheme — the ephemeral-artifact case itself.
+  ["the artifact at file:///tmp/tribunal-run/work", 0, "file:// is not a fetchable address"],
+  ["https://github.com/acme/repo/commit/abc1234", 1, "a remote URI is"],
   ["review the branch a doer created", 0, "prose, not a ref"],
   ["work is on the branch", 0, "prose ending a sentence"],
 ];
