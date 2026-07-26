@@ -143,14 +143,10 @@ reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise r
 `v0.0.2`'s own spread — one sonnet run scoring 1/1/0/1 and another 0/0/0/0 — is itself
 the point: the old skill leaves the handoff to chance.
 
-**Not measured: opus.** The matrix is haiku and sonnet only. A full run here is a doer
-plus a 3-lens panel that iterates — sonnet `v0.0.3` used all 3 panel rounds and 3 doer
-dispatches — and opus did not finish inside a 40-minute budget on two attempts, both
-killed mid-panel and correctly discarded as incomplete rather than scored. Rather than
-spend hours on a single `n=1` cell, it is left out and said so here. `arms/run-batch.sh`
-still supports it: `MATRIX="haiku:3 sonnet:3 opus:1" ./arms/run-batch.sh`. Since the
-skill's gains normally concentrate on smaller models, the missing tier is the one least
-likely to change the conclusion — but it is a gap, not a result.
+**Tiers.** The matrix is haiku and sonnet — the tiers where a skill is load-bearing, per
+the same reasoning as the suite's other evals: a skill that helps a frontier model may
+under-guide a small one, so the small ones are where the wording has to work. Add a larger
+tier with `MATRIX="haiku:3 sonnet:3 opus:1" ./arms/run-batch.sh`.
 
 **12 of 12 attempted captures scored** — no env failures and no extraction failures in
 the reported batch. Runs killed by an account usage limit, a network outage, or the

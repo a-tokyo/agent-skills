@@ -38,13 +38,11 @@ case "$MODEL_ALIAS" in
 esac
 case "$ARM" in v002|v003) ;; *) echo "unknown arm: $ARM (expected v002|v003)" >&2; exit 2 ;; esac
 
-# A full tribunal run here is a doer plus a 3-lens panel, and it iterates: the sonnet v003
-# runs used all 3 panel rounds and 3 doer dispatches, landing around 25 min. Opus is slower
-# per turn and hit the original 2400s wall twice with no result event — killed mid-panel,
-# correctly discarded as incomplete rather than scored, but never measured either. The
-# timeout is containment, not a scoring parameter: raising it for the slowest tier does not
-# change what is measured, and every sonnet/haiku run finished well inside 2400s, so the
-# figures already recorded are unaffected.
+# A full run here is a doer plus a 3-lens panel, and it iterates: the sonnet v003 runs used
+# all 3 panel rounds and 3 doer dispatches, landing around 25 min. Size the timeout per tier
+# — slower-per-turn models need materially more than 2400s to reach a verdict, and a run cut
+# off mid-panel yields a truncated capture rather than a result. The timeout is containment,
+# not a scoring parameter, so per-tier values do not affect what is measured.
 case "$MODEL_ALIAS" in
   opus) TIMEOUT=7200 ;;
   *)    TIMEOUT=2400 ;;

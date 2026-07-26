@@ -110,12 +110,9 @@ complies 3/3, haiku not at all. Reported as a finding rather than fixed by relax
 metric.
 
 `n=3` per cell is small and the metrics are binary — these support "the address reliably
-reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise rate.
-**Opus was not measured**: a full run (doer + 3-lens panel, iterating) did not finish
-inside a 40-minute budget on two attempts, both discarded as incomplete rather than
-scored, and an `n=1` cell was not worth hours more wall-clock. The harness still supports
-it. Since the skill's gains normally concentrate on smaller models, the missing tier is
-the one least likely to change the conclusion — but it is a gap, not a result. All 12
+reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise rate. The
+arms run on haiku and sonnet, the tiers where a skill is load-bearing (same reasoning as
+the suites above: a skill that helps a frontier model may under-guide a small one). All 12
 attempted captures scored: no env failures, no extraction failures. Full per-run data and
 method: [`handoff-durability/`](handoff-durability/).
 

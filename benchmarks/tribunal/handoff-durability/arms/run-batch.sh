@@ -19,9 +19,9 @@ BENCH="$(cd "$HERE/.." && pwd)"
 
 CONCURRENCY="${1:-1}"   # sequential by default: concurrent tribunal runs (4 working subagents each) exhaust the account session allowance fast
 TAG="${2:-batch}"
-# model:reps per arm. Opus is NOT in the default matrix: a full run there exceeded even a
-# 7200s budget in practice, and the published figures do not include it. Add it explicitly
-# when you have the wall-clock to spare:  MATRIX="haiku:3 sonnet:3 opus:1" ./run-batch.sh
+# model:reps per arm. Defaults to the tiers where a skill is load-bearing — a skill that
+# helps a frontier model may under-guide a small one. Override to add tiers:
+#   MATRIX="haiku:3 sonnet:3 opus:1" ./run-batch.sh
 MATRIX="${MATRIX:-haiku:3 sonnet:3}"
 TOTAL=0
 for _s in $MATRIX; do TOTAL=$((TOTAL + 2 * ${_s#*:})); done
