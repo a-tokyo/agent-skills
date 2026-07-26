@@ -85,16 +85,31 @@ slice but left the spec uncommitted, and the orchestrator had to catch it and re
 filesystem that is fragile; under a torn-down or namespace-isolated sandbox the panel
 would score a path it cannot open.
 
-| Skill version | doer materialize instruction | address reported | verifiers carrying the address | budget carried | `handoff_durability` |
-|---|---|---|---|---|---|
-| `v0.0.2` | — | — | — | — | *live capture pending* |
-| `v0.0.3` | — | — | — | — | *live capture pending* |
+Live before/after, same model and task in both arms, the skill version the only variable
+(counts are runs passing each metric):
 
-The offline checker and its four fixtures are complete and self-tested
-(`node handoff-durability/selftest.mjs`); the live `v0.0.2`-vs-`v0.0.3` cells are filled
-in from `arms/run-arm.sh` captures (n=3 Haiku, n=3 Sonnet, n=1 Opus per arm) and are
-**deliberately left empty until those runs exist** rather than estimated. `v0.0.3` ships
-only if no cell regresses against `v0.0.2`.
+| Skill version | model | materialize | address reported | verifiers carrying it | budget carried | `handoff_durability` |
+|---|---|---|---|---|---|---|
+| `v0.0.2` | haiku (n=3) | 0/3 | 0/3 | 0/3 | 0/3 | **0/3** |
+| `v0.0.3` | haiku (n=3) | 2/3 | **3/3** | **3/3** | 0/3 | 0/3 |
+| `v0.0.2` | sonnet (n=3) | 1/3 | 1/3 | 0/3 | 1/3 | **0/3** |
+| `v0.0.3` | sonnet (n=3) | **3/3** | **3/3** | **3/3** | **3/3** | **3/3** |
+
+**No cell regresses**; every metric is equal or better under `v0.0.3`.
+
+The load-bearing figure is `v0.0.2`/sonnet **propagation 0/3**: under the old skill a
+capable orchestrator sometimes had its doer commit and report a SHA unprompted (1/3 on
+both) and *still* pointed the panel at a working tree every single time. That is
+invariant 1's latent flaw — "new-file paths" assuming a shared filesystem — reproduced
+under controlled conditions, and `v0.0.3` takes it to 3/3.
+
+Honest negative: `budget_carried` is 0/3 on haiku in **both** arms, so haiku shows no
+composite PASS despite its address chain going 0/3 → 3/3. Invariant 6's "every dispatch
+states the round index and the remaining budget" under-guides smaller models; sonnet
+complies 3/3, haiku not at all. Reported as a finding rather than fixed by relaxing the
+metric. `n=3` per cell is small and the metrics are binary — these support "the address
+reliably reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise
+rate. Full per-run data and method: [`handoff-durability/`](handoff-durability/).
 
 ## Reading the numbers
 

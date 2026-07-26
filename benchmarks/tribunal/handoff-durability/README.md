@@ -100,6 +100,42 @@ parser fix can be replayed offline without re-spending a capture.
 **Ship gate.** `v0.0.3` ships only if no cell regresses against `v0.0.2` — better or not
 at all. A mixed result is a fix list, not a footnote.
 
+### Results
+
+Same task, same model, same prompt; the tribunal `SKILL.md` version is the only variable.
+Counts are runs passing each metric, out of the cell's `n`.
+
+| cell | n | materialize | address reported | propagated | budget | **PASS** |
+|---|---|---|---|---|---|---|
+| `v0.0.2` haiku | 3 | 0/3 | 0/3 | 0/3 | 0/3 | **0/3** |
+| `v0.0.3` haiku | 3 | 2/3 | **3/3** | **3/3** | 0/3 | 0/3 |
+| `v0.0.2` sonnet | 3 | 1/3 | 1/3 | 0/3 | 1/3 | **0/3** |
+| `v0.0.3` sonnet | 3 | **3/3** | **3/3** | **3/3** | **3/3** | **3/3** |
+
+**No cell regresses**; every metric is equal or better under `v0.0.3`. The gate passes.
+
+The load-bearing number is `v0.0.2` sonnet **propagation 0/3**. Under the old skill a
+capable orchestrator *sometimes* had its doer commit and report a SHA unprompted (1/3 on
+both) — and still passed that address to the panel **zero times out of three**. That is
+invariant 1's latent flaw reproduced under controlled conditions: the artifact was
+reachable, and the verifiers were pointed at a working tree anyway. `v0.0.3` takes it to
+3/3. The edit is not teaching the doer to commit; it is closing the gap between the
+doer's commit and the panel's ability to fetch it.
+
+**Honest negative — `budget_carried` on haiku is 0/3 in BOTH arms.** Invariant 6 says
+every dispatch states the round index and the remaining budget. Sonnet complies (3/3);
+haiku states neither, and its runs are single-dispatch, so the haiku cell shows no
+composite PASS despite the address chain going 0/3 → 3/3. The instruction under-guides
+smaller models. That is a finding about the skill's wording, not a defect in the
+measurement, and it is reported rather than resolved by relaxing the conjunction —
+a benchmark tuned to its own desired result measures nothing.
+
+**Reading these numbers.** `n=3` per cell is small, and the metrics are binary, so a
+single run moves a cell by a third. The claim these support is "the address reliably
+reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise rate.
+`v0.0.2`'s own spread — one sonnet run scoring 1/1/0/1 and another 0/0/0/0 — is itself
+the point: the old skill leaves the handoff to chance.
+
 ## Scope — what this can and cannot show
 
 Claude Code's subagents share a filesystem with the orchestrator, so this harness
