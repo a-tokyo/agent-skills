@@ -107,9 +107,17 @@ Honest negative: `budget_carried` is 0/3 on haiku in **both** arms, so haiku sho
 composite PASS despite its address chain going 0/3 → 3/3. Invariant 6's "every dispatch
 states the round index and the remaining budget" under-guides smaller models; sonnet
 complies 3/3, haiku not at all. Reported as a finding rather than fixed by relaxing the
-metric. `n=3` per cell is small and the metrics are binary — these support "the address
-reliably reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise
-rate. Full per-run data and method: [`handoff-durability/`](handoff-durability/).
+metric.
+
+`n=3` per cell is small and the metrics are binary — these support "the address reliably
+reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise rate.
+**Opus was not measured**: a full run (doer + 3-lens panel, iterating) did not finish
+inside a 40-minute budget on two attempts, both discarded as incomplete rather than
+scored, and an `n=1` cell was not worth hours more wall-clock. The harness still supports
+it. Since the skill's gains normally concentrate on smaller models, the missing tier is
+the one least likely to change the conclusion — but it is a gap, not a result. All 12
+attempted captures scored: no env failures, no extraction failures. Full per-run data and
+method: [`handoff-durability/`](handoff-durability/).
 
 ## Reading the numbers
 

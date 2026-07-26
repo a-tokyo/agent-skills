@@ -1,8 +1,8 @@
 #!/usr/bin/env bash
 # run-batch.sh [concurrency] [tag]
 #
-# Runs the full before/after matrix — v002 and v003 across haiku (n=3), sonnet (n=3) and
-# opus (n=1), 14 captures — scores each with check.mjs, and writes one row per run to
+# Runs the before/after matrix — v002 and v003 across the tiers in MATRIX below — scores
+# each with check.mjs, and writes one row per run to
 # results/metrics.csv plus a per-cell summary to stdout.
 #
 # Scoring policy, matching the sibling harnesses:
@@ -19,6 +19,12 @@ BENCH="$(cd "$HERE/.." && pwd)"
 
 CONCURRENCY="${1:-1}"   # sequential by default: concurrent tribunal runs (4 working subagents each) exhaust the account session allowance fast
 TAG="${2:-batch}"
+# model:reps per arm. Opus is NOT in the default matrix: a full run there exceeded even a
+# 7200s budget in practice, and the published figures do not include it. Add it explicitly
+# when you have the wall-clock to spare:  MATRIX="haiku:3 sonnet:3 opus:1" ./run-batch.sh
+MATRIX="${MATRIX:-haiku:3 sonnet:3}"
+TOTAL=0
+for _s in $MATRIX; do TOTAL=$((TOTAL + 2 * ${_s#*:})); done
 RESULTS="$BENCH/results/metrics.csv"
 ABORT="$BENCH/results/.batch-aborted-$TAG"
 rm -f "$ABORT"
@@ -33,7 +39,7 @@ run_one() {
 
   [ -f "$ABORT" ] && { echo "$run_id,$arm,$model,not_run,,,,,," >> "$RESULTS"; return 0; }
 
-  # RESUMABLE: a 14-capture batch runs for hours and gets interrupted — usage limits, a
+  # RESUMABLE: the batch runs for hours and gets interrupted — usage limits, a
   # dropped network, a reboot. Already-scored runs are kept; anything else is re-run from
   # scratch, since run-arm.sh treats run-ids as one-shot and a half-written run dir would
   # otherwise abort the cell permanently.
@@ -87,11 +93,12 @@ run_one() {
   echo "# $run_id: handoff_durability=$(get handoff_durability)" >&2
 }
 
-echo "# batch $TAG: 14 captures, concurrency $CONCURRENCY" >&2
+echo "# batch $TAG: $TOTAL captures, concurrency $CONCURRENCY" >&2
 # ARMS ARE INTERLEAVED (v002 then v003 for the same model+rep) so that if the batch stops
 # early — usage limit, machine reboot — what has completed is still a MATCHED comparison
 # rather than "all of one arm and none of the other", which is uninterpretable.
-for spec in "haiku 3" "sonnet 3" "opus 1"; do
+for spec in $MATRIX; do
+  spec="${spec/:/ }"
   set -- $spec; model="$1"; reps="$2"
   for n in $(seq 1 "$reps"); do
     for arm in v002 v003; do

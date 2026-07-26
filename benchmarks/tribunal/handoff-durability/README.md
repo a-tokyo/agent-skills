@@ -75,10 +75,17 @@ the correct verdict. Repeat that exercise before trusting a new capture batch.
 # once: mint a headless credential (the fake HOME cannot see the keychain)
 claude setup-token > .auth-token     # gitignored
 
-# capture (arm is the ONLY variable: v002 = git show origin/main, v003 = working tree)
+# one capture (arm is the ONLY variable: v002 = git show origin/main, v003 = working tree)
 arms/run-arm.sh v003 sonnet v003-sonnet-1
 node check.mjs runs/v003-sonnet-1/dispatched
+
+# or the whole matrix, scored, resumable (re-invoke with the same tag to continue):
+arms/run-batch.sh 1 b1
 ```
+
+Keep concurrency at 1. Three concurrent runs — each a doer plus a 3-lens panel doing real
+work — exhausted the account session allowance in minutes, and a run cut off mid-flight
+produces a truncated capture that scores like a clean FAIL.
 
 `arms/run-arm.sh` copies exactly one tribunal `SKILL.md` into `$HOME/.claude/skills/tribunal`
 inside an isolated fake HOME — the only placement Claude Code reliably discovers, and the
@@ -135,6 +142,20 @@ single run moves a cell by a third. The claim these support is "the address reli
 reaches the panel under `v0.0.3` and unreliably under `v0.0.2`", not a precise rate.
 `v0.0.2`'s own spread — one sonnet run scoring 1/1/0/1 and another 0/0/0/0 — is itself
 the point: the old skill leaves the handoff to chance.
+
+**Not measured: opus.** The matrix is haiku and sonnet only. A full run here is a doer
+plus a 3-lens panel that iterates — sonnet `v0.0.3` used all 3 panel rounds and 3 doer
+dispatches — and opus did not finish inside a 40-minute budget on two attempts, both
+killed mid-panel and correctly discarded as incomplete rather than scored. Rather than
+spend hours on a single `n=1` cell, it is left out and said so here. `arms/run-batch.sh`
+still supports it: `MATRIX="haiku:3 sonnet:3 opus:1" ./arms/run-batch.sh`. Since the
+skill's gains normally concentrate on smaller models, the missing tier is the one least
+likely to change the conclusion — but it is a gap, not a result.
+
+**12 of 12 attempted captures scored** — no env failures and no extraction failures in
+the reported batch. Runs killed by an account usage limit, a network outage, or the
+timeout were discarded and re-run, never scored; `results/metrics.csv` holds the per-run
+data behind every figure above.
 
 ## Scope — what this can and cannot show
 
