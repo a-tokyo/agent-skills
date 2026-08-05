@@ -1,6 +1,6 @@
 ---
 name: create-skill-autoresearch
-version: 0.1.0
+version: 0.2.0
 license: MIT
 description: >-
   Factory skill that creates production-grade, benchmarked, autonomously improved,
@@ -35,69 +35,28 @@ This factory **extends** the official single-pass skill creators (Anthropic's Sk
 
 ## Companion skills
 
-The factory orchestrates these sibling skills at runtime: **autoresearch** (Phase 4 improvement loop), **premortem** (Phase 5 risk pass), and **handoff** (cross-session continuity); the Phase 5 panel/consensus design draws on **llm-council**. In this harness they are vendored under `.agents/skills/`. If you install this skill standalone, install those alongside it. The factory's craft layer ([references/skill-craft-principles.md](references/skill-craft-principles.md)) is distilled from **writing-great-skills** ([mattpocock/skills](https://github.com/mattpocock/skills), MIT), vendored in this repo's `.agents/skills/` alongside Anthropic's **skill-creator**.
+The factory orchestrates these sibling skills at runtime: **autoresearch** (Phase 4 improvement loop), **premortem** (Phase 5 risk pass), and **handoff** (cross-session continuity); the Phase 5 panel/consensus design draws on **llm-council**. In this harness they are vendored under `.agents/skills/`. If you install this skill standalone, install those alongside it. The factory's craft layer ([references/skill-craft-principles.md](references/skill-craft-principles.md)) is distilled from **writing-great-skills** ([mattpocock/skills](https://github.com/mattpocock/skills), MIT), which the harness vendors under `.agents/skills/`. Phase 5 will delegate to **tribunal** when it is installed (see 5.2).
 
 ---
 
 ## Phase 1: Interview
 
-Discover what the user needs through structured questions. Do not assume -- ask.
+Discover what the user needs through structured questions. Do not assume -- ask. Ask them one topic at a
+time and record the answers; the exact question wording and follow-ups are in
+[references/pipeline-phases.md](references/pipeline-phases.md).
 
-### 1.1 Purpose and Domain
+### 1.1 - 1.5 What to discover
 
-> **What skill do you want to build? What problem does it solve?**
->
-> Describe the domain, the target user (which agent will use this skill),
-> and what "success" looks like when the skill is used correctly.
+| Topic | Ask about | Record |
+|-------|-----------|--------|
+| **Purpose and domain** | the problem it solves, the domain, which agent will use it, what "success" looks like | `SKILL_PURPOSE`, `DOMAIN`, `TARGET_USER`, `SUCCESS_CRITERIA` |
+| **Gold standards** | examples of "what good looks like" — input/output pairs, reference artifacts, previously solved problems, existing quality reports; where they are, what format, how many | `GOLD_STANDARD_SOURCE`, `GOLD_STANDARD_FORMAT`, `GOLD_STANDARD_COUNT` |
+| **Study materials** | docs, existing code, transcripts, design docs, reference implementations, specs, style guides | `STUDY_MATERIALS` |
+| **Scope and constraints** | conventions to follow, skills to integrate with, anti-patterns to avoid, target line count (default < 500), and invocation mode — model-invoked (pays permanent context load) or user-invoked (`disable-model-invocation: true`) | `CONSTRAINTS`, `INTEGRATION_SKILLS`, `ANTI_PATTERNS`, `INVOCATION_MODE` |
+| **Existing skill** | is there one for this domain already? If so it is both a study material and a baseline — research it, measure it against the rubric, improve it rather than starting over | `EXISTING_SKILL`, and set mode to **upgrade** rather than **greenfield** |
 
-Record: `SKILL_PURPOSE`, `DOMAIN`, `TARGET_USER`, `SUCCESS_CRITERIA`.
-
-### 1.2 Gold Standards
-
-> **Do you have examples of "what good looks like"?**
->
-> Gold standards are the benchmark. They can be:
-> - **Input/output pairs**: given this input, the skill should produce output like this
-> - **Reference artifacts**: existing documents, code, or outputs that represent ideal quality
-> - **Previously solved problems**: tasks that were completed successfully by humans
-> - **Quality reports**: existing evaluations or benchmarks
->
-> Where are they? What format are they in? How many do you have?
-
-Record: `GOLD_STANDARD_SOURCE`, `GOLD_STANDARD_FORMAT`, `GOLD_STANDARD_COUNT`.
-
-Minimum: 3 gold standards. Fewer than 3 is a risk -- warn the user and suggest alternatives (create synthetic examples, find additional reference materials).
-
-### 1.3 Study Materials
-
-> **What materials should I study to understand this domain?**
->
-> Examples: documentation, existing code, transcripts, design docs,
-> reference implementations, specifications, style guides.
-
-Record: `STUDY_MATERIALS` (list of paths/URLs).
-
-### 1.4 Scope and Constraints
-
-> **Any constraints on the skill itself?**
->
-> - Must it follow specific conventions? (e.g., existing team patterns)
-> - Are there skills it should integrate with?
-> - Any anti-patterns to avoid?
-> - Target line count? (default: < 500 lines per create-skill conventions)
-> - Invocation mode: should the agent fire this skill on its own (model-invoked, pays
->   permanent context load) or only the human (user-invoked, `disable-model-invocation: true`)?
-
-Record: `CONSTRAINTS`, `INTEGRATION_SKILLS`, `ANTI_PATTERNS`, `INVOCATION_MODE`.
-
-### 1.5 Existing Skill Check
-
-> **Is there an existing skill for this domain that we're upgrading?**
->
-> If yes, that skill becomes a study material AND a baseline. The factory will
-> research it, measure it against the rubric, then improve it -- not start from scratch.
-
-If an existing skill is found, record `EXISTING_SKILL` path and set the factory mode to **upgrade** (baseline from existing) rather than **greenfield** (baseline from scratch).
+Minimum 3 gold standards. Fewer is a risk -- warn the user and offer alternatives: create synthetic
+examples, or find additional reference materials.
 
 ### 1.6 Confirm and Create Workspace
 
@@ -198,7 +157,7 @@ Present concerns to the user. Iterate until the design survives scrutiny.
 ### 3.3 Generate SKILL.md Draft
 
 Following the design and the official skill-authoring rules (see [references/skill-authoring-best-practices.md](references/skill-authoring-best-practices.md)), run this **pre-flight checklist** before writing -- these are hard constraints, not preferences:
-- `name`: <= 64 chars, lowercase/numbers/hyphens only, **no reserved words `anthropic`/`claude`**, gerund form preferred
+- `name`: <= 64 chars, lowercase/numbers/hyphens only, **no reserved words `anthropic`/`claude`**; descriptive kebab-case, matching the naming of the set it ships with
 - `description`: <= 1024 chars, **third person**, states both WHAT it does and WHEN to use it
 - Body < 500 lines; progressive disclosure (essentials in SKILL.md, detail in `references/`)
 - File references **one level deep** only; a table of contents for any reference file > 100 lines
@@ -223,6 +182,13 @@ Create `work/evaluation/evaluate.sh` that:
 
 See `self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo for a complete reference implementation.
 
+**`overall_score` steers Phase 4; it is not the shipping evidence.** It measures absolute output quality
+against gold standards, with no bare-model comparison in it, so it cannot answer "does this skill help".
+That question needs a **same-model uplift benchmark** -- the same model on identical tasks with the skill
+and without -- built before ship and reported with its honest negatives. Reading effectiveness off
+`overall_score` is the most common way to conclude a working skill is useless. Standard, arms, sample
+sizes and the retry-parity rule: [references/benchmark-standard.md](references/benchmark-standard.md).
+
 The LLM judge should:
 - Use structured JSON output for per-dimension scoring
 - Score each dimension independently (prevent halo effects)
@@ -236,14 +202,13 @@ The LLM judge should:
 
 Use LLM-as-judge only for dimensions that require subjective judgment (clarity, quality match, curation). Mix both in `evaluate.sh`: deterministic checks emit METRIC lines directly, LLM judges handle the rest. If no LLM API is available, fall back to deterministic-only scoring and log a warning.
 
-**Procedural / agentic skills (prefer this when it applies)**: Some skills don't *generate* an artifact in one shot — they instruct an agent to *perform a multi-step task on a real artifact* (migrate a framework version, refactor a module, scaffold infra, rebuild a repo). For these, the single-call "SKILL.md as system prompt + input as user message" model in 3.4 is the wrong harness. Evaluate them by **execution against a real artifact with an objective real-world metric** instead:
-
-1. **Pick a real test repo** where "correct" has a ground-truth signal — ideally one where a correct application is a *no-op against a captured baseline*. (Example: a Tailwind v3→v4 migration should be visually identical, so committed golden screenshots become the gold standard; the metric is pixel-parity + `build`/`lint`/`typecheck`/tests pass + a static "residual v3 markers = 0" grep.)
-2. **`evaluate.sh` orchestrates: reset → fresh-agent applies the skill → measure.** Reset the repo to the captured baseline; spawn a **fresh subagent** told to perform the task following *only* the skill under test (no other guides, no builder context); then run deterministic real-world checks on the result and emit `METRIC` lines. The artifact's own ground truth replaces the LLM judge — cheaper, deterministic, and far stronger signal than judging prose.
-3. **Fresh agent every run is the point.** It measures skill *self-sufficiency*, not the builder's accumulated context. A clean reset between runs (e.g. `git reset --hard <baseline> && git clean -fd` + reinstall) is mandatory or scores drift. Vary the executor model (e.g. a smaller model) as a robustness check — if a smaller model + the skill still hits the target, the skill is robust.
-4. **Capture the baseline before drafting.** On the unmodified repo, set up the metric (golden snapshots / test suite), confirm it's deterministic (run it twice, expect identical), and confirm the *unmigrated* state scores 0 so you know the gate discriminates.
-
-This makes the codemod/tool-first pattern natural too: have the skill run any deterministic tool (a codemod, a formatter, a generator) for the mechanical bulk first, and reserve the skill's prose for the judgment the tool can't do — the real-world metric then verifies the whole.
+**Procedural / agentic skills (prefer this when it applies)**: some skills don't *generate* an artifact in
+one shot — they instruct an agent to perform a multi-step task on a real artifact (migrate a framework
+version, refactor a module, scaffold infra). For those, the single-call harness above is the wrong
+instrument: evaluate by **execution against a real artifact with an objective real-world metric**, where
+the artifact's own ground truth replaces the judge. Full method — baseline capture, reset-then-fresh-agent
+orchestration, and why a fresh agent per run is the point — in
+[references/benchmark-standard.md](references/benchmark-standard.md).
 
 For **multi-judge evaluation** (recommended when budget allows):
 - Run 2-3 different LLM models as judges on the same output
@@ -308,19 +273,16 @@ Record the split in `work/evaluation/data-split.yaml`.
 
 **Cost awareness for large sets (100+ gold standards)**: Each LLM-as-judge call costs real money. With 70 training cases at ~$0.50/call, that's ~$35/experiment. Mitigate with a sampling strategy: evaluate against a random sample of training cases per experiment (e.g., 10-15), rotating the sample. Run the full training set only when validating kept experiments or at phase boundaries.
 
-**Overfitting detection**: Run `evaluate.sh` against the validation set (not just training) adaptively:
-- After every **kept** experiment (improvements are when overfitting risk changes)
-- After a **plateau** is detected (to check if the ceiling is real or just training-specific)
-- When training score crosses a **milestone** (e.g., jumps by > 0.05 in a single experiment)
+**Overfitting detection**: run `evaluate.sh` against the validation set adaptively — after every **kept**
+experiment, after a **plateau** (is the ceiling real or training-specific?), and when the training score
+jumps by more than 0.05. If training improves while validation drops by more than 0.05, warn the user
+that recent changes may be over-fitted and offer to generalize them, revert to the last
+validation-stable commit, or widen rubric criteria that have become too narrow. Log validation checks in
+`autoresearch.jsonl` as `"type": "validation_check"`.
 
-If training score improves but validation score drops by more than 0.05, flag overfitting:
-
-> **Overfitting warning**: Training score [X] improving but validation score [Y] declining.
-> Consider: generalizing recent changes, reverting to last validation-stable commit, or reviewing if rubric criteria are too narrow.
-
-Log validation checks in `autoresearch.jsonl` with `"type": "validation_check"`.
-
-**Overfitting detection for leave-one-out** (< 10 gold standards): Since there is no fixed validation set, track per-case score variance. If variance across cases increases while the mean improves, the skill is specializing for some cases at the cost of others. Flag when any single case drops > 1.0 point while others improve.
+**Overfitting detection for leave-one-out** (< 10 gold standards): with no fixed validation set, track
+per-case variance — if it widens while the mean improves, the skill is specializing for some cases at
+others' expense. Flag when any single case drops > 1.0 point while others improve.
 
 ### 4.3 Let Autoresearch Run
 
@@ -337,41 +299,35 @@ The factory adds to the autoresearch ideas backlog (`autoresearch.ideas.md`):
 - Patterns observed in gold standards that aren't yet reflected in the skill
 - Craft passes from [references/skill-craft-principles.md](references/skill-craft-principles.md): leading-word hunt, no-op/duplication/sediment prune, disclosure rebalance
 
+**Ending the loop is the factory's call, not the loop's.** The autoresearch skill treats a plateau as
+advisory and continues while budget remains, so a `target_score` the task cannot reach burns the whole
+budget and reports "exit criteria not met" -- forever. Override that:
+
+- **A confidence-qualified plateau is terminal.** If the plateau sits within judge variance (~0.2-0.3 on
+  a 1-10 scale, below which gains are not measurable), stop and carry best-so-far into Phase 5.
+- **Below target is a verdict, not a failure** -- Phase 5.4 grades it (SHIP WITH CAVEATS at or above
+  `target_score - 0.10`). Honour `baseline_lock` in `state.yaml` the same way, logging the real target
+  in the ideas backlog.
+- Never ask for repeated re-runs toward an unreachable number: report the ceiling, name the binding
+  constraint (target too high, or gains below judge variance), and proceed.
+
 ### 4.4 Monitor and Handoff
 
 If the autoresearch session exceeds context limits or the experiment budget:
 1. Invoke the **handoff skill** to generate `work/handoffs/HANDOFF-<session>.md`
-2. Write `work/handoffs/state.yaml` with structured resume state:
-   ```yaml
-   phase: autoresearch       # current phase (interview|research|draft|autoresearch|verify)
-   session: <N>              # session counter (increments on each resume)
-   skill_name: <name>        # the skill being built
-   best_score: <value>       # best overall_score achieved
-   best_commit: <hash>       # commit hash of best state
-   experiments_run: <count>  # total experiments across all sessions
-   remaining_budget: <count> # experiments left in budget
-   validation_score: <value> # last validation set score (if applicable)
-   top_concerns:             # panel feedback or known weaknesses
-     - <concern 1>
-     - <concern 2>
-   blocked_dimensions: []    # dimensions below threshold
-   last_updated: <ISO timestamp>
-   ```
+2. Write `work/handoffs/state.yaml` with structured resume state — phase, session counter, best score
+   and commit, experiments run, remaining budget, validation score, top concerns, blocked dimensions,
+   and `baseline_lock` (full schema in [references/pipeline-phases.md](references/pipeline-phases.md))
 3. The next session reads `state.yaml` to resume from the correct phase
 
 ### 4.5 Resume Protocol
 
-When the factory detects `work/handoffs/state.yaml` exists:
-
-1. Read `state.yaml` to determine current phase
-2. Read the most recent `work/handoffs/HANDOFF-*.md` for rich context
-3. Resume from the recorded phase:
-   - **interview**: Re-confirm parameters with user (may have changed)
-   - **research**: Check if dossier is complete, synthesize if needed
-   - **draft**: Check if SKILL.md draft exists, measure baseline if needed
-   - **autoresearch**: Read `autoresearch.jsonl` for ASI history, continue loop with remaining budget
-   - **verify**: Re-run panel if previous verification returned ITERATE
-4. Update `state.yaml` with new session number
+When `work/handoffs/state.yaml` exists: read it for the current phase, read the most recent
+`work/handoffs/HANDOFF-*.md` for context, resume at the recorded phase (re-confirm parameters on
+**interview**; synthesize if the dossier is incomplete on **research**; measure a baseline if the draft
+exists on **draft**; read `autoresearch.jsonl` for ASI history and continue with the remaining budget on
+**autoresearch**; re-run the panel if the last verdict was ITERATE on **verify**), then bump the session
+number. Per-phase detail: [references/pipeline-phases.md](references/pipeline-phases.md).
 
 ---
 
@@ -408,23 +364,28 @@ Each panel member scores every rubric dimension independently with:
 
 Use a **different model family** for the panel when possible (e.g., if the builder used one model, use a different one for verifiers).
 
+**One agent per role — this is the mechanism, not a formality.** A single agent simulating the panel in
+one context scores at its own solo floor (0.62 measured, vs 0.75 for separate agents): shared context
+means shared blind spots. The ORCHESTRATOR dispatches and adjudicates; it scores nothing. Without
+parallel agents, run each role as its own fresh-context session and label the result "single-context (no
+independence)". **Grep every verdict-driving citation** against the artifact before consensus math; one
+that cannot be found verbatim discards its finding.
+
 See [references/pipeline-phases.md](references/pipeline-phases.md) for panel prompt templates.
+
+**If the `tribunal` skill is available, delegate Phase 5 to it** — this pattern generalized and separately
+benchmarked. Pass the BUILDER's output as the artifact and the Phase-2.3 rubric (frozen before the Phase-3
+draft) as the criteria; its orchestrator must not be the agent that built the skill. Otherwise run the
+inline panel — a standalone install must not depend on a second skill.
 
 ### 5.3 Consensus Protocol
 
 After collecting all 3 scoring outputs:
 
-1. **Agreement check**: All scores within 1 point on every dimension → consensus reached, take weighted average
-2. **Synthesis round**: If any dimension has spread >= 2, or DA scores any dimension at 1:
-   - Each member writes a rationale on disputed dimensions (max 500 words)
-   - Rationales are **anonymized** and shared simultaneously
-   - Members may revise disputed scores with written justification
-   - Members who maintain their score must rebut the strongest opposing argument
-3. **Resolution**: After synthesis, test convergence:
-   - Converged (within 1 point) → weighted average
-   - Majority (2-of-3 agree) → majority score adopted, dissent logged as minority report in `work/experiments/craft-decisions.md`
-   - Deadlock → escalate to user
-4. **DA escalation**: DA may write `ESCALATE: <reason>` for critical concerns the majority dismisses. This surfaces the concern to the user.
+1. **Agreement check**: all scores within 1 point on every dimension → weighted average, done
+2. **Synthesis round** (any dimension spread >= 2, or DA scores a dimension at 1): each member writes a rationale on the disputed dimensions (max 500 words); rationales are **anonymized** and shared simultaneously; a member may revise with written justification, or must rebut the strongest opposing argument to keep their score
+3. **Resolution**: converged within 1 point → weighted average; 2-of-3 majority → majority adopted and the dissent logged as a minority report in `work/experiments/craft-decisions.md`; **deadlock → escalate to user**
+4. **DA escalation**: the DA may write `ESCALATE: <reason>` for a critical concern the majority dismisses, which surfaces it to the user rather than averaging it away
 
 See [references/consensus-protocol.md](references/consensus-protocol.md) for the full protocol, anti-patterns, and research basis.
 
@@ -444,6 +405,11 @@ If ITERATE:
 4. Log panel scores and rationales in `work/experiments/craft-decisions.md`
 5. Return to Phase 4 with structured feedback
 
+On SHIP, write `BENCHMARK.md` at the build root (the panel's final scores and verdict), then follow
+[references/publishing.md](references/publishing.md) — shipping is a registration checklist, not a file
+copy, and a version that disagrees with its registry entry installs the wrong thing. Prove the skill
+earns its place with an uplift benchmark: [references/benchmark-standard.md](references/benchmark-standard.md).
+
 ---
 
 ## Output Structure
@@ -454,20 +420,27 @@ Each build lives in one self-contained folder, `builds/<skill-name>/`, with thre
 builds/<skill-name>/
   input/                  # HUMAN: gold standards + study materials (any structure)
   work/                   # FACTORY: process artifacts (not shipped)
-    manifest.yaml         #   derived gold-standard index
+    manifest.yaml         #   derived gold-standard index    <- yours to correct
     research/             #   study notes and dossier
-    evaluation/           #   rubric.yaml, evaluate.sh, judges.yaml, data-split.yaml
+    evaluation/           #   rubric.yaml (exit criteria), evaluate.sh, judges.yaml, data-split.yaml
     experiments/          #   results.tsv, autoresearch.jsonl, run.log, DESIGN.md, craft-decisions.md
-    handoffs/             #   cross-session context
+    handoffs/             #   cross-session context (state.yaml, HANDOFF-*.md)
   output/                 # FACTORY: the finished, publish-ready skill
     <skill-name>/         #   the skill in its own named dir
       SKILL.md
+      README.md           #   optional, ships on install: what it does, method, results
       references/         #   if needed
       scripts/            #   if needed (NOT evaluation scripts)
       assets/             #   if needed
+  BENCHMARK.md            # FACTORY: final panel scores + verdict (Phase 5)
 ```
 
-Only `output/` ships. To publish: copy `builds/<skill-name>/output/<skill-name>/` straight into a skills repo's `skills/` directory.
+`work/` is generated, but four files are the human's to correct at phase boundaries: `manifest.yaml`,
+`evaluation/rubric.yaml` (the exit criteria), `evaluation/judges.yaml`, `evaluation/data-split.yaml`.
+Never write a credential into any of them — `work/` is often committed inside a real project repo.
+
+Only `output/<skill-name>/` ships; its uplift benchmark belongs **outside** the skill dir, at
+`benchmarks/<skill-name>/`. To publish: [references/publishing.md](references/publishing.md).
 
 ---
 
