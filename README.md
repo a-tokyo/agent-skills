@@ -27,9 +27,9 @@ measures the **same model with the skill vs without**, scored by executing the o
 reading it, with honest negatives included. See [`docs/benchmarking.md`](docs/benchmarking.md) for the
 standard and [`benchmarks/README.md`](benchmarks/README.md) for the index.
 
-Every figure published today was measured **single-pass**. In real use these skills run inside a
-retrying verifier panel, and a good share of the practical benefit comes from that retry — so read the
-published numbers as a floor rather than a ceiling.
+**Arms are single-pass unless a benchmark's README says otherwise.** In real use these skills run inside
+a retrying verifier panel, and a good share of the practical benefit comes from that retry — so read a
+single-pass number as a floor rather than a ceiling.
 
 ## Install
 

@@ -13,9 +13,10 @@ they **don't ship** when a skill is installed (`npx skills add …` pulls only t
 
 `tailwind-v3-to-v4-migration` has no benchmark yet — the only shipped skill without one.
 
-All arms to date run **single-pass**, without the retrying verifier panel that real usage puts a skill
-inside, so these numbers understate skills whose value shows up under retry. Adding a `skill+panel` arm
-is the next step; until then nothing here has been re-scored to look better.
+**An arm is single-pass unless its benchmark README states otherwise** — no retrying verifier panel of
+the kind real usage puts a skill inside — so a single-pass number understates any skill whose value
+shows up under retry. A `skill+panel` arm is the fix; a re-scored number is not, and nothing here has
+been re-scored.
 
 Each benchmark is self-contained — arms, a scorer, configs, and a README with method, per-model
 results, and reproduce steps. The arms read the skill they test from `../../skills/<skill>/SKILL.md`,
