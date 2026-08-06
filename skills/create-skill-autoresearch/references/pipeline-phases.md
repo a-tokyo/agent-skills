@@ -385,6 +385,31 @@ rotation: "each experiment holds out a different case"
 - Flag when any single case drops by > 1.0 point while others improve
 - Log per-case scores in `autoresearch.jsonl`: `"per_case_scores": {"input-01": 8.2, "input-02": 7.1, ...}`
 
+### Handoff State Schema
+
+`work/handoffs/state.yaml` — the structured resume state written on handoff (SKILL.md Phase 4.4):
+
+```yaml
+phase: autoresearch       # current phase (interview|research|draft|autoresearch|verify)
+session: <N>              # session counter (increments on each resume)
+skill_name: <name>        # the skill being built
+best_score: <value>       # best overall_score achieved
+best_commit: <hash>       # commit hash of best state
+experiments_run: <count>  # total experiments across all sessions
+remaining_budget: <count> # experiments left in budget
+validation_score: <value> # last validation set score (if applicable)
+top_concerns:             # panel feedback or known weaknesses
+  - <concern 1>
+  - <concern 2>
+blocked_dimensions: []    # dimensions below threshold
+last_updated: <ISO timestamp>
+baseline_lock: false      # true = a human froze target_score at the recorded best; do not re-derive
+```
+
+`baseline_lock` exists so a run can be frozen deliberately rather than by interrupting the loop. When
+it is true, Phase 4 treats `best_score` as satisfying the exit criteria and proceeds to Phase 5, and the
+real target is recorded in `autoresearch.ideas.md` so the gap is not forgotten.
+
 ---
 
 ## Phase 5: Verify -- Panel Prompt Templates

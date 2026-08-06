@@ -21,6 +21,12 @@ proving it earns its place. This is the standard; the index lives in
 - **Honest negatives.** List the cells where the skill *doesn't* separate (tasks both arms already
   pass are floors, not differentiators) and never publish a cell where the skill moves a column
   backwards. A benchmark that only shows wins isn't trusted.
+- **State retry parity per arm.** In real use a skill runs inside a loop that retries — a verifier
+  panel catches a first attempt that got it wrong and sends it back — and a large share of the
+  practical benefit comes from that. A benchmark arm is usually a single pass, so a single-pass arm and
+  a panel-retry arm **measure different systems**. Say which each arm did. Every figure published in
+  this repo today was measured single-pass and understates any skill whose value shows up under retry;
+  the fix is a third arm (bare / skill / skill+panel), not a re-scored number.
 
 ## Layout
 

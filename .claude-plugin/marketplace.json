@@ -24,8 +24,8 @@
       "source": "./",
       "skills": ["./skills/create-skill-autoresearch"],
       "strict": false,
-      "version": "0.1.0",
-      "description": "Factory for building production-grade agent skills: interviews you for purpose and gold standards, researches the domain, drafts the skill, autonomously improves it against an LLM-as-judge (or real-world) metric, and verifies it with an independent multi-agent panel. Extends the official single-pass skill creators. Orchestrates companion skills (autoresearch, premortem, handoff) — install those alongside it; the full batteries-included environment is the agent-skills-harness."
+      "version": "0.2.0",
+      "description": "Factory for building production-grade agent skills: interviews you for purpose and gold standards, researches the domain, drafts the skill, autonomously improves it against an LLM-as-judge (or real-world) metric, and verifies it with an independent multi-agent panel — delegating to tribunal when installed. Ships a same-model-uplift benchmark standard (bare vs skill vs skill+panel, scored by execution, honest negatives required) and a publish checklist, and stops the improvement loop on a plateau inside judge variance instead of iterating toward an unreachable target. Extends the official single-pass skill creators. Orchestrates companion skills (autoresearch, premortem, handoff) — install those alongside it; the full batteries-included environment is the agent-skills-harness."
     },
     {
       "name": "tribunal",
