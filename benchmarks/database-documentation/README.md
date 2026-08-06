@@ -85,13 +85,19 @@ The **oracle** is asserted byte-identical across two extractions before any run 
 extracts twice and aborts on any difference, so a non-deterministic extractor cannot silently become the
 ground truth. That check needs Docker and a live database.
 
-**The scorer itself does not yet ship a self-test**, and an earlier version of this section claimed it
-did. Writing one surfaced a real defect, so the honest statement of where this benchmark stands:
+**The scorer now ships a self-test** — `node evaluation/selftest.mjs`, offline, no database, no
+credentials. An earlier version of this section claimed one existed before it did; writing it surfaced a
+real defect. Where this benchmark stands:
 
-- Verified by hand — an empty candidate scores 0.0; the oracle round-tripped as its own candidate scores
-  1.0; omitted tables, columns, views, enums, indexes, constraints, triggers, routines, sequences and
-  domains are all counted as misses; an invented table is counted as a hallucination and is separately
-  hard-gated.
+```bash
+node evaluation/selftest.mjs            # 20 pass, 2 known-defect warnings, exit 0
+node evaluation/selftest.mjs --strict   # known defects fail the run too, exit 1
+```
+
+- Verified by the self-test — an empty candidate scores 0.0; the oracle round-tripped as its own
+  candidate scores 1.0; omitted tables, columns, views, enums, indexes, constraints, triggers, routines,
+  sequences and domains are counted as misses; an invented table is counted as a hallucination and is
+  separately hard-gated; and type aliases plus identifier case are normalised rather than penalised.
 - **Known defect — omitted foreign keys are not counted.** `foreign_keys` sits in both `ATTR_CLASSES`
   (`evaluation/score.mjs:219`) and `OBJECT_CLASSES` (`:230`); the attribute branch scores only over keys
   present in both and skips the rest (`:250`), so a missing FK never becomes a false negative and
