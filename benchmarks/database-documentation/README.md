@@ -85,25 +85,35 @@ The **oracle** is asserted byte-identical across two extractions before any run 
 extracts twice and aborts on any difference, so a non-deterministic extractor cannot silently become the
 ground truth. That check needs Docker and a live database.
 
-**The scorer now ships a self-test** — `node evaluation/selftest.mjs`, offline, no database, no
-credentials. An earlier version of this section claimed one existed before it did; writing it surfaced a
-real defect. Where this benchmark stands:
+**The scorer ships a self-test** — `node evaluation/selftest.mjs`, offline, no database, no credentials,
+27 assertions. An earlier version of this section claimed one existed before it did; writing it surfaced
+a real scoring defect, now fixed.
 
 ```bash
-node evaluation/selftest.mjs            # 20 pass, 2 known-defect warnings, exit 0
-node evaluation/selftest.mjs --strict   # known defects fail the run too, exit 1
+node evaluation/selftest.mjs   # 27 assertions, exit 0
 ```
 
-- Verified by the self-test — an empty candidate scores 0.0; the oracle round-tripped as its own
-  candidate scores 1.0; omitted tables, columns, views, enums, indexes, constraints, triggers, routines,
-  sequences and domains are counted as misses; an invented table is counted as a hallucination and is
-  separately hard-gated; and type aliases plus identifier case are normalised rather than penalised.
-- **Known defect — omitted foreign keys are not counted.** `foreign_keys` sits in both `ATTR_CLASSES`
-  (`evaluation/score.mjs:219`) and `OBJECT_CLASSES` (`:230`); the attribute branch scores only over keys
-  present in both and skips the rest (`:250`), so a missing FK never becomes a false negative and
-  `missing += fn` (`:274`) sees nothing. A candidate documenting every table but no foreign keys
-  currently scores `exact_parity=1`. Partial omission is affected too. Views are **not** affected — they
-  are object-only and are correctly penalised.
+It asserts that an empty candidate scores 0.0; the oracle round-tripped as its own candidate scores 1.0;
+omitted tables, columns, **foreign keys**, **primary keys**, views, enums, indexes, constraints,
+triggers, routines, sequences and domains are counted as misses; invented tables and invented foreign
+keys are counted as hallucinations and separately hard-gated; type aliases and identifier case are
+normalised rather than penalised; and an undocumented table is charged once rather than also being
+charged for the primary and foreign keys that vanished with it.
 
-Treat the per-class figures below as sound for every class except `foreign_keys`, which is unmeasured
-rather than perfect. Fixing this is tracked separately, since it changes what published scores mean.
+> **Scoring fix, 2026-08-06 — read the results below with this in mind.** `foreign_keys` and
+> `primary_keys` are hybrid classes: the key identifies an object, the value carries an attribute of it.
+> They were scored as pure attributes, and that branch skips any key the candidate never mentions —
+> correct for a real attribute, whose parent object's presence class already counts the omission, but
+> wrong for these two, which have no such parent class. The effect: **a candidate could omit every
+> foreign key and every primary key in the database and still score `exact_parity=1`.** Both are now
+> scored for presence as well as value, with a parent-table guard so a wholly-undocumented table is not
+> charged twice.
+>
+> **The figures below were produced before this fix**, by a scorer that could not see FK or PK
+> omissions. They are therefore an upper bound on those two classes, and re-measurement is needed
+> before they can be quoted as parity evidence for foreign keys or primary keys. Every other class was
+> scored correctly and is unaffected.
+
+Re-running the benchmark needs Docker, a live database and a fresh skill run, so the results below stand
+as recorded until someone does that — accurate for every class except `foreign_keys` and `primary_keys`,
+which were unmeasured rather than perfect.

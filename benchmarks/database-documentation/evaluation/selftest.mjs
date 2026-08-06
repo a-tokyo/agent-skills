@@ -12,7 +12,7 @@
 // requires byte-identical output. That one needs a live database; this one does not, and they check
 // different things: the oracle being stable vs. the scorer being able to tell good from bad.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -21,17 +21,10 @@ import { fileURLToPath } from 'node:url';
 const HERE = path.dirname(fileURLToPath(import.meta.url));
 const SCORER = path.join(HERE, 'score.mjs');
 
-// --strict also fails on known, documented defects. Default: they are reported loudly as WARN but do
-// not fail the run, so this stays usable as a regression check for everything else while the defect is
-// open. Without that split a single known bug makes the whole suite permanently red, and a permanently
-// red suite is one nobody runs.
-const STRICT = process.argv.includes('--strict');
-
 const work = fs.mkdtempSync(path.join(os.tmpdir(), 'dbdoc-selftest-'));
 process.on('exit', () => fs.rmSync(work, { recursive: true, force: true }));
 
 let failures = 0;
-let knownDefects = 0;
 
 function score(truth, candidate) {
   const t = path.join(work, 'truth.json');
@@ -47,6 +40,20 @@ function score(truth, candidate) {
   return metrics;
 }
 
+// SHOW_DIFF=1 writes the offending objects to stderr. Captured separately because the scoring path
+// above only reads stdout.
+function diffLines(truth, candidate) {
+  const t = path.join(work, 'truth.json');
+  const c = path.join(work, 'cand.json');
+  fs.writeFileSync(t, JSON.stringify(truth));
+  fs.writeFileSync(c, JSON.stringify(candidate));
+  // spawnSync, not execFileSync: the latter returns stdout, and the diff is written to stderr.
+  const res = spawnSync('node', [SCORER, t, c], {
+    encoding: 'utf8', env: { ...process.env, SHOW_DIFF: '1' }
+  });
+  return String(res.stderr || '').split('\n');
+}
+
 function check(label, condition, detail) {
   if (condition) {
     console.log(`  ok    ${label}`);
@@ -56,18 +63,6 @@ function check(label, condition, detail) {
   }
 }
 
-// An assertion that documents a defect we have not fixed yet. It still runs and is still reported —
-// and it turns into a hard failure under --strict, or the moment someone fixes the scorer and it
-// starts passing, which is the signal to promote it back to a normal check().
-function checkKnownDefect(label, condition, detail) {
-  if (condition) {
-    console.log(`  ok    ${label}  <-- now passing: the defect appears fixed, promote this to check()`);
-    return;
-  }
-  console.log(`  ${STRICT ? 'FAIL' : 'WARN'}  ${label}${detail ? ` — ${detail}` : ''}`);
-  knownDefects++;
-  if (STRICT) failures++;
-}
 
 // A small but structurally varied oracle: two schemas, a PK, an FK, a unique constraint, a check,
 // an index, a view and an enum. Enough that a scorer which silently ignores a whole class shows up.
@@ -176,25 +171,63 @@ console.log('score.mjs self-test\n');
   check('invented table => recall still 1 (nothing omitted)', m.recall_overall === 1, `got ${m.recall_overall}`);
 }
 
-// 5. KNOWN DEFECT — expected to fail until the scorer is fixed.
-//
-//    A candidate that lists every table but omits a foreign key currently scores perfect parity.
-//    `foreign_keys` is in BOTH ATTR_CLASSES (score.mjs:219) and OBJECT_CLASSES (:230). The attribute
-//    branch scores "only over keys present in both" and does `if (!gm.has(k)) continue` (:250), so an
-//    omitted FK is skipped rather than counted as a false negative — and `missing += fn` (:274) then
-//    sees fn=0. The comment there says presence is "handled by parent class", but for foreign keys
-//    there is no parent presence class; they ARE an object class.
-//
-//    Verified affected: total omission and partial omission (dropping 1 of 2 FKs still scores 1.0).
-//    Verified NOT affected: views, which are only in OBJECT_CLASSES and take the else branch.
-//
-//    Left failing on purpose. A green suite that quietly tolerates this would be worse than a red one.
+// 5. Sub-table objects must count. `foreign_keys` and `primary_keys` are hybrid classes — the key
+//    identifies an object, the value carries an attribute — and they used to be scored as pure
+//    attributes, which skipped any key the candidate never mentioned. That silently forgave omitting
+//    every foreign key and every primary key in the database. These are the regression tests.
 {
   const noFk = clone(ORACLE);
   for (const t of noFk.tables) delete t.foreign_keys;
   const m = score(ORACLE, noFk);
-  checkKnownDefect('KNOWN DEFECT: dropped foreign key => parity < 1', m.overall_parity < 1, `got ${m.overall_parity}`);
-  checkKnownDefect('KNOWN DEFECT: dropped foreign key => missing_objects > 0', m.missing_objects > 0, `got ${m.missing_objects}`);
+  check('dropped foreign key => parity < 1', m.overall_parity < 1, `got ${m.overall_parity}`);
+  check('dropped foreign key => missing_objects > 0', m.missing_objects > 0, `got ${m.missing_objects}`);
+}
+{
+  const noPk = clone(ORACLE);
+  for (const t of noPk.tables) delete t.primary_key;
+  const m = score(ORACLE, noPk);
+  check('dropped primary key => parity < 1', m.overall_parity < 1, `got ${m.overall_parity}`);
+  check('dropped primary key => counted as a defect', m.total_defects > 0, `got ${m.total_defects}`);
+}
+{
+  // An FK the docs claim that the schema does not have is a false statement, not an omission.
+  const inventedFk = clone(ORACLE);
+  const t = inventedFk.tables.find((x) => x.name === 'customer');
+  t.foreign_keys = [{ columns: ['id'], ref_schema: 'public', ref_table: 'order', ref_columns: ['id'] }];
+  const m = score(ORACLE, inventedFk);
+  check('invented foreign key => hallucinated_objects > 0', m.hallucinated_objects > 0, `got ${m.hallucinated_objects}`);
+  check('invented foreign key => precision < 1', m.precision_overall < 1, `got ${m.precision_overall}`);
+}
+{
+  // The guard that makes the above safe: when a whole table is undocumented, its PK and FK vanish with
+  // it. Those must NOT be charged again — the missing table already accounts for them, and one error
+  // should cost one defect. `order` has 3 columns, 1 PK and 1 FK; dropping it must cost 4 (itself plus
+  // its columns), not 6.
+  const noTable = clone(ORACLE);
+  noTable.tables = noTable.tables.filter((t) => t.name !== 'order');
+  const m = score(ORACLE, noTable);
+  check('dropped table does not double-charge its PK and FK', m.total_defects === 4,
+    `expected 4 (1 table + 3 columns), got ${m.total_defects}`);
+}
+
+// 5c. SHOW_DIFF must report what the score counted. A diff that disagrees with the score is worse than
+//     no diff — you see the number move and cannot find out why.
+{
+  const noFk = clone(ORACLE);
+  for (const t of noFk.tables) delete t.foreign_keys;
+  const lines = diffLines(ORACLE, noFk);
+  check('SHOW_DIFF names the omitted foreign key',
+    lines.some((l) => l.includes('MISSING') && l.includes('->')),
+    'no MISSING line for the dropped FK');
+
+  // ...and stays silent about a PK/FK that vanished with its table, matching the scoring guard.
+  const noTable = clone(ORACLE);
+  noTable.tables = noTable.tables.filter((t) => t.name !== 'order');
+  const dropped = diffLines(ORACLE, noTable);
+  const classesListed = dropped.filter((l) => /^ {2}[a-z_]+: /.test(l)).map((l) => l.trim().split(':')[0]);
+  check('SHOW_DIFF does not list the FK/PK of a dropped table',
+    !classesListed.includes('foreign_keys') && !classesListed.includes('primary_keys'),
+    `listed: ${classesListed.join(', ')}`);
 }
 
 // 5b. The control for the above: an omitted VIEW *is* caught. This is what a correctly-scored object
@@ -219,14 +252,8 @@ console.log('score.mjs self-test\n');
 }
 
 console.log('');
-if (knownDefects > 0) {
-  console.log(`${knownDefects} known defect assertion(s) still failing — foreign-key omissions are not scored.`);
-  console.log('Per-class figures are sound except `foreign_keys`, which is unmeasured rather than perfect.');
-  console.log('Run with --strict to treat these as failures.');
-  console.log('');
-}
 if (failures > 0) {
   console.log(`SELFTEST FAIL — ${failures} assertion(s) failed. Do not trust a parity number until this passes.`);
   process.exit(1);
 }
-console.log(knownDefects > 0 ? 'SELFTEST PASS (with known defects)' : 'SELFTEST PASS');
+console.log('SELFTEST PASS');

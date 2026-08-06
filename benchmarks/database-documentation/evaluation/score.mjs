@@ -229,6 +229,15 @@ const WEIGHTS = {
 // classes counting toward hallucinated/missing OBJECT tallies (presence of a real object)
 const OBJECT_CLASSES = new Set(['tables', 'columns', 'foreign_keys', 'enums', 'indexes',
   'unique_constraints', 'check_constraints', 'views', 'triggers', 'routines', 'sequences', 'domains']);
+// Hybrid classes: the KEY identifies an object in its own right (a specific FK; a table's PK) while the
+// VALUE carries an attribute of it (referenced columns; PK columns). Pure attribute classes can skip a
+// key the candidate never mentions, because the parent object's own presence class already counts the
+// omission — but for these two there is no such parent class, so skipping silently forgave omitting
+// every foreign key or primary key. They are scored for presence AND value, with the parent table
+// checked so a wholly-undocumented table is not counted twice.
+const HYBRID_CLASSES = new Set(['foreign_keys', 'primary_keys']);
+// `tkey` is `schema.name`; an FK key is `<tkey>/(cols)->ref`, a PK key is the bare `<tkey>`.
+const parentTableKey = (k) => { const i = k.indexOf('/'); return i === -1 ? k : k.slice(0, i); };
 // Goal is 100% parity and the dominant failure is INCOMPLETENESS, so use balanced F1 (beta=1) -- it only
 // approaches 1.0 when BOTH recall and precision do. Hallucinations are handled separately by the hard
 // `hallucinated_objects==0` ship gate, so the F-metric is free to be recall-sensitive. Override via PARITY_BETA.
@@ -243,20 +252,30 @@ const perClass = {};
 for (const cls of classes) {
   const tm = T[cls], gm = G[cls];
   const nTruth = tm.size;
-  let tp = 0, fp = 0, fn = 0;
+  let tp = 0, fp = 0, fn = 0, mism = 0;
   if (ATTR_CLASSES.has(cls)) {
-    // score only over keys present in both (presence handled by parent class); value must match.
+    const hybrid = HYBRID_CLASSES.has(cls);
+    // score over keys present in both (presence handled by parent class); value must match.
     for (const [k, v] of tm) {
-      if (!gm.has(k)) continue;
+      if (!gm.has(k)) {
+        // Hybrid classes have no parent presence class of their own, so an omission here is a real
+        // miss — but only when the candidate documented the parent table. If the table is missing the
+        // `tables` class already counts it, and counting again would penalize one error twice.
+        if (hybrid && G.tables.has(parentTableKey(k))) fn++;
+        continue;
+      }
       // column_comments: a DB comment is a fact (omitting/changing a real one is a defect), but adding a
       // description where the DB has NO comment is helpful interpretation, not a false DB fact — don't
       // penalize it. So only score columns where truth actually has a comment.
       if (cls === 'column_comments' && v === '') continue;
-      if (gm.get(k) === v) tp++; else { fp++; fn++; }
+      if (gm.get(k) === v) tp++; else { fp++; fn++; mism++; }
     }
-    // no overlap => the parent objects weren't documented; omission already counted by presence
+    // A hybrid claim the truth does not have — an invented FK, or a PK on a table that has none — is a
+    // false statement about the schema. Same parent-table guard, for the same reason.
+    if (hybrid) for (const k of gm.keys()) if (!tm.has(k) && T.tables.has(parentTableKey(k))) fp++;
+    // no overlap at all => the parent objects weren't documented; omission already counted by presence
     // classes. Drop this conditional class from the rollup rather than scoring it 1.0 vacuously.
-    if (tp + fp === 0) { perClass[cls] = { f: null, tp, fp, fn, n: nTruth }; continue; }
+    if (tp + fp + fn === 0) { perClass[cls] = { f: null, tp, fp, fn, n: nTruth }; continue; }
   } else {
     for (const k of tm.keys()) { if (gm.has(k)) tp++; else fn++; }
     for (const k of gm.keys()) { if (!tm.has(k)) fp++; }
@@ -268,9 +287,11 @@ for (const cls of classes) {
   perClass[cls] = { f: F, tp, fp, fn, n: nTruth, P, R };
   wF += WEIGHTS[cls] * F; wSum += WEIGHTS[cls];
   gTP += tp; gFP += fp; gFN += fn;
-  // total_defects counts each disagreement ONCE: presence classes contribute fp+fn (distinct missing +
-  // hallucinated objects); attribute classes contribute fp (== fn, one count per mismatched key).
-  defects += ATTR_CLASSES.has(cls) ? fp : (fp + fn);
+  // total_defects counts each disagreement ONCE. A value mismatch sets both fp and fn for a single
+  // disagreement, so subtract it back out: presence classes have no mismatches and contribute fp+fn
+  // (distinct missing + hallucinated objects); a pure attribute class has fp == fn == mism and so
+  // contributes fp, as before; a hybrid contributes its mismatches plus its omissions and inventions.
+  defects += fp + fn - mism;
   if (OBJECT_CLASSES.has(cls)) { hallucinated += fp; missing += fn; }
 }
 
@@ -300,7 +321,17 @@ if (process.env.SHOW_DIFF === '1') {
     const tm = T[cls], gm = G[cls];
     const fn = [], fp = [];
     if (ATTR_CLASSES.has(cls)) {
-      for (const [k, v] of tm) if (gm.has(k) && gm.get(k) !== v && !(cls === 'column_comments' && v === '')) fn.push(`${k} [truth=${v} cand=${gm.get(k)}]`);
+      // Mirrors the scoring branch above, parent-table guard included, so what is listed here is
+      // exactly what was counted — a diff that disagrees with the score is worse than no diff.
+      const hybrid = HYBRID_CLASSES.has(cls);
+      for (const [k, v] of tm) {
+        if (!gm.has(k)) {
+          if (hybrid && G.tables.has(parentTableKey(k))) fn.push(k);
+          continue;
+        }
+        if (gm.get(k) !== v && !(cls === 'column_comments' && v === '')) fn.push(`${k} [truth=${v} cand=${gm.get(k)}]`);
+      }
+      if (hybrid) for (const k of gm.keys()) if (!tm.has(k) && T.tables.has(parentTableKey(k))) fp.push(k);
     } else {
       for (const k of tm.keys()) if (!gm.has(k)) fn.push(k);
       for (const k of gm.keys()) if (!tm.has(k)) fp.push(k);
