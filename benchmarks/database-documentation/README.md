@@ -81,5 +81,23 @@ node ../evaluation/extract-pg.mjs  > truth.json    # DATABASE_URL=postgres://ben
 node ../evaluation/score.mjs truth.json <agent-schema.json>   # -> METRIC exact_parity / total_defects
 ```
 
-The scorer ships its own self-tests: empty docs score 0.0, the oracle round-tripped as a candidate scores
-1.0, and the oracle is asserted byte-identical across two extractions before any run.
+The **oracle** is asserted byte-identical across two extractions before any run — `evaluation/evaluate.sh`
+extracts twice and aborts on any difference, so a non-deterministic extractor cannot silently become the
+ground truth. That check needs Docker and a live database.
+
+**The scorer itself does not yet ship a self-test**, and an earlier version of this section claimed it
+did. Writing one surfaced a real defect, so the honest statement of where this benchmark stands:
+
+- Verified by hand — an empty candidate scores 0.0; the oracle round-tripped as its own candidate scores
+  1.0; omitted tables, columns, views, enums, indexes, constraints, triggers, routines, sequences and
+  domains are all counted as misses; an invented table is counted as a hallucination and is separately
+  hard-gated.
+- **Known defect — omitted foreign keys are not counted.** `foreign_keys` sits in both `ATTR_CLASSES`
+  (`evaluation/score.mjs:219`) and `OBJECT_CLASSES` (`:230`); the attribute branch scores only over keys
+  present in both and skips the rest (`:250`), so a missing FK never becomes a false negative and
+  `missing += fn` (`:274`) sees nothing. A candidate documenting every table but no foreign keys
+  currently scores `exact_parity=1`. Partial omission is affected too. Views are **not** affected — they
+  are object-only and are correctly penalised.
+
+Treat the per-class figures below as sound for every class except `foreign_keys`, which is unmeasured
+rather than perfect. Fixing this is tracked separately, since it changes what published scores mean.
