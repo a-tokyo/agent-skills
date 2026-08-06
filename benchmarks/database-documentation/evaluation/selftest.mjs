@@ -12,7 +12,7 @@
 // requires byte-identical output. That one needs a live database; this one does not, and they check
 // different things: the oracle being stable vs. the scorer being able to tell good from bad.
 
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -38,6 +38,20 @@ function score(truth, candidate) {
     if (m) metrics[m[1]] = Number(m[2]);
   }
   return metrics;
+}
+
+// SHOW_DIFF=1 writes the offending objects to stderr. Captured separately because the scoring path
+// above only reads stdout.
+function diffLines(truth, candidate) {
+  const t = path.join(work, 'truth.json');
+  const c = path.join(work, 'cand.json');
+  fs.writeFileSync(t, JSON.stringify(truth));
+  fs.writeFileSync(c, JSON.stringify(candidate));
+  // spawnSync, not execFileSync: the latter returns stdout, and the diff is written to stderr.
+  const res = spawnSync('node', [SCORER, t, c], {
+    encoding: 'utf8', env: { ...process.env, SHOW_DIFF: '1' }
+  });
+  return String(res.stderr || '').split('\n');
 }
 
 function check(label, condition, detail) {
@@ -194,6 +208,26 @@ console.log('score.mjs self-test\n');
   const m = score(ORACLE, noTable);
   check('dropped table does not double-charge its PK and FK', m.total_defects === 4,
     `expected 4 (1 table + 3 columns), got ${m.total_defects}`);
+}
+
+// 5c. SHOW_DIFF must report what the score counted. A diff that disagrees with the score is worse than
+//     no diff — you see the number move and cannot find out why.
+{
+  const noFk = clone(ORACLE);
+  for (const t of noFk.tables) delete t.foreign_keys;
+  const lines = diffLines(ORACLE, noFk);
+  check('SHOW_DIFF names the omitted foreign key',
+    lines.some((l) => l.includes('MISSING') && l.includes('->')),
+    'no MISSING line for the dropped FK');
+
+  // ...and stays silent about a PK/FK that vanished with its table, matching the scoring guard.
+  const noTable = clone(ORACLE);
+  noTable.tables = noTable.tables.filter((t) => t.name !== 'order');
+  const dropped = diffLines(ORACLE, noTable);
+  const classesListed = dropped.filter((l) => /^ {2}[a-z_]+: /.test(l)).map((l) => l.trim().split(':')[0]);
+  check('SHOW_DIFF does not list the FK/PK of a dropped table',
+    !classesListed.includes('foreign_keys') && !classesListed.includes('primary_keys'),
+    `listed: ${classesListed.join(', ')}`);
 }
 
 // 5b. The control for the above: an omitted VIEW *is* caught. This is what a correctly-scored object

@@ -321,7 +321,17 @@ if (process.env.SHOW_DIFF === '1') {
     const tm = T[cls], gm = G[cls];
     const fn = [], fp = [];
     if (ATTR_CLASSES.has(cls)) {
-      for (const [k, v] of tm) if (gm.has(k) && gm.get(k) !== v && !(cls === 'column_comments' && v === '')) fn.push(`${k} [truth=${v} cand=${gm.get(k)}]`);
+      // Mirrors the scoring branch above, parent-table guard included, so what is listed here is
+      // exactly what was counted — a diff that disagrees with the score is worse than no diff.
+      const hybrid = HYBRID_CLASSES.has(cls);
+      for (const [k, v] of tm) {
+        if (!gm.has(k)) {
+          if (hybrid && G.tables.has(parentTableKey(k))) fn.push(k);
+          continue;
+        }
+        if (gm.get(k) !== v && !(cls === 'column_comments' && v === '')) fn.push(`${k} [truth=${v} cand=${gm.get(k)}]`);
+      }
+      if (hybrid) for (const k of gm.keys()) if (!tm.has(k) && T.tables.has(parentTableKey(k))) fp.push(k);
     } else {
       for (const k of tm.keys()) if (!gm.has(k)) fn.push(k);
       for (const k of gm.keys()) if (!tm.has(k)) fp.push(k);
