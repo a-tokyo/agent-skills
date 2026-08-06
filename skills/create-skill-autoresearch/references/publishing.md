@@ -67,10 +67,18 @@ The version mismatch is the one that bites: the skill says `0.2.0`, the marketpl
 Pick one **source of truth** and never edit the published copy directly. The publish step is then a
 whole-directory replace, so a `references/` file cannot silently drift:
 
+`<source-dir>` is the directory that *contains* your source-of-truth copy of the skill, and it is not
+necessarily named `skills/` — in this harness it is `.agents/skills/`, while the registry it publishes to
+uses `skills/`. Set both explicitly so the three commands cannot drift apart:
+
 ```bash
-rm -rf <published>/skills/<skill-name>
-cp -r <source>/<skill-name> <published>/skills/<skill-name>
-diff -rq <source>/<skill-name> <published>/skills/<skill-name>   # must print nothing
+SKILL=<skill-name>
+SOURCE=<source-dir>          # e.g. .agents/skills   — holds <skill-name>/
+PUBLISHED=<registry-repo>    # e.g. ../agent-skills  — holds skills/<skill-name>/
+
+rm -rf "$PUBLISHED/skills/$SKILL"
+cp -r "$SOURCE/$SKILL" "$PUBLISHED/skills/$SKILL"
+diff -rq "$SOURCE/$SKILL" "$PUBLISHED/skills/$SKILL"   # must print nothing
 ```
 
 The `diff -rq` is the point — copy without it and a stale reference file survives. Editing the
