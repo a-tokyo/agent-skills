@@ -32,8 +32,11 @@ asserted by the panel in Phase 5 — not optional.
   does and *when* to use it (include concrete trigger terms). The description is the only thing
   pre-loaded for skill selection, so it must carry its weight. Measure it properly — see below.
 - **Body**: keep SKILL.md under **500 lines**; split detail into `references/` as it grows.
-- **References one level deep**: every reference file links directly from SKILL.md. Avoid nested
-  references (SKILL.md → a.md → b.md) — Claude may only partially read deeply nested files.
+- **References one level deep**: every reference file must be linked *directly* from SKILL.md, so it is
+  always one hop away. What this forbids is a file reachable **only** through another reference
+  (SKILL.md → a.md → b.md, where b is never named in SKILL.md) — Claude may read such a file partially
+  or not at all. A pointer between two references that are each already linked from SKILL.md is lateral
+  rather than nested, and is fine.
 - **Table of contents** for any reference file longer than ~100 lines, so partial reads still see
   the full scope.
 - **Forward-slash paths** only (`references/guide.md`), never backslashes.

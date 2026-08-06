@@ -3,6 +3,20 @@
 The authoritative lookup for every v3→v4 change. The codemod handles most; use this to audit and to
 migrate by hand when the tool can't run.
 
+## Contents
+
+- Renamed utilities (pure aliases — same compiled CSS)
+- Removed utilities (must rewrite — no alias)
+- Gradients
+- Space-between & divide selectors (layout change, no shim)
+- Container configuration (removed options)
+- Prefix
+- Deprecated `screen-*` max-widths
+- Syntax changes
+- Transforms & transitions
+- Behavior / preflight changes (see also 03-compat-shims)
+- Config-level removals
+
 ## Renamed utilities (pure aliases — same compiled CSS)
 
 | v3 | v4 |

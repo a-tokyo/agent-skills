@@ -112,7 +112,7 @@ surprising cell.
   Haiku's **26** — on the same `next`/`npm` task. Model strength alone does not produce a wired,
   toothed guardrail canon; the gap the skill closes is a methodology gap, not a capability gap the
   frontier model was already closing on its own.
-- **The skill flattens the model curve.** With the skill, Haiku (94), Sonnet (90-100 across stacks),
+- **The skill flattens the model curve.** With the skill, Haiku (94), Sonnet (89-100 across stacks),
   and Opus (94) all land in the same **94-100** band on `next`/`npm` — the skill's value is largest
   for the weakest model in absolute terms, but it moves every tier into the same narrow, high band
   rather than only lifting the strong model further.

@@ -1,6 +1,6 @@
 # ANSWER KEY — `taskq` v3 fixture
 
-Authored blind from `spec.md`. **13 defects** (3 Tier-1, 4 Tier-2, 6 Tier-3 of which **5 are
+Authored blind from `spec.md`. **13 defects** (3 Tier-1, 4 Tier-2, 6 Tier-3, **all 6
 cross-file**), **1 spec contradiction**, **3 traps**.
 
 Toolchain: TypeScript 5.9.3. Compilation verified with:
@@ -98,7 +98,7 @@ another (or the violated contract is owned by another module).
 
 ---
 
-## Tier-3 defects (subtle; 5 of 6 cross-file)
+## Tier-3 defects (subtle; all 6 cross-file)
 
 ### D8 — backoff unit mismatch: ms treated as seconds
 - **Tier:** 3. **Cross-file:** YES — cause `scheduler.ts:216,224`; violated contract owned by `backoff.ts` (S-BACK-5).

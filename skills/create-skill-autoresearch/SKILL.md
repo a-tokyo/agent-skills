@@ -1,6 +1,6 @@
 ---
 name: create-skill-autoresearch
-version: 0.2.0
+version: 0.2.1
 license: MIT
 description: >-
   Factory skill that creates production-grade, benchmarked, autonomously improved,
