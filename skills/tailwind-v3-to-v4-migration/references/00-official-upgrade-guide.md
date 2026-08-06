@@ -5,6 +5,23 @@
 > This is the ground truth. The other reference files (01–06) distill, reorganize, and add
 > field notes on top of it; when they ever disagree, this file wins.
 
+## Contents
+
+This list is added by this repo so a partial read still sees the full scope. The entries are the
+upstream document's own headings, verbatim; everything after the rule below is the unmodified copy.
+
+- Using the upgrade tool
+- Upgrading manually — Using PostCSS · Using Vite · Using Tailwind CLI
+- Changes from v3
+  - Browser requirements · Removed @tailwind directives · Removed deprecated utilities ·
+    Renamed utilities · Space-between selector · Divide selector · Using variants with gradients ·
+    Container configuration · Default border color · Default ring width and color · Preflight changes ·
+    Using a prefix · The important modifier · Adding custom utilities · Variant stacking order ·
+    Variables in arbitrary values · Arbitrary values in grid and object-position utilities ·
+    Hover styles on mobile · Transitioning outline-color · Disabling core plugins ·
+    Using the theme() function · Using a JavaScript config file · Theme values in JavaScript ·
+    Using @apply with Vue, Svelte, or CSS modules
+
 ---
 
 # Upgrade guide

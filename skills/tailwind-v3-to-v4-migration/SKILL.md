@@ -1,19 +1,18 @@
 ---
 name: tailwind-v3-to-v4-migration
-version: 0.0.1
+version: 0.0.2
 description: >-
   Migrate a project from Tailwind CSS v3 to v4 safely and completely. Runs the official
-  `@tailwindcss/upgrade` codemod, then drives the judgment the codemod can't: reconciling
-  dependencies and PostCSS/Vite/CLI plumbing, porting JS config to CSS-first `@theme` (or
-  keeping it via `@config`), auditing the v4 changed-defaults that silently alter appearance
+  `@tailwindcss/upgrade` codemod, then drives the judgment it can't: reconciling dependencies and
+  PostCSS/Vite/CLI plumbing, porting JS config to CSS-first `@theme` (or keeping it via `@config`),
+  auditing the v4 changed-defaults that silently alter appearance
   (border/ring/placeholder/cursor/dialog/hover) and applying compat shims, sweeping for
   renamed/removed utilities, and proving the migration is a visual no-op. Framework-agnostic
-  (Next.js, Vite, Tailwind CLI, plain PostCSS; Vue/Svelte/Astro/CSS-module caveats). USE FOR:
-  upgrading Tailwind 3 to 4, "tailwind v4 migration", `@tailwind` directives error,
-  `@tailwindcss/postcss` setup, tailwind.config.js to CSS @theme, shadow-sm/rounded/ring/
-  outline-none renames, bg-gradient-to to bg-linear-to. Activate only when an existing Tailwind v3
-  install is being upgraded. DO NOT USE FOR: setting up Tailwind v4 in a fresh project (no v3 present),
-  downgrading v4→v3, building a new design system from scratch, or non-Tailwind CSS.
+  (Next.js, Vite, Tailwind CLI, plain PostCSS; Vue/Svelte/Astro/CSS-module caveats). USE FOR: upgrading Tailwind 3 to 4, "tailwind v4
+  migration", `@tailwind` directives error, `@tailwindcss/postcss` setup, tailwind.config.js to CSS
+  @theme, shadow-sm/rounded/ring/outline-none renames, bg-gradient-to to bg-linear-to. Activate only
+  when an existing Tailwind v3 install is being upgraded. DO NOT USE FOR: a fresh v4 setup with no v3
+  present, downgrading v4 to v3, or non-Tailwind CSS.
 license: MIT
 compatibility: >-
   The upgrade tool requires Node.js 20+. Works best in a git repo (run in a branch, review the
@@ -34,8 +33,8 @@ porting, plugin/animation swaps, and proving nothing moved.
   `Cannot apply unknown utility class`, `tailwind.config` no longer picked up.
 - Converting `tailwind.config.{js,ts}` to CSS-first `@theme`.
 
-Skip if: the project is already on v4; you need to *downgrade*; or you only need a brand-new design
-system (use `tailwind-design-system`). Note v4 targets **Safari 16.4+, Chrome 111+, Firefox 128+** —
+Skip if: the project is already on v4; you need to *downgrade*; or you are building a brand-new design
+system rather than migrating one. Note v4 targets **Safari 16.4+, Chrome 111+, Firefox 128+** —
 if you must support older browsers, stay on v3.4 (flag this to the operator before proceeding).
 
 ## The one idea that makes this safe

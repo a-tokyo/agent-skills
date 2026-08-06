@@ -21,7 +21,7 @@ Capabilities), which has no CLI and can't run `npx skills`. Rebuilt whenever a s
 
 ## Benchmarks
 
-Skill benchmarks live in [`benchmarks/`](benchmarks/), one directory per skill — kept outside `skills/`
+Skill benchmarks live in [`benchmarks/`](benchmarks/), one directory per benchmarked skill — kept outside `skills/`
 so they don't ship when a skill is installed. Each is self-contained (arms, scorer, configs) and
 measures the **same model with the skill vs without**, scored by executing the output rather than
 reading it, with honest negatives included. See [`docs/benchmarking.md`](docs/benchmarking.md) for the

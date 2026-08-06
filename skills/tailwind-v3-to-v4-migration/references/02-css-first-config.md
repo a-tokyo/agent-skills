@@ -2,6 +2,14 @@
 
 v4 prefers configuration in CSS. You have two valid paths; pick per the JS config's contents.
 
+## Contents
+
+- Path A — Port `theme.extend` to a CSS `@theme {}` block (idiomatic)
+- Path B — Keep the JS config via `@config` (lowest-risk for plugin theming)
+- Plugins
+- Custom utilities / components
+- Theme values in JS
+
 ## Path A — Port `theme.extend` to a CSS `@theme {}` block (idiomatic)
 
 Map nested JS objects to flat CSS custom properties under namespaced prefixes:

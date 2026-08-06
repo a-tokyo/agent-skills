@@ -1,6 +1,6 @@
 # benchmarks
 
-Benchmarks for the skills in this repo, one directory per skill. They live here, outside `skills/`, so
+Benchmarks for the skills in this repo, one directory per benchmarked skill. They live here, outside `skills/`, so
 they **don't ship** when a skill is installed (`npx skills add …` pulls only the skill folder).
 
 | skill | benchmark |

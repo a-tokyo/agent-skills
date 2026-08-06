@@ -23,7 +23,7 @@ disagree with the guide, the guide wins.
 | `description` | ≤ 1024 chars, non-empty, third person, says *what* it does **and** *when* to use it |
 | Skill upload (all files) | ≤ 30 MB |
 | Reference file with a TOC | required when the file is > 100 lines |
-| Reference depth | one level deep from `SKILL.md` (no reference that only links to another reference) |
+| Reference depth | one level deep — every reference linked directly from `SKILL.md`; no file reachable only via another reference |
 
 `name`, `description`, and upload size are enforced by Anthropic at upload; the body-line count is a
 performance guideline (Anthropic's wording is "body under 500 lines"). The check below counts the
@@ -70,8 +70,11 @@ the `description`, before it breaks.
 
 - **Progressive disclosure.** `SKILL.md` is the overview; push depth into `references/<topic>.md` and
   link them. Split before the body nears 500 lines.
-- **References one level deep.** Every reference links directly from `SKILL.md`. Don't chain
-  reference → reference; Claude may only partially read a nested file.
+- **References one level deep.** Every reference must be linked *directly* from `SKILL.md`, so it is
+  always one hop away. The failure this prevents is a file reachable **only** by going through another
+  reference — Claude may read a nested file partially or not at all. A cross-reference between two files
+  that are each already linked from `SKILL.md` is lateral, not nested, and is fine; what is not fine is
+  a reference that introduces a file `SKILL.md` never mentions.
 - **TOC for long references.** Any reference > 100 lines opens with a `## Contents` list.
 - **Fully-qualified MCP names.** Write `ServerName:tool_name` (e.g. `GitHub:create_issue`), never a
   bare tool name.
