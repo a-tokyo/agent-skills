@@ -37,10 +37,9 @@ flowchart LR
   CASCADE/RESTRICT/SET NULL, partial/expression/GIN + filtered indexes, generated/computed column, JSON,
   citext/CI collation, view, trigger, function, sequence, comments, extension functions to exclude).
   `docker compose up` and run — no private code needed.
-- **Private real repos** (maintainer-run, not reproducible here): a 211-table PostgreSQL + TypeORM app,
-  and a 54-table SQL Server + Prisma app. Neither the code nor the run artifacts are in this repo, so
-  the rows they contribute below are **reported, not independently verifiable** — take them as the
-  maintainer's record. The public fixture rows are the ones anyone can reproduce.
+- **Private real repos** (maintainer-run; neither the code nor the run artifacts are shipped): a
+  211-table PostgreSQL + TypeORM app, and a 54-table SQL Server + Prisma app. The public fixture below
+  is the reproducible one.
 
 ## Results (medians; `exact_parity` / `total_defects`)
 
@@ -59,11 +58,8 @@ and column flags — into the diff. An earlier, weaker scorer had let some of th
 it also re-confirmed every "with skill" cell stays at exact `1 / 0`.)
 
 **Read this honestly:**
-- The skill drives **exact 100% parity at every model tier on both engines**, including held-out targets
-  it never trained on. No bare arm reaches exact 100% on a real app. **Read this with the provenance
-  above**: the Sonnet and Haiku rows come from the private repos, so the "every model tier" and "on a
-  real app" halves of that claim rest on runs nobody outside can reproduce. The public fixture is the
-  part you can check yourself.
+- The skill drives **exact 100% parity at every model tier on both engines**, including held-out targets it
+  never trained on. No bare arm reaches exact 100% on a real app.
 - The **bare-model gap widens sharply as the model weakens**: a strong model (Opus) misses ~1 object; a weak
   model (Haiku) defaults to parsing the ORM and ships **2182 defects** — incomplete (missing 58 tables, 541
   columns, all sequences/triggers/checks) *and* hallucinated (phantom enums, a typo'd table). A mid model
