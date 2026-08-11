@@ -1,6 +1,6 @@
 ---
 name: app-ai-guardrails
-version: 0.0.3
+version: 0.0.4
 license: MIT
 description: >-
   Scaffold a new production application with the full agentic-AI guardrail canon baked in
