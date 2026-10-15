@@ -1,0 +1,40 @@
+{
+  "site_code": "PT-OPO",
+  "cost_center": "CC-3100",
+  "lines": [
+    {
+      "sku": "TRA-558A",
+      "vendor_id": "V014",
+      "qty": 3,
+      "unit_price_eur": 77.04,
+      "line_total_eur": 231.12
+    },
+    {
+      "sku": "WEB-230B",
+      "vendor_id": "V014",
+      "qty": 2,
+      "unit_price_eur": 71.7,
+      "line_total_eur": 143.4
+    },
+    {
+      "sku": "TON-333A",
+      "vendor_id": "V009",
+      "qty": 5,
+      "unit_price_eur": 42.15,
+      "line_total_eur": 210.75
+    }
+  ],
+  "total_eur": 585.27,
+  "approval": "auto",
+  "it_review": true,
+  "exceptions": [
+    {
+      "code": "ITEM_NOT_FOUND",
+      "detail": "laser cutter"
+    },
+    {
+      "code": "QTY_ROUNDED",
+      "detail": "TON-333A 1->5"
+    }
+  ]
+}

@@ -1,9 +1,13 @@
 #!/usr/bin/env bash
-# run-arm.sh <arm> <model> <run-id>
+# run-arm.sh <arm> <model> <run-id> [task]
 #
-#   arm     bare | skill-creator | factory
+#   arm     bare | skill-creator | factory | factory-v021
 #   model   haiku | sonnet | opus   (builder model; the scorer's executor model is fixed separately)
 #   run-id  unique id; everything lands in runs/<run-id>/
+#   task    task (conventional-commits, default) | task-2 (purchase-order-builder)
+#
+#   FACTORY_DIR / COMPANIONS_DIR override where the factory arms load the skill and its companions;
+#   factory-v021 requires both (the pinned v0.2.1 archive, agent-skills commit 99652ee).
 #
 # Launches ONE fresh `claude -p` build run in runs/<run-id>/work/ under full containment:
 # isolated HOME + GIT_CONFIG_GLOBAL + XDG dirs so a --dangerously-skip-permissions agent can never
@@ -18,22 +22,34 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH="$(cd "$HERE/.." && pwd)"
 REPO="$(cd "$BENCH/../.." && pwd)"
 
-ARM="${1:?usage: run-arm.sh <bare|skill-creator|factory> <model> <run-id>}"
+ARM="${1:?usage: run-arm.sh <bare|skill-creator|factory|factory-v021> <model> <run-id> [task]}"
 MODEL_ALIAS="${2:?missing model}"
 RUN_ID="${3:?missing run-id}"
+TASK_NAME="${4:-task}"
+case "$TASK_NAME" in
+  task)   SKILL_OUT="conventional-commits" ;;
+  task-2) SKILL_OUT="purchase-order-builder" ;;
+  *) echo "unknown task: $TASK_NAME" >&2; exit 2 ;;
+esac
+TASK_DIR="$BENCH/$TASK_NAME"
 
 case "$MODEL_ALIAS" in
-  haiku)  MODEL_ID="claude-haiku-4-5-20251001" ;;
-  sonnet) MODEL_ID="claude-sonnet-5" ;;
-  opus)   MODEL_ID="claude-opus-4-8" ;;
+  haiku)  MODEL_ID="claude-haiku-5-5" ;;
+  sonnet) MODEL_ID="claude-sonnet-5-5" ;;
+  opus)   MODEL_ID="claude-opus-5-5" ;;
   *) echo "unknown model alias: $MODEL_ALIAS" >&2; exit 2 ;;
 esac
 case "$ARM" in
   bare)          TIMEOUT=1200;  MAX_TURNS=60  ;;
   skill-creator) TIMEOUT=4800;  MAX_TURNS=250 ;;
-  factory)       TIMEOUT=10800; MAX_TURNS=600 ;;
+  factory|factory-v021) TIMEOUT=10800; MAX_TURNS=600 ;;
   *) echo "unknown arm: $ARM" >&2; exit 2 ;;
 esac
+if [ "$ARM" = "factory-v021" ] && { [ -z "${FACTORY_DIR:-}" ] || [ -z "${COMPANIONS_DIR:-}" ]; }; then
+  echo "factory-v021 needs FACTORY_DIR and COMPANIONS_DIR (the pinned v0.2.1 archive)" >&2; exit 2
+fi
+FACTORY_DIR="${FACTORY_DIR:-$REPO/skills/create-skill-autoresearch}"
+COMPANIONS_DIR="${COMPANIONS_DIR:-$BENCH/companions}"
 
 # auth precheck BEFORE any run-dir creation (containment hides the interactive login;
 # a headless credential is required: CLAUDE_CODE_OAUTH_TOKEN via `claude setup-token`, or ANTHROPIC_API_KEY)
@@ -76,34 +92,33 @@ case "$ARM" in
   skill-creator)
     cp -R "$REPO/.agents/skills/skill-creator" "$HOME/.claude/skills/skill-creator"
     ;;
-  factory)
-    cp -R "$REPO/skills/create-skill-autoresearch" "$HOME/.claude/skills/create-skill-autoresearch"
-    for s in autoresearch premortem handoff; do
-      cp -R "$BENCH/companions/$s" "$HOME/.claude/skills/$s"
+  factory|factory-v021)
+    cp -R "$FACTORY_DIR" "$HOME/.claude/skills/create-skill-autoresearch"
+    for s in "$COMPANIONS_DIR"/*/; do
+      [ -f "$s/SKILL.md" ] && cp -R "$s" "$HOME/.claude/skills/$(basename "$s")"
     done
     ;;
 esac
 
 # ---------- task setup: brief + materials into the workspace ----------
-cp "$BENCH/task/brief.md" "$WORK/brief.md"
-mkdir -p "$WORK/input" "$WORK/materials"
-cp "$BENCH"/task/input/*.md "$WORK/input/"
-cp "$BENCH"/task/materials/spec.md "$WORK/materials/spec.md"
+cp "$TASK_DIR/brief.md" "$WORK/brief.md"
+cp -R "$TASK_DIR/input" "$WORK/input"
+cp -R "$TASK_DIR/materials" "$WORK/materials"
 # holdout cases and answer key are NEVER copied into the run
 
 # ---------- render the prompt ----------
 case "$ARM" in
   bare)
-    EXTRA="Read brief.md, the gold standards in input/, and materials/spec.md, then write the skill in a single pass. Do not use any installed skills."
+    EXTRA="Read brief.md, the gold standards in input/, and materials/, then write the skill in a single pass. Do not use any installed skills."
     ;;
   skill-creator)
-    EXTRA="Use the skill-creator skill to build it. Read brief.md, the gold standards in input/, and materials/spec.md. Work fully non-interactively: brief.md answers every question you would ask the user; never wait for user input. Skip any packaging/upload steps — just produce the skill directory."
+    EXTRA="Use the skill-creator skill to build it. Read brief.md, the gold standards in input/, and materials/. Work fully non-interactively: brief.md answers every question you would ask the user; never wait for user input. Skip any packaging/upload steps — just produce the skill directory."
     ;;
-  factory)
-    EXTRA="Use the create-skill-autoresearch skill (the 5-phase factory) to build it. brief.md answers every Phase-1 interview question. You are running UNATTENDED in CI: there is no user, no one will ever reply, and pausing to ask or check in ends the run as a failure. Wherever the factory says to confirm, present, or check in with the user, adopt the brief's answer (or the factory's stated default) and continue immediately. Run ALL 5 phases to completion — including the Phase-4 autoresearch loop (budget max_iterations: 6) and the Phase-5 panel — before stopping. For any LLM-as-judge evaluation the factory builds, use the claude CLI itself (claude -p --model claude-haiku-4-5-20251001) rather than an external API."
+  factory|factory-v021)
+    EXTRA="Use the create-skill-autoresearch skill (the 5-phase factory) to build it. brief.md answers every Phase-1 interview question. You are running UNATTENDED in CI: there is no user, no one will ever reply, and pausing to ask or check in ends the run as a failure. Wherever the factory says to confirm, present, or check in with the user, adopt the brief's answer (or the factory's stated default) and continue immediately. Run ALL 5 phases to completion — including the Phase-4 autoresearch loop (budget max_iterations: 6) and the Phase-5 panel — before stopping. For any LLM-as-judge evaluation the factory builds, use the claude CLI itself (claude -p --model claude-haiku-5-5) rather than an external API."
     ;;
 esac
-PROMPT="You are in an empty workspace containing brief.md, input/, and materials/. Build the skill specified by brief.md. $EXTRA When you are done, the finished skill must exist at output/conventional-commits/SKILL.md."
+PROMPT="You are in an empty workspace containing brief.md, input/, and materials/. Build the skill specified by brief.md. $EXTRA When you are done, the finished skill must exist at output/$SKILL_OUT/SKILL.md."
 printf '%s\n' "$PROMPT" > "$RUN/prompt.txt"
 
 # ---------- run the agent ----------
@@ -118,6 +133,7 @@ set +e
     XDG_CONFIG_HOME="$XDG_CONFIG_HOME" XDG_CACHE_HOME="$XDG_CACHE_HOME" XDG_DATA_HOME="$XDG_DATA_HOME" \
     GIT_CONFIG_GLOBAL="$GIT_CONFIG_GLOBAL" GIT_CEILING_DIRECTORIES="$GIT_CEILING_DIRECTORIES" \
     CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}" ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    DISABLE_AUTOUPDATER=1 \
     claude -p "$(cat "$RUN/prompt.txt")" \
     --model "$MODEL_ID" \
     --dangerously-skip-permissions \
@@ -130,6 +146,8 @@ WALL=$((END_TS - START_TS))
 
 # ---------- env-failure detection (policy: rerun once, never score an env_failure) ----------
 ENV_FAILURE=0
+# 143 = SIGTERM from outside the run (a Claude Code self-update terminates every live session).
+[ "$EXIT_CODE" -eq 143 ] && ENV_FAILURE=1
 if [ "$EXIT_CODE" -ne 0 ]; then
   if grep -qiE 'ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network error|socket hang up|503 Service|429 Too Many|fetch failed|API Error: Connection closed|overloaded_error' \
       "$RUN/transcript.txt" 2>/dev/null; then
@@ -138,14 +156,15 @@ if [ "$EXIT_CODE" -ne 0 ]; then
 fi
 
 # ---------- meta + results row ----------
-printf '{ "run_id": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "exit_code": %s, "wall_seconds": %s, "env_failure": %s }\n' \
-  "$RUN_ID" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" > "$RUN/meta.json"
+printf '{ "run_id": "%s", "task": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "exit_code": %s, "wall_seconds": %s, "env_failure": %s }\n' \
+  "$RUN_ID" "$TASK_NAME" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" > "$RUN/meta.json"
 RESULTS="$BENCH/results/runs.csv"
 mkdir -p "$BENCH/results"
-[ -f "$RESULTS" ] || echo "run_id,arm,model,exit_code,wall_seconds,env_failure" > "$RESULTS"
-echo "$RUN_ID,$ARM,$MODEL_ALIAS,$EXIT_CODE,$WALL,$ENV_FAILURE" >> "$RESULTS"
+[ -f "$RESULTS" ] || echo "run_id,arm,model,exit_code,wall_seconds,env_failure,task" > "$RESULTS"
+echo "$RUN_ID,$ARM,$MODEL_ALIAS,$EXIT_CODE,$WALL,$ENV_FAILURE,$TASK_NAME" >> "$RESULTS"
 
 echo "# run $RUN_ID finished: exit=$EXIT_CODE wall=${WALL}s env_failure=$ENV_FAILURE" >&2
-echo "# score: node $BENCH/scoring/score.mjs $RUN/work/output/conventional-commits" >&2
+SCORER="score.mjs"; [ "$TASK_NAME" = "task-2" ] && SCORER="score-task2.mjs"
+echo "# score: node $BENCH/scoring/$SCORER $RUN/work/output/$SKILL_OUT" >&2
 [ "$ENV_FAILURE" = "1" ] && exit 75
 exit "$EXIT_CODE"

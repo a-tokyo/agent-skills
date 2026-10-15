@@ -1,0 +1,31 @@
+{
+  "site_code": "PT-OPO",
+  "cost_center": "CC-2100",
+  "lines": [
+    {
+      "sku": "MON-434C",
+      "vendor_id": "V001",
+      "qty": 2,
+      "unit_price_eur": 322.39,
+      "line_total_eur": 644.78
+    },
+    {
+      "sku": "DOC-395A",
+      "vendor_id": "V008",
+      "qty": 1,
+      "unit_price_eur": 149.17,
+      "line_total_eur": 149.17
+    },
+    {
+      "sku": "DES-237B",
+      "vendor_id": "V005",
+      "qty": 1,
+      "unit_price_eur": 154.67,
+      "line_total_eur": 154.67
+    }
+  ],
+  "total_eur": 948.62,
+  "approval": "auto",
+  "it_review": true,
+  "exceptions": []
+}

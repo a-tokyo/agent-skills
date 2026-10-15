@@ -5,7 +5,7 @@
 //   <path-to-skill-dir> must contain SKILL.md (the produced skill).
 //
 // Scoring (weights fixed before any benchmark run):
-//   execution  0.60  — a fixed executor model (Haiku, temperature 0) receives the produced
+//   execution  0.60  — a fixed executor model (Haiku 5.5; it accepts no temperature) receives the produced
 //                      SKILL.md as its system prompt and each holdout diff summary as the user
 //                      message; the emitted commit message is parsed field-by-field against
 //                      task/holdout/answer-key.json. No LLM judge anywhere.
@@ -23,7 +23,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TASK = join(HERE, "..", "task");
-export const EXECUTOR_MODEL = "claude-haiku-4-5-20251001";
+export const EXECUTOR_MODEL = "claude-haiku-5-5";
 export const WEIGHTS = { execution: 0.6, compliance: 0.25, craft: 0.15 };
 
 const TYPES = ["feat", "fix", "build", "chore", "ci", "docs", "style", "refactor", "perf", "test"];
@@ -160,7 +160,7 @@ function runExecutorCli(skillText, input, oauthToken) {
       ["-p", EXECUTOR_PROMPT(input), "--model", EXECUTOR_MODEL, "--system-prompt", skillText, "--max-turns", "1"],
       // allowlisted env only — the caller's unrelated secrets must never reach the executor session
       {
-        env: { PATH: process.env.PATH, HOME: home, TERM: "dumb", CLAUDE_CODE_OAUTH_TOKEN: oauthToken },
+        env: { PATH: process.env.PATH, HOME: home, TERM: "dumb", CLAUDE_CODE_OAUTH_TOKEN: oauthToken, DISABLE_AUTOUPDATER: "1" },
         encoding: "utf8", timeout: 240000, stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -181,14 +181,18 @@ async function runExecutor(skillText, input, apiKey) {
     body: JSON.stringify({
       model: EXECUTOR_MODEL,
       max_tokens: 512,
-      temperature: 0,
+      thinking: { type: "disabled" },
       system: skillText,
       messages: [{ role: "user", content: EXECUTOR_PROMPT(input) }],
     }),
   });
   if (!res.ok) throw new Error(`executor API ${res.status}: ${await res.text()}`);
   const data = await res.json();
-  return data.content.map((b) => b.text ?? "").join("");
+  const text = data.content.map((b) => b.text ?? "").join("");
+  if (!text.trim() && data.stop_reason === "max_tokens") {
+    throw new Error("executor returned no text before max_tokens — an executor fault, not a skill score");
+  }
+  return text;
 }
 
 export async function scoreSkill(skillDir, { apiKey, oauthToken, executorOut } = {}) {
