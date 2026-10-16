@@ -31,6 +31,10 @@ Key constraint: BUILDER and PANEL never share context. Panel receives only the s
 answer or the stated default, answer autoresearch's setup without waiting for its confirmation, and
 record each assumption in `work/experiments/craft-decisions.md`.
 
+**Background jobs** (eval runs, `claude plugin eval`, loops): capture each PID at start (`cmd & pid=$!`
+or a pidfile under `work/`), then wait on or stop only those PIDs or their process group. Never `pkill`,
+`killall` or `pgrep | xargs kill` by name or pattern: that kills unrelated processes on the machine.
+
 ## Companion skills
 
 The factory composes sibling skills rather than embedding them, so each stays current upstream.

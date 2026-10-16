@@ -402,6 +402,10 @@ adds the rest, and applies it in every experiment:
   `git rev-parse --show-toplevel` equals the workspace root, and refuse to revert otherwise. A
   workspace nested in a parent project (a gitignored `builds/`, say) would reset the parent's last
   commit and wipe its uncommitted work; SKILL.md 1.6 makes the workspace its own repository.
+- **Owned processes.** Start every background job (eval runs, `claude plugin eval`, `until` loops)
+  with its PID captured — `cmd & pid=$!`, or a pidfile under `work/` — and wait on or stop only those
+  PIDs or their process group (`kill -- -"$pgid"`). Never `pkill`, `killall` or `pgrep | xargs kill`
+  by name or pattern: on a shared machine that kills sibling builds and the user's own processes.
 - **Clean reverts.** Discard with `git reset --hard HEAD~1 && git clean -fd -- output/<skill-name>`,
   so a reverted experiment leaves no new untracked files behind.
 - **Noise threshold.** Keep a change only if `overall_score` beats the best by more than the judge

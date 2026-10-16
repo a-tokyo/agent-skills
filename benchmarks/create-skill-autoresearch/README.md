@@ -107,8 +107,9 @@ Every factory build completed (exit 0, skill produced) in both versions.
   thinking on, spent the 512-token budget thinking and returned nothing. Thinking is off, and an empty
   truncated reply now throws instead of scoring 0. July and October numbers are not comparable.
 - **Environment failures.** A Claude Code self-update (2.1.300 → 2.1.301) killed every live session
-  once, and host sleep killed five more overnight. All were retried once under a `-retry` run-id;
-  none were scored. Every session now runs with `DISABLE_AUTOUPDATER=1`.
+  once, and other builds' machine-wide `pkill -f` cleanup (`pkill -f "plugin eval"`, `pkill -f until`)
+  killed more. All were retried once under a `-retry` run-id; none were scored. Every session now runs
+  with `DISABLE_AUTOUPDATER=1`, and the factory now stops only background jobs whose PIDs it captured.
 - Factory arms ran unattended; builds sometimes skip steps and say so in their own reports. The
   plugin-eval gate produced its JSON in 5 of 20 final v0.3.0 builds and 2 of 20 candidate builds.
 
