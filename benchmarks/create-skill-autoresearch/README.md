@@ -53,8 +53,9 @@ unattended with a 6-iteration autoresearch budget.
   third person, ≥ 3 script functions, a concrete example).
 
 No LLM judge anywhere. `node scoring/selftest.mjs` and `node scoring/selftest-task2.mjs` must print
-`SELFTEST PASS` before any score is trusted; the task-2 reference solver wrapped as a skill scores
-1.000 live, a generic skill 0.22.
+`SELFTEST PASS` before any score is trusted. A live run of `node scoring/score-task2.mjs
+scoring/fixtures/t2-good-skill` (the task-2 reference solver wrapped as a skill) scored 1.000, and of
+`scoring/fixtures/t2-bad-skill` (a generic skill) 0.22, on 2026-10-15.
 
 ## Results — October 2026 (v0.2.1 vs v0.3.0)
 
@@ -108,8 +109,8 @@ Every factory build completed (exit 0, skill produced) in both versions.
 - **Environment failures.** A Claude Code self-update (2.1.300 → 2.1.301) killed every live session
   once, and host sleep killed five more overnight. All were retried once under a `-retry` run-id;
   none were scored. Every session now runs with `DISABLE_AUTOUPDATER=1`.
-- Factory arms ran unattended; builds sometimes skip optional steps (the plugin-eval gate ran in about
-  half of v0.3.0 builds) and say so in their own reports.
+- Factory arms ran unattended; builds sometimes skip steps and say so in their own reports. The
+  plugin-eval gate produced its JSON in 5 of 20 final v0.3.0 builds and 2 of 20 candidate builds.
 
 ## Results — July 2026 (v0.1/v0.2, task only)
 

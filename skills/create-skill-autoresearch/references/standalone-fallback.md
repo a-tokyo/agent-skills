@@ -14,9 +14,9 @@ npx skills add mattpocock/skills --skill writing-for-agents
 
 ## Hard constraints
 
-- `name`: <= 64 chars, lowercase letters, numbers and hyphens, no XML tags, no `anthropic` or
-  `claude`; descriptive kebab-case matching the set it ships with.
-- `description`: non-empty, <= 1024 chars, third person, states WHAT and WHEN. Measure the
+- `name`: <= 64 chars, lowercase letters, numbers and hyphens, no leading or trailing hyphen and no
+  `--`, no XML tags, no `anthropic` or `claude`; descriptive kebab-case matching the set it ships with.
+- `description`: non-empty, <= 1024 chars, no `<` or `>`, third person, states WHAT and WHEN. Measure the
   **joined** folded block (`>-`), not the first line — a one-line grep reads a folded description as
   empty and lets an over-limit one through.
 - Body < 500 lines; every reference linked directly from SKILL.md (one level deep); a `## Contents`

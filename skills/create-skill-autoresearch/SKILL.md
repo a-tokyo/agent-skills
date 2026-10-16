@@ -15,8 +15,6 @@ description: >-
 
 # Create Skill via Autoresearch Factory
 
-A factory for forging production-grade agent skills through gold-standard-driven autoresearch, multi-agent verification, and structured consensus.
-
 The factory orchestrates 4 agent roles through 5 phases:
 
 | Phase | What Happens | Agent Role |
@@ -29,11 +27,13 @@ The factory orchestrates 4 agent roles through 5 phases:
 
 Key constraint: BUILDER and PANEL never share context. Panel receives only the skill output, gold standards, and rubric -- no bias from the building process.
 
+**Unattended runs** (a brief, no user at the terminal): where a step asks to confirm, adopt the brief's
+answer or the stated default, answer autoresearch's setup without waiting for its confirmation, and
+record each assumption in `work/experiments/craft-decisions.md`.
+
 ## Companion skills
 
 The factory composes sibling skills rather than embedding them, so each stays current upstream.
-It adds what a single-pass creator cannot: a research dossier, gold-standard benchmarking, an
-autonomous improvement loop, and independent multi-agent verification.
 
 | Companion | Used in | When absent |
 |-----------|---------|-------------|
@@ -51,9 +51,8 @@ Install skills with `npx skills add <source> --skill <name>`; `claude plugin eva
 
 ## Phase 1: Interview
 
-Discover what the user needs through structured questions. Do not assume -- ask. Ask them one topic at a
-time and record the answers; the exact question wording and follow-ups are in
-[references/pipeline-phases.md](references/pipeline-phases.md).
+Do not assume -- ask, one topic at a time, and record the answers; the exact question wording and
+follow-ups are in [references/pipeline-phases.md](references/pipeline-phases.md).
 
 ### 1.1 - 1.5 What to discover
 
@@ -76,14 +75,14 @@ Once confirmed, create the build workspace `builds/<skill-name>/` (layout under 
 for gold standards and study materials, `work/` for everything generated, `output/<skill-name>/` to ship.
 If the working directory is already dedicated to this build (it holds the brief and inputs), it *is* the
 workspace: create `work/` and `output/<skill-name>/` in place and keep every path below relative to it.
+The workspace is its own git repository, because the Phase 4 loop resets it: run `git init` there
+unless `git rev-parse --show-toplevel` already prints the workspace root.
 
 Do **not** ask the user to hand-author a manifest. Scan whatever is in `input/`, classify each item as a gold standard (exemplar input/output pair or reference artifact) vs a study material, and write your derived index to `work/manifest.yaml` with train/validation/test tags. Present the derived manifest for the user to confirm or correct. See [references/pipeline-phases.md](references/pipeline-phases.md) for intake formats and the manifest schema.
 
 ---
 
 ## Phase 2: Research
-
-Study the domain thoroughly before writing any skill code.
 
 ### 2.1 Spawn Researcher Subagents
 
@@ -120,8 +119,6 @@ Present the rubric to the user for review. Iterate until confirmed.
 
 ## Phase 3: Draft
 
-Design before writing. Write before measuring.
-
 ### 3.1 Design Document
 
 Create `work/experiments/DESIGN.md` with:
@@ -136,13 +133,10 @@ Create `work/experiments/DESIGN.md` with:
 
 ### 3.2 Grill the Design
 
-Before writing any skill code, challenge the design adversarially:
-- What would make this skill fail in practice?
-- Are the structural decisions justified or assumed?
-- Does the design match what the gold standards demonstrate?
-- Are there simpler alternatives?
-
-Present concerns to the user. Iterate until the design survives scrutiny.
+Before writing any skill code, challenge the design adversarially: what would make it fail in practice,
+which structural decisions are assumed rather than justified, whether it matches what the gold standards
+demonstrate, and whether a simpler alternative exists. Present concerns to the user; iterate until the
+design survives scrutiny.
 
 ### 3.3 Generate SKILL.md Draft
 
@@ -153,8 +147,8 @@ Phases 3.4-5 replace them. Without skill-creator, write it directly using
 [references/standalone-fallback.md](references/standalone-fallback.md).
 
 Either way, run this **pre-flight checklist** before writing -- hard constraints, not preferences:
-- `name`: <= 64 chars, lowercase/numbers/hyphens only, **no reserved words `anthropic`/`claude`**; descriptive kebab-case, matching the naming of the set it ships with
-- `description`: <= 1024 chars measured on the joined folded block, **third person**, states both WHAT it does and WHEN to use it
+- `name`: <= 64 chars, lowercase/numbers/hyphens only, no leading or trailing hyphen and no `--`, **no reserved words `anthropic`/`claude`**; descriptive kebab-case, matching the naming of the set it ships with
+- `description`: <= 1024 chars measured on the joined folded block, no `<` or `>`, **third person**, states both WHAT it does and WHEN to use it
 - Body < 500 lines; progressive disclosure (essentials in SKILL.md, detail in `references/`)
 - File references **one level deep** only; a table of contents for any reference file > 100 lines
 - Concrete examples over abstract instructions; consistent terminology; forward-slash paths
@@ -167,15 +161,16 @@ Write the draft to `output/<skill-name>/SKILL.md` (reference files in `output/<s
 ### 3.4 Build Evaluation Script
 
 Create `work/evaluation/evaluate.sh` that:
-1. Takes a gold standard test case path as argument
-2. Extracts the input from the test case
+1. With no argument, scores every case in the current `training` split of `work/evaluation/data-split.yaml`
+   (the Phase 4 metric command); with a gold standard test case path, scores that one case
+2. Extracts the input from each test case
 3. Invokes the skill on the input -- since skills are markdown instructions (not
    executables), this means calling an LLM with the SKILL.md as a system prompt
    and the test case input as the user message. Use `curl` to an OpenAI-compatible
    API, or a language-specific SDK. Capture the LLM's output.
 4. Compares the output to the gold standard reference using an LLM-as-judge
 5. Emits `METRIC <dimension>=<score>` lines to stdout
-6. Emits `METRIC overall_score=<weighted_average>` as the primary metric
+6. Emits `METRIC overall_score=<weighted_average>` (the mean over the cases scored) as the primary metric
 
 See `self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo for a complete reference implementation.
 
@@ -217,7 +212,8 @@ Build the suite the 5.0 gate runs, in a wrapper plugin under `work/` so nothing 
 `work/evaluation/plugin/` holds `.claude-plugin/plugin.json` (`name`, `version`), a copy of the skill at
 `skills/<skill-name>/` (refresh it before every run), and `evals/`. From that directory, scaffold each
 case with `claude plugin eval init --bare <case>` (a human at a terminal may use the `init` interview):
-- one case per **test-split** gold standard (4.2): the prompt as a user would phrase it, input files
+- one case per **gate gold standard** — the test split with >= 10 gold standards, every gold standard
+  with 3-9 (4.2): the prompt as a user would phrase it, input files
   copied in by a `scaffold_script` ([worked case](references/pipeline-phases.md)), graders on decisive facts — `regex` on
   `{ source: file, path: <output> }` where mechanical, `llm` only for judgement;
 - two or more **should-trigger** prompts graded `tool_used` on `Skill` (model-invoked skills only);
@@ -233,8 +229,9 @@ arm: both
 ---
 ```
 
-Record the cases in `work/evaluation/data-split.yaml` under `plugin_eval`. Without Claude Code, skip
-this step and 5.0, and log `plugin_eval: unavailable` there.
+Record the cases in `work/evaluation/data-split.yaml` under `plugin_eval`. Claude Code is available iff
+`claude plugin eval --help` exits 0; headless and unattended runs still build and run this suite.
+Without it, log `plugin_eval: unavailable` there and still write the cases' prompts — 5.0 runs them by hand.
 
 ---
 
@@ -251,7 +248,7 @@ root (`builds/<skill-name>/`), the autoresearch working directory. Session files
 session and are archived to `work/experiments/` when it ends or on handoff.
 
 - **Goal**: Improve `<skill-name>` quality as measured by `overall_score` (LLM-as-judge against gold standards, or the objective real-world metric for procedural skills — see 3.4)
-- **Metric command**: `./work/evaluation/evaluate.sh`
+- **Metric command**: `./work/evaluation/evaluate.sh` (no argument: the training split, 3.4)
 - **Metric extraction**: the value of the `METRIC overall_score=<value>` line in `run.log`
   (regex `^METRIC overall_score=([0-9.]+)$`); the other `METRIC` lines are per-dimension context
 - **Direction**: `higher_is_better`
@@ -261,6 +258,8 @@ session and are archived to `work/experiments/` when it ends or on handoff.
   must exit 0 **before** measuring — a failing check is a discard, not a measurement
 - **Budget**: From rubric config `max_iterations` (default 20)
 - **Simplicity policy**: the autoresearch default (simpler wins ties)
+- **Loop conventions**: apply [references/pipeline-phases.md](references/pipeline-phases.md) "Loop Conventions
+  the Factory Owns" in every experiment; its noise threshold overrides upstream's keep-any-improvement rule
 
 The factory owns three records the upstream loop does not keep. Write them yourself in the LOG step:
 - **`autoresearch.jsonl`**: one JSON line per experiment — `experiment`, `commit`, `metric`,
@@ -273,7 +272,8 @@ The factory owns three records the upstream loop does not keep. Write them yours
 
 With >= 10 gold standards, split **70% training** (every experiment), **20% validation** (checked
 adaptively, below) and **10% test** (held out until Phase 5). With 3-9, use **leave-one-out rotation**:
-each experiment evaluates all but one, rotating which is held out.
+each experiment evaluates all but one, rotating which is held out; there is no test split, so the 3.6
+gate uses every gold standard as a case.
 
 Record the split in `work/evaluation/data-split.yaml`.
 
@@ -318,7 +318,7 @@ budget and reports "exit criteria not met" -- forever. Override that:
 
 ### 4.4 Monitor and Handoff
 
-If the autoresearch session exceeds context limits or the experiment budget:
+On any phase transition, when context or the session's budget runs low, or on request:
 1. Invoke the **handoff skill** to generate `work/handoffs/HANDOFF-<session>.md`
 2. Write `work/handoffs/state.yaml` with structured resume state — phase, session counter, best score
    and commit, experiments run, remaining budget, validation score, top concerns, blocked dimensions,
@@ -339,14 +339,13 @@ then bump the session number. Per-phase detail: [references/pipeline-phases.md](
 Model-invoked skills only, after the loop ends: run **skill-creator**'s description optimizer
 (`scripts/run_loop.py`) on the best commit, with the 3.6 trigger and near-miss prompts as its seed
 queries. Keep the new description only if the 3.6 trigger cases still pass and `overall_score`
-does not drop; log the decision in `autoresearch.jsonl`. Pass `--static` to its review viewer in
-headless runs — the live viewer kills whatever process holds its port.
+does not drop; log the decision in `autoresearch.jsonl`. Pass `--report <path>` under `work/` in
+headless runs (flags: `python3 -m scripts.run_loop --help` from the skill-creator dir). Without
+skill-creator or `claude -p`, skip 4.6 and log the skip in `autoresearch.jsonl`.
 
 ---
 
 ## Phase 5: Verify
-
-Independent verification by agents that did NOT participate in building. The context wall between BUILDER and PANEL is critical -- it prevents bias from the building process.
 
 ### 5.0 Eval Gate
 
@@ -355,18 +354,21 @@ without the skill (grant only the gated tools the skill needs; pin the model the
 
 ```bash
 cd work/evaluation/plugin && claude plugin eval . --ablation with-without --runs 3 -j 4 \
-  --model <model> --allow-tools Bash Write --scaffold --trust-plugin --no-publish --json ../plugin-eval.json
+  --model <model> --allow-tools Bash Write --scaffold --trust-plugin --no-publish --threshold 0 \
+  --json ../plugin-eval.json
 ```
 
-Read WITH, W/OUT and Δ per case. This is the same-model uplift the shipping evidence needs
-([references/benchmark-standard.md](references/benchmark-standard.md)):
-- Δ <= 0 on a test-split case is a **verified failure scenario** for the panel — the skill adds
+Read WITH, W/OUT and Δ per case from the JSON; the verdict comes from Δ, never the exit code. This is
+the same-model uplift the shipping evidence needs ([references/benchmark-standard.md](references/benchmark-standard.md)):
+- Δ <= 0 on a gate gold-standard case is a **verified failure scenario** for the panel — the skill adds
   nothing there, or hurts;
 - a should-trigger case that fails WITH is a description defect — return to 4.6, not to the panel;
 - pass the JSON summary to the panel as a known risk list and copy it into `BENCHMARK.md`.
 
-Without Claude Code, run the manual with/without protocol in
-[references/benchmark-standard.md](references/benchmark-standard.md) on the test split instead.
+Without Claude Code (3.6), run the manual with/without protocol in
+[references/benchmark-standard.md](references/benchmark-standard.md) on the same cases and write WITH,
+W/OUT and Δ per case to `work/evaluation/uplift.json`. The gate is never skipped: Phase 5 always starts
+with `plugin-eval.json` or `uplift.json`.
 
 ### 5.1 Premortem
 
@@ -428,7 +430,7 @@ user**. A DA `ESCALATE: <reason>` reaches the user, never the average. Full prot
 | < target_score - 0.10 | **ITERATE** -- feed panel feedback to autoresearch |
 | Any dimension < 3/10 by majority | **BLOCK** -- address blocking concern first |
 
-A 5.0 test-split case with Δ <= 0 caps the verdict at SHIP WITH CAVEATS until a re-run shows Δ > 0
+A 5.0 gate gold-standard case with Δ <= 0 caps the verdict at SHIP WITH CAVEATS until a re-run shows Δ > 0
 or the panel records why that case cannot benefit.
 
 If ITERATE: turn each member's top concern and every Devil's Advocate failure scenario into an
@@ -453,7 +455,7 @@ builds/<skill-name>/
     manifest.yaml         #   derived gold-standard index    <- yours to correct
     research/             #   study notes and dossier
     evaluation/           #   rubric.yaml (exit criteria), evaluate.sh, judges.yaml, data-split.yaml,
-                          #   plugin/ (3.6 wrapper plugin + evals/), plugin-eval.json (5.0 gate)
+                          #   plugin/ (3.6 wrapper plugin + evals/), plugin-eval.json or uplift.json (5.0)
     experiments/          #   results.tsv, autoresearch.jsonl, ideas, run.log, DESIGN.md, craft-decisions.md
     handoffs/             #   cross-session context (state.yaml, HANDOFF-*.md)
   output/<skill-name>/    # FACTORY: the publish-ready skill -- SKILL.md, plus README.md, references/,
@@ -467,9 +469,3 @@ Never write a credential into any of them — `work/` is often committed inside 
 
 Only `output/<skill-name>/` ships; its uplift benchmark belongs **outside** the skill dir, at
 `benchmarks/<skill-name>/`. To publish: [references/publishing.md](references/publishing.md).
-
----
-
-## Handoff Rules
-
-Hand off (4.4) on any phase transition, when context or the session's budget runs low, or on request; resume per 4.5.

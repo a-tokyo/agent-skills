@@ -27,7 +27,8 @@ case "$TASK_NAME" in
   task-2) OUT="purchase-order-builder"; SCORER="score-task2.mjs"; EXTRA=(--runs "$EXEC_RUNS") ;;
 esac
 RUN="$RUNS_ROOT/$RUN_ID"
-node "$BENCH/scoring/$SCORER" "$RUN/work/output/$OUT" --executor-out "$RUN" ${EXTRA[@]+"${EXTRA[@]}"} > "$RUN/score.txt" 2>&1
+BUILD_DIR="$RUN/ws"; [ -d "$BUILD_DIR" ] || BUILD_DIR="$RUN/work"  # run dirs from before the ws/ rename
+node "$BENCH/scoring/$SCORER" "$BUILD_DIR/output/$OUT" --executor-out "$RUN" ${EXTRA[@]+"${EXTRA[@]}"} > "$RUN/score.txt" 2>&1
 metric() { sed -n "s/^METRIC $1=//p" "$RUN/score.txt"; }
 if [ -z "$(metric overall_score)" ]; then
   echo "# $RUN_ID: scoring failed, no row written — see $RUN/score.txt" >&2

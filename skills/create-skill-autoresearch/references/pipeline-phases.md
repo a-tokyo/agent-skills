@@ -165,11 +165,13 @@ input as the user message, then compare the LLM's output to the gold standard re
 #!/bin/bash
 # evaluate.sh -- Run skill on a test case and score via LLM-as-judge
 #
-# Usage: ./evaluate.sh <test-case-path>
+# Usage: ./evaluate.sh                    # the current training split (Phase 4 metric command)
+#        ./evaluate.sh <test-case-path>   # one case
 # Output: METRIC lines to stdout
 #
 # Contract:
-# 1. Takes a gold standard test case path as argument
+# 1. No argument: scores every case in the `training` list of work/evaluation/data-split.yaml
+#    and emits their mean as overall_score; with a case path, scores that one case
 # 2. Extracts input from the test case
 # 3. Calls an LLM with SKILL.md as system prompt + test input as user message
 # 4. Captures the LLM output
@@ -183,6 +185,15 @@ input as the user message, then compare the LLM's output to the gold standard re
 # Fallback: deterministic-only scoring if no LLM API configured
 
 set -euo pipefail
+
+# No argument: score each training case, then emit the mean as the primary metric
+if [ $# -eq 0 ]; then
+  awk '/^training:/{f=1;next} /^[^ #]/{f=0} f && /^ *- /{gsub(/^ *- *"?|"? *(#.*)?$/,""); print}' \
+    work/evaluation/data-split.yaml \
+  | while read -r case_path; do "$0" "$case_path" | grep '^METRIC overall_score='; done \
+  | awk -F= '{s+=$2; n++} END {if (!n) exit 1; printf "METRIC overall_score=%.4f\n", s/n}'
+  exit
+fi
 
 TEST_CASE="$1"
 RUBRIC="work/evaluation/rubric.yaml"
@@ -298,7 +309,7 @@ For each dimension:
 
 ### Plugin-Eval Worked Case (SKILL.md 3.6)
 
-One test-split case for a skill that reads input files and writes `po.json`. Each run starts in an
+One gate case (a test-split gold standard, or any gold standard with 3-9) for a skill that reads input files and writes `po.json`. Each run starts in an
 empty workspace; the scaffold copies the case's fixtures in. Inside the wrapper plugin:
 
 ```
@@ -371,7 +382,8 @@ The factory runs the upstream **autoresearch** skill (github/awesome-copilot) an
 interactive setup from these inputs, so the loop never waits on a user:
 
 1. **Goal statement**: "Improve <skill-name> quality as measured by `overall_score` against gold standards"
-2. **Metric command**: `./work/evaluation/evaluate.sh` (must emit METRIC lines)
+2. **Metric command**: `./work/evaluation/evaluate.sh` with no argument — scores the current `training`
+   split of `work/evaluation/data-split.yaml` (must emit METRIC lines)
 3. **Metric extraction**: regex `^METRIC overall_score=([0-9.]+)$` on `run.log`
 4. **Direction**: `higher_is_better`
 5. **In-scope files**: only the skill being built (`output/<skill-name>/SKILL.md`, `references/*`, `scripts/*`)
@@ -386,6 +398,10 @@ adds the rest, and applies it in every experiment:
 
 - **Scoped commits.** Stage only in-scope paths (`git add output/<skill-name>`). Never `git add -A` —
   it sweeps `work/` and session logs into experiment commits.
+- **Repository guard.** Before any `git reset --hard` or `git clean`, assert that
+  `git rev-parse --show-toplevel` equals the workspace root, and refuse to revert otherwise. A
+  workspace nested in a parent project (a gitignored `builds/`, say) would reset the parent's last
+  commit and wipe its uncommitted work; SKILL.md 1.6 makes the workspace its own repository.
 - **Clean reverts.** Discard with `git reset --hard HEAD~1 && git clean -fd -- output/<skill-name>`,
   so a reverted experiment leaves no new untracked files behind.
 - **Noise threshold.** Keep a change only if `overall_score` beats the best by more than the judge
@@ -470,7 +486,12 @@ all_cases:
   - "input/input-02.md"
   - "input/input-03.md"
 rotation: "each experiment holds out a different case"
+training:            # this experiment's rotation: every case but the held-out one
+  - "input/input-02.md"
+  - "input/input-03.md"
 ```
+
+Rewrite `training` to the next rotation in each LOG step; `evaluate.sh` with no argument scores it.
 
 **Overfitting detection for leave-one-out**: Since there is no fixed validation set, use per-case score variance as the signal:
 - After each kept experiment, record per-case scores (not just the aggregate)

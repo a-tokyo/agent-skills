@@ -1,4 +1,4 @@
-run_id,arm,model,exit_code,wall_seconds,env_failure,task
+run_id,arm,model,exit_code,wall_seconds,env_failure,task,input_tokens,output_tokens
 bare-sonnet-1,bare,sonnet,0,206,0,task
 bare-sonnet-2,bare,sonnet,0,123,0,task
 sc-sonnet-1,skill-creator,sonnet,0,343,0,task

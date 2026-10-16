@@ -9,14 +9,16 @@
 #   FACTORY_DIR / COMPANIONS_DIR override where the factory arms load the skill and its companions;
 #   factory-v021 requires both (the pinned v0.2.1 archive, agent-skills commit 99652ee).
 #
-# Launches ONE fresh `claude -p` build run in runs/<run-id>/work/ under full containment:
+# Launches ONE fresh `claude -p` build run in runs/<run-id>/ws/ under full containment:
 # isolated HOME + GIT_CONFIG_GLOBAL + XDG dirs so a --dangerously-skip-permissions agent can never
 # read or write the maintainer's real config, credentials, or caches. Pattern proven in the
 # app-ai-guardrails benchmark harness (isolated-HOME skill injection: user-level ~/.claude/skills
 # in the fake HOME is the only placement Claude Code reliably discovers).
 #
 # Scoring is NOT done here — run the scorer afterwards:
-#   node ../scoring/score.mjs runs/<run-id>/work/output/conventional-commits
+#   node ../scoring/score.mjs runs/<run-id>/ws/output/conventional-commits
+# (the build dir is ws/, not work/, because the factory creates its own work/ inside it; run dirs
+# from before the rename keep work/, and run-and-score.sh falls back to it.)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH="$(cd "$HERE/.." && pwd)"
@@ -64,7 +66,7 @@ fi
 # Run dirs live OUTSIDE any git repo (scaffolders and git probes must not walk into the parent repo).
 RUNS_ROOT="${BENCH_RUNS_ROOT:-${TMPDIR:-/tmp}/create-skill-autoresearch-bench}"
 RUN="$RUNS_ROOT/$RUN_ID"
-WORK="$RUN/work"
+WORK="$RUN/ws"
 [ -e "$RUN" ] && { echo "run dir already exists: $RUN (run-ids are one-shot)" >&2; exit 2; }
 mkdir -p "$WORK" "$RUN/home" "$HERE/../runs"
 ln -sfn "$RUN" "$HERE/../runs/$RUN_ID"
@@ -155,16 +157,24 @@ if [ "$EXIT_CODE" -ne 0 ]; then
   fi
 fi
 
+# ---------- token usage (offline, from the fake HOME's transcripts; subagents included) ----------
+# A failed sum leaves tokens null and the CSV cells empty rather than failing a finished build.
+TOKENS="$(node "$HERE/sum-tokens.mjs" "$HOME/.claude/projects" 2>/dev/null)" || TOKENS=""
+[ -n "$TOKENS" ] || TOKENS="null"
+token_field() { printf '%s' "$TOKENS" | sed -n "s/.*\"$1\":\([0-9]*\).*/\1/p"; }
+IN_TOKENS="$(token_field input_total)"
+OUT_TOKENS="$(token_field output_tokens)"
+
 # ---------- meta + results row ----------
-printf '{ "run_id": "%s", "task": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "exit_code": %s, "wall_seconds": %s, "env_failure": %s }\n' \
-  "$RUN_ID" "$TASK_NAME" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" > "$RUN/meta.json"
+printf '{ "run_id": "%s", "task": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "exit_code": %s, "wall_seconds": %s, "env_failure": %s, "tokens": %s }\n' \
+  "$RUN_ID" "$TASK_NAME" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" "$TOKENS" > "$RUN/meta.json"
 RESULTS="$BENCH/results/runs.csv"
 mkdir -p "$BENCH/results"
-[ -f "$RESULTS" ] || echo "run_id,arm,model,exit_code,wall_seconds,env_failure,task" > "$RESULTS"
-echo "$RUN_ID,$ARM,$MODEL_ALIAS,$EXIT_CODE,$WALL,$ENV_FAILURE,$TASK_NAME" >> "$RESULTS"
+[ -f "$RESULTS" ] || echo "run_id,arm,model,exit_code,wall_seconds,env_failure,task,input_tokens,output_tokens" > "$RESULTS"
+echo "$RUN_ID,$ARM,$MODEL_ALIAS,$EXIT_CODE,$WALL,$ENV_FAILURE,$TASK_NAME,$IN_TOKENS,$OUT_TOKENS" >> "$RESULTS"
 
-echo "# run $RUN_ID finished: exit=$EXIT_CODE wall=${WALL}s env_failure=$ENV_FAILURE" >&2
+echo "# run $RUN_ID finished: exit=$EXIT_CODE wall=${WALL}s env_failure=$ENV_FAILURE in_tokens=${IN_TOKENS:-?} out_tokens=${OUT_TOKENS:-?}" >&2
 SCORER="score.mjs"; [ "$TASK_NAME" = "task-2" ] && SCORER="score-task2.mjs"
-echo "# score: node $BENCH/scoring/$SCORER $RUN/work/output/$SKILL_OUT" >&2
+echo "# score: node $BENCH/scoring/$SCORER $RUN/ws/output/$SKILL_OUT" >&2
 [ "$ENV_FAILURE" = "1" ] && exit 75
 exit "$EXIT_CODE"
