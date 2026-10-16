@@ -47,7 +47,7 @@ These dimensions apply to every skill. Include all five, adjusting weights per d
 | completeness | 0.15 | 1-10 | All necessary sections present. Edge cases addressed. No critical gaps in the workflow. |
 | clarity | 0.15 | 1-10 | A naive agent can follow the instructions without ambiguity. Terminology is consistent. Examples are concrete. |
 | consistency | 0.10 | 1-10 | Aligns with existing codebase conventions, naming patterns, and integration points. |
-| predictability | 0.10 | 1-10 | Drives the same process every run: completion criteria are checkable and exhaustive; no vague gates; no no-op instructions the model already obeys (see skill-craft-principles.md). |
+| predictability | 0.10 | 1-10 | Drives the same process every run: completion criteria are checkable and exhaustive; no vague gates; no no-op instructions the model already obeys (writing-for-agents; fallback: standalone-fallback.md). |
 
 Remaining weight (0.30) is allocated to domain-specific dimensions.
 
