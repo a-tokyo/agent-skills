@@ -59,47 +59,60 @@ scoring/fixtures/t2-good-skill` (the task-2 reference solver wrapped as a skill)
 
 ## Results — October 2026 (v0.2.1 vs v0.3.0)
 
-Builders Claude Sonnet 5.5 and Haiku 5.5, n=5 per cell, medians with min–max. Per-run rows in
-[`results/scores.csv`](results/scores.csv) (`m-*` baseline and first v0.3.0 candidate, `f-*` final
-v0.3.0); environment failures (sessions killed from outside) are retried once and never scored —
-see [`results/runs.csv`](results/runs.csv).
+Builders Claude Sonnet 5.5 and Haiku 5.5, n=5 per cell, medians with min–max. v0.3.0 is the `h-*`
+run (factory at harness commit `5f7fd3c`): 20 of 20 builds completed, none killed. Per-run rows in
+[`results/scores.csv`](results/scores.csv) and [`results/runs.csv`](results/runs.csv); baselines
+are `m-*`. Environment failures (sessions killed from outside, `env_failure=1`) are retried once and
+excluded from every number here.
 
 | Task | Model | bare | skill-creator | factory v0.2.1 | **factory v0.3.0** |
 |------|-------|------|---------------|----------------|--------------------|
-| task-2 | Sonnet 5.5 | 0.975 (0.932–0.980) | 0.964 (0.908–0.975) | 0.975 (0.933–0.980) | **0.975 (0.969–1.000)** |
-| task-2 | Haiku 5.5 | 0.969 (0.937–0.980) | 0.950 (0.943–0.980) | 0.969 (0.958–0.989) | **0.969 (0.937–0.989)** |
-| task | Sonnet 5.5 | 0.971 (0.886–0.971) | 0.921 (0.921–0.971) | 0.946 (0.836–0.971) | **0.971 (0.861–0.971)** |
-| task | Haiku 5.5 | 0.896 (0.846–0.921) | 0.896 (0.846–0.921) | 0.871 (0.836–0.943) | **0.871 (0.871–0.971)** |
+| task-2 | Sonnet 5.5 | 0.975 (0.932–0.980) | 0.964 (0.908–0.975) | 0.975 (0.933–0.980) | **0.960 (0.937–0.980)** |
+| task-2 | Haiku 5.5 | 0.969 (0.937–0.980) | 0.950 (0.943–0.980) | 0.969 (0.958–0.989) | **0.937 (0.849–0.969)** |
+| task | Sonnet 5.5 | 0.971 (0.886–0.971) | 0.921 (0.921–0.971) | 0.946 (0.836–0.971) | **0.946 (0.886–0.971)** |
+| task | Haiku 5.5 | 0.896 (0.846–0.921) | 0.896 (0.846–0.921) | 0.871 (0.836–0.943) | **0.971 (0.921–0.971)** |
 
-Median build wall time, first v0.3.0 candidate vs v0.2.1 (the final run's times are inflated by host
-sleep overnight and are not reported; the final differs from the candidate only by the three-line
-conflicts rule):
+Median build cost per arm: wall time · input tokens · output tokens. Input counts uncached, cache-write
+and cache-read tokens summed over every transcript of the build, subagents included
+([`arms/sum-tokens.mjs`](arms/sum-tokens.mjs)); each column's median is taken on its own.
 
-| Task | Model | bare | skill-creator | factory v0.2.1 | factory v0.3.0 (candidate) |
-|------|-------|------|---------------|----------------|----------------------------|
-| task-2 | Sonnet 5.5 | 2.5 min | 6.6 min | 8.2 min | 6.6 min |
-| task-2 | Haiku 5.5 | 4.2 min | 4.0 min | 12.2 min | 9.2 min |
-| task | Sonnet 5.5 | 0.6 min | 0.7 min | 9.3 min | 7.5 min |
-| task | Haiku 5.5 | 0.7 min | 2.4 min | 17.6 min | 22.5 min |
-
-Every factory build completed (exit 0, skill produced) in both versions.
+| Task | Model | bare | skill-creator | factory v0.2.1 | factory v0.3.0 |
+|------|-------|------|---------------|----------------|----------------|
+| task-2 | Sonnet 5.5 | 2.5 min · 0.24M · 18k | 6.6 min · 0.37M · 22k | 8.2 min · 3.12M · 81k | 24.6 min · 6.31M · 111k |
+| task-2 | Haiku 5.5 | 4.2 min · 0.75M · 51k | 4.0 min · 0.81M · 50k | 12.2 min · 7.92M · 194k | 15.2 min · 7.41M · 188k |
+| task | Sonnet 5.5 | 0.6 min · 0.12M · 4k | 0.7 min · 0.18M · 4k | 9.3 min · 1.78M · 46k | 12.9 min · 2.83M · 62k |
+| task | Haiku 5.5 | 0.7 min · 0.11M · 7k | 2.4 min · 0.42M · 12k | 17.6 min · 4.08M · 96k | 22.4 min · 5.00M · 148k |
 
 ### Honest reading
 
-- **Neither factory version beats the bare model on output quality.** Today's models reverse-engineer
-  a near-perfect skill from a handful of gold standards in two to four minutes, on both tasks — task-2
-  went through three hardening rounds (stale policy, number words, merges, exact exception details)
-  and stayed saturated (bare 0.94–1.00 in pilots). At this task size the factory's value is not output
-  uplift; a discriminating task needs a rule surface too large to infer from a few examples.
-- **v0.3.0 does not regress v0.2.1** in any cell and is ahead in one: task with Sonnet (+0.025); the other three cells tie.
-  It is faster than v0.2.1 in three of four cells and more consistent on task-2 (Sonnet spread 0.031
-  vs 0.047).
-- **The first v0.3.0 candidate did regress** task-2 Haiku (0.932): builds trusted the stale written
-  policy over the gold standards. v0.3.0's "gold standards win conflicts" rule fixed it (0.969); the
-  candidate's rows stay in `scores.csv` as `m-*-factory-v030-*`.
-- **`skill-creator` alone is the cheapest non-bare arm** and lands slightly below bare on most cells.
-- **Every arm misses task-2's software-spend approval floor sometimes** (holdout h5 is the most-failed
-  check across all arms).
+- **v0.3.0 vs v0.2.1 is mixed on quality.** Better on task with Haiku (0.971 vs 0.871; v0.3.0's
+  median is above v0.2.1's best build, 0.943). Tied on task with Sonnet (0.946 both). Lower on both
+  task-2 cells: Sonnet 0.960 vs 0.975 (−0.015, inside v0.2.1's 0.933–0.980 spread) and Haiku 0.937
+  vs 0.969 (−0.032, below v0.2.1's worst build, 0.958; one v0.3.0 build scored 0.849).
+- **v0.3.0 is slower in every cell:** 3.0× v0.2.1 on task-2 Sonnet, 1.25× on task-2 Haiku, 1.4× on
+  task Sonnet, 1.3× on task Haiku. Input tokens are 2.0×, 0.94×, 1.6× and 1.2× v0.2.1's; output
+  tokens 1.4×, 0.97×, 1.35× and 1.5×. task-2 Haiku is the one cell where v0.3.0 used fewer tokens.
+- **The mandatory uplift gate ran and is the main time cost.** 17 of 20 builds wrote an uplift
+  artifact (12 `plugin-eval.json`, 5 the manual with/without `uplift.json`); v0.2.1 has no gate.
+  From the first gate command to the last artifact write spans a median 64% of build wall time in
+  those 17 (an upper bound: other work can overlap it). Two of the three builds without an artifact
+  were the fastest, at 7–8 minutes.
+- **Neither version beats bare, except v0.3.0 on task with Haiku.** v0.2.1 ties bare on task-2 and is below it
+  on task. v0.3.0 is below bare on task-2 both models and task Sonnet, and above it on task Haiku
+  (0.971 vs 0.896; v0.3.0's worst build equals bare's best, 0.921). Today's models reverse-engineer
+  a near-perfect skill from a handful of gold standards in under five minutes; a discriminating
+  task needs a rule surface too large to infer from a few examples.
+- **`skill-creator` alone is the cheapest non-bare arm** and lands at or below bare on every cell.
+- **Every arm misses task-2's software-spend approval floor sometimes:** the h5 approval check is
+  the most-failed check, failed in 8–12 of each arm's 20 executor runs.
+
+**Earlier v0.3.0 candidates** stay in `scores.csv`, superseded by `h-*`. `m-*-factory-v030-*` is the
+first candidate; it regressed task-2 Haiku (0.932) because builds trusted the stale written policy
+over the gold standards. `f-*` added the "gold standards win conflicts" rule (task-2 Haiku 0.969,
+task Haiku 0.871); several of its sessions were killed and retried, and its times are not used. `g-*`
+added the tribunal round-1 fixes (mandatory gate, git isolation, metric contract); all ten task-2
+Sonnet sessions, retries included, were killed from outside (exit 143) and never scored.
+`h-*` added the rule that the factory stops only background jobs whose PIDs it captured, and ran clean.
 
 ### Protocol notes (disclosed)
 
@@ -108,10 +121,9 @@ Every factory build completed (exit 0, skill produced) in both versions.
   truncated reply now throws instead of scoring 0. July and October numbers are not comparable.
 - **Environment failures.** A Claude Code self-update (2.1.300 → 2.1.301) killed every live session
   once, and other builds' machine-wide `pkill -f` cleanup (`pkill -f "plugin eval"`, `pkill -f until`)
-  killed more. All were retried once under a `-retry` run-id; none were scored. Every session now runs
-  with `DISABLE_AUTOUPDATER=1`, and the factory now stops only background jobs whose PIDs it captured.
-- Factory arms ran unattended; builds sometimes skip steps and say so in their own reports. The
-  plugin-eval gate produced its JSON in 5 of 20 final v0.3.0 builds and 2 of 20 candidate builds.
+  killed more. Each was retried once under a `-retry` run-id and never scored. Every session now runs
+  with `DISABLE_AUTOUPDATER=1`, and the factory stops only background jobs whose PIDs it captured.
+- Factory arms ran unattended; builds sometimes skip steps and say so in their own reports.
 
 ## Results — July 2026 (v0.1/v0.2, task only)
 
