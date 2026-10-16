@@ -3,7 +3,7 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkPurchaseOrder, checkCompliance, checkCraft } from "./score-task2.mjs";
+import { checkPurchaseOrder, checkCompliance, checkCraft, isExecutorFault, runWithRetry, aggregateExecution } from "./score-task2.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const key = JSON.parse(readFileSync(join(HERE, "..", "task-2", "holdout", "answer-key.json"), "utf8"));
@@ -34,6 +34,28 @@ expect("good compliance = 1", checkCompliance(good).score === 1);
 expect("good craft = 1", checkCraft(good).score === 1);
 expect("bad compliance <= 0.6", checkCompliance(bad).score <= 0.6);
 expect("bad craft <= 0.5", checkCraft(bad).score <= 0.5);
+
+const ok = { poWritten: true, timedOut: false, code: 0, raw: "{}" };
+const fault = { poWritten: false, timedOut: false, code: 1, raw: "" };
+expect("non-zero exit without po.json is a fault", isExecutorFault(fault));
+expect("timeout without po.json is a fault", isExecutorFault({ poWritten: false, timedOut: true, code: null }));
+expect("non-zero exit with po.json is scored", !isExecutorFault({ poWritten: true, timedOut: false, code: 1 }));
+expect("clean exit without po.json is scored", !isExecutorFault({ poWritten: false, timedOut: false, code: 0 }));
+const seq = (...outs) => { let i = 0; return async () => outs[i++]; };
+const once = await runWithRetry(seq(fault, ok));
+expect("one fault is retried and scored", once.attempts === 2 && !once.envFailure);
+const twice = await runWithRetry(seq(fault, fault));
+expect("two faults are an env failure", twice.attempts === 2 && twice.envFailure);
+const clean = await runWithRetry(seq(ok, fault));
+expect("a clean run is not retried", clean.attempts === 1 && !clean.envFailure);
+const one = { score: 1 };
+const agg = aggregateExecution([
+  { id: "h1", r: 0, envFailure: false, result: one }, { id: "h1", r: 1, envFailure: true, result: { score: 0 } },
+  { id: "h2", r: 0, envFailure: true, result: { score: 0 } },
+]);
+expect("env-failed runs are excluded, never 0", agg.score === 1 && agg.cases.h1.runs.length === 1);
+expect("env failures and excluded cases are reported", agg.env_failures.join() === "h1-r1,h2-r0" && agg.excluded_cases.join() === "h2");
+expect("all runs env-failed gives no score", aggregateExecution([{ id: "h1", r: 0, envFailure: true, result: one }]).score === null);
 
 if (failures.length) {
   console.log(`SELFTEST FAIL\n- ${failures.join("\n- ")}`);

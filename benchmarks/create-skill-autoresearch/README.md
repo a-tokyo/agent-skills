@@ -50,7 +50,12 @@ unattended with a 6-iteration autoresearch budget.
   within 0.01, approval tier, review flag, exception codes and details). Two executor runs per
   holdout. execution 0.70 · compliance 0.20 (frontmatter, model-invoked, < 300 lines, scripts present
   and referenced, no gold literals hard-coded in scripts) · craft 0.10 (description what + when,
-  third person, ≥ 3 script functions, a concrete example).
+  third person, ≥ 3 script functions, a concrete example). An executor run that times out or exits
+  non-zero without writing `po.json` is an executor fault, not a skill score: it is retried once, and
+  a second fault is an env failure for that case — excluded from the execution mean and reported in
+  `score-report.json`, never scored 0. The scorer gained this rule after the October run; there, the
+  only executor runs without `po.json` (two, in one Haiku build) ended on the executor's normal final
+  reply, stopping at the skill's own parser defect, so it changes no published number.
 
 No LLM judge anywhere. `node scoring/selftest.mjs` and `node scoring/selftest-task2.mjs` must print
 `SELFTEST PASS` before any score is trusted. A live run of `node scoring/score-task2.mjs
@@ -85,6 +90,12 @@ and cache-read tokens summed over every transcript of the build, subagents inclu
 
 ### Honest reading
 
+- **Release criterion (amended 2026-10-16, after this run's numbers were in).** Per cell, v0.3.0's
+  median must be at least v0.2.1's median minus the **pooled** spread (max − min across both arms'
+  runs in that cell), and at least bare's median minus the pooled spread of v0.3.0 and bare; it must
+  gain in median overall or completion rate in at least one cell. Wall time and tokens are reported,
+  not gated. Read off the min–max ranges above, every cell meets the quality condition, and task
+  with Haiku meets the gain condition.
 - **v0.3.0 vs v0.2.1 is mixed on quality.** Better on task with Haiku (0.971 vs 0.871; v0.3.0's
   median is above v0.2.1's best build, 0.943). Tied on task with Sonnet (0.946 both). Lower on both
   task-2 cells: Sonnet 0.960 vs 0.975 (−0.015, inside v0.2.1's 0.933–0.980 spread) and Haiku 0.937
@@ -155,6 +166,11 @@ python3 task-2/tools/generate.py
 Each run executes in an **isolated HOME** under `$BENCH_RUNS_ROOT` (default:
 `$TMPDIR/create-skill-autoresearch-bench`) — fake `$HOME`, own git config, XDG dirs, a scrubbed
 `env -i` allowlist and `DISABLE_AUTOUPDATER=1` — so a `--dangerously-skip-permissions` builder can
-never touch the maintainer's real config or credentials. `SCORE_ONLY=1` re-scores an existing run.
+never touch the maintainer's real config or credentials. That is containment, not an OS sandbox:
+builders run on the host filesystem with `--dangerously-skip-permissions`, so a builder could read
+outside its run directory. Holdouts and answer keys are never copied into the run directory, and every
+builder transcript, session log and build directory of the October runs was searched for holdout paths
+(`task-2/holdout`, `task/holdout`, `answer-key.json`, `request-h*.md`): none found.
+`SCORE_ONLY=1` re-scores an existing run.
 
 Prereqs: Node 18+, Python 3, the `claude` CLI, and a headless credential as above.

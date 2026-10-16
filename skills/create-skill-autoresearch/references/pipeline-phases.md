@@ -226,7 +226,7 @@ SKILL_OUTPUT=$(curl -s "${JUDGE_API_BASE}/chat/completions" \
 # Step 7: Weighted average → METRIC overall_score=<value>
 ```
 
-See `self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo for a complete reference implementation.
+`self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo shows the judge call and the METRIC lines for one case.
 
 The specific approach depends on the skill type:
 - **Instruction skills**: Call LLM with SKILL.md as system prompt (most common)
@@ -262,9 +262,9 @@ High per-judge variance on a dimension signals ambiguous criteria -- consider re
 
 ```bash
 #!/bin/bash
-# Correctness gate -- must pass before metric measurement
+# Correctness gate -- must pass before metric measurement; no argument checks the skill being built
 set -euo pipefail
-SKILL="$1"
+SKILL="${1:-output/<skill-name>/SKILL.md}"
 LINES=$(wc -l < "$SKILL")
 [ "$LINES" -lt 500 ] || { echo "FAIL: $LINES lines (limit 500)"; exit 1; }
 head -1 "$SKILL" | grep -q "^---" || { echo "FAIL: missing frontmatter"; exit 1; }
@@ -407,7 +407,8 @@ adds the rest, and applies it in every experiment:
   PIDs or their process group (`kill -- -"$pgid"`). Never `pkill`, `killall` or `pgrep | xargs kill`
   by name or pattern: on a shared machine that kills sibling builds and the user's own processes.
 - **Clean reverts.** Discard with `git reset --hard HEAD~1 && git clean -fd -- output/<skill-name>`,
-  so a reverted experiment leaves no new untracked files behind.
+  so a reverted experiment leaves no new untracked files behind. The baseline commit (SKILL.md 3.5) is
+  experiment 0, so `HEAD~1` always exists.
 - **Noise threshold.** Keep a change only if `overall_score` beats the best by more than the judge
   noise threshold: the larger of 0.01 absolute minimum and the per-judge variance measured on the
   baseline (re-run the baseline twice to estimate it). Gains inside the noise are discards.
@@ -463,6 +464,9 @@ validation:
   - "input/input-09.md"
 test:
   - "input/input-10.md"
+plugin_eval_available: 0  # exit code of `claude plugin eval --help`; non-zero → manual protocol (SKILL.md 5.0)
+plugin_eval:              # the 3.6 gate cases
+  - "holdout-03"
 ```
 
 **Overfitting detection** (70-20-10 split only):

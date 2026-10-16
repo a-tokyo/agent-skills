@@ -13,6 +13,9 @@
 //   craft      0.10  — deterministic hybrid-architecture and description checks
 //
 // Execution needs ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN; compliance/craft run without them.
+// An executor run that times out or exits non-zero without writing po.json is an executor fault, not a
+// skill score: it is retried once, and a second fault is an env failure — excluded and reported, never 0.
+// If no case has a scored run left, no overall_score is printed and the process exits 75.
 
 import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync, statSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
@@ -167,17 +170,54 @@ function runAgent(skillDir, skillName, caseInput, auth) {
     const child = spawn("claude", ["-p", EXECUTOR_PROMPT, "--model", EXECUTOR_MODEL,
       "--dangerously-skip-permissions", "--max-turns", "30"], { cwd: work, env, stdio: ["ignore", "pipe", "pipe"] });
     let transcript = "";
+    let timedOut = false;
+    let settled = false;
     child.stdout.on("data", (d) => (transcript += d));
     child.stderr.on("data", (d) => (transcript += d));
-    const timer = setTimeout(() => child.kill("SIGKILL"), 900000);
-    child.on("close", () => {
+    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 900000);
+    const finish = (code, spawnError) => {
+      if (settled) return;
+      settled = true;
       clearTimeout(timer);
       const poPath = join(work, "po.json");
-      const raw = existsSync(poPath) ? readFileSync(poPath, "utf8") : "";
+      const poWritten = existsSync(poPath);
+      const raw = poWritten ? readFileSync(poPath, "utf8") : "";
+      if (spawnError) transcript += `\n[spawn error] ${spawnError.message}`;
       rmSync(root, { recursive: true, force: true });
-      resolve({ raw, transcript });
-    });
+      resolve({ raw, transcript, code, timedOut, poWritten });
+    };
+    child.on("error", (err) => finish(null, err));
+    child.on("close", (code) => finish(code));
   });
+}
+
+// Pure: a run that wrote no po.json after a timeout or a non-zero exit measured the environment, not the skill.
+export const isExecutorFault = ({ poWritten, timedOut, code }) => !poWritten && (timedOut || code !== 0);
+
+// Runs one executor job via `attempt(n)`, retrying an executor fault once; a second fault is an env failure.
+export async function runWithRetry(attempt) {
+  const first = await attempt(0);
+  if (!isExecutorFault(first)) return { ...first, attempts: 1, envFailure: false };
+  const second = await attempt(1);
+  return { ...second, attempts: 2, envFailure: isExecutorFault(second) };
+}
+
+// Pure: per-case mean over scored runs. Env-failed runs are dropped, and a case left with none is excluded
+// from the execution mean; both are listed. score is null when no case has a scored run.
+export function aggregateExecution(results) {
+  const cases = {};
+  const envFailures = [];
+  for (const { id, r, envFailure, result } of results) {
+    if (envFailure) envFailures.push(`${id}-r${r}`);
+    else (cases[id] ??= []).push(result);
+  }
+  const ids = [...new Set(results.map((x) => x.id))];
+  const excludedCases = ids.filter((id) => !cases[id]);
+  const perCase = Object.fromEntries(Object.entries(cases).map(([id, rs]) =>
+    [id, { runs: rs, score: rs.reduce((s, x) => s + x.score, 0) / rs.length }]));
+  const scored = Object.values(perCase);
+  const score = scored.length ? scored.reduce((s, c) => s + c.score, 0) / scored.length : null;
+  return { cases: perCase, score, env_failures: envFailures, excluded_cases: excludedCases };
 }
 
 export async function scoreSkill(skillDir, { apiKey, oauthToken, executorOut, runs = 1 } = {}) {
@@ -194,24 +234,26 @@ export async function scoreSkill(skillDir, { apiKey, oauthToken, executorOut, ru
       for (let r = 0; r < runs; r++) jobs.push({ id, r, c });
     }
     const results = await Promise.all(jobs.map(async ({ id, r, c }) => {
-      const { raw, transcript } = await runAgent(skillDir, skillName, c.input, { apiKey, oauthToken });
-      if (executorOut) {
-        mkdirSync(join(executorOut, "executor"), { recursive: true });
-        writeFileSync(join(executorOut, "executor", `${id}-r${r}.txt`), transcript);
-        writeFileSync(join(executorOut, "executor", `${id}-r${r}.po.json`), raw);
-      }
-      return { id, r, result: checkPurchaseOrder(raw, c.expected) };
+      const run = await runWithRetry(async (n) => {
+        const out = await runAgent(skillDir, skillName, c.input, { apiKey, oauthToken });
+        if (executorOut) {
+          const stem = `${id}-r${r}${n ? "-retry" : ""}`;
+          mkdirSync(join(executorOut, "executor"), { recursive: true });
+          writeFileSync(join(executorOut, "executor", `${stem}.txt`), out.transcript);
+          writeFileSync(join(executorOut, "executor", `${stem}.po.json`), out.raw);
+        }
+        return out;
+      });
+      return { id, r, envFailure: run.envFailure, result: checkPurchaseOrder(run.raw, c.expected) };
     }));
-    const cases = {};
-    for (const { id, result } of results) (cases[id] ??= []).push(result);
-    const perCase = Object.fromEntries(Object.entries(cases).map(([id, rs]) =>
-      [id, { runs: rs, score: rs.reduce((s, x) => s + x.score, 0) / rs.length }]));
-    executionScore = Object.values(perCase).reduce((s, c) => s + c.score, 0) / Object.keys(perCase).length;
-    report.execution = { cases: perCase, score: executionScore, executor: apiKey ? "claude-cli+api-key" : "claude-cli+oauth" };
+    const execution = aggregateExecution(results);
+    executionScore = execution.score;
+    report.execution = { ...execution, executor: apiKey ? "claude-cli+api-key" : "claude-cli+oauth" };
   } else if (!apiKey && !oauthToken) {
     console.error("WARN: no ANTHROPIC_API_KEY / CLAUDE_CODE_OAUTH_TOKEN — execution scored 0; compliance/craft only");
   }
-  report.overall = WEIGHTS.execution * executionScore + WEIGHTS.compliance * compliance.score + WEIGHTS.craft * craft.score;
+  report.overall = executionScore === null ? null
+    : WEIGHTS.execution * executionScore + WEIGHTS.compliance * compliance.score + WEIGHTS.craft * craft.score;
   if (executorOut) {
     mkdirSync(executorOut, { recursive: true });
     writeFileSync(join(executorOut, "score-report.json"), JSON.stringify(report, null, 2) + "\n");
@@ -235,10 +277,17 @@ if (isMain) {
   });
   console.log(`METRIC compliance=${report.compliance.score.toFixed(3)}`);
   console.log(`METRIC craft=${report.craft.score.toFixed(3)}`);
-  console.log(`METRIC execution=${(report.execution?.score ?? 0).toFixed(3)}`);
-  console.log(`METRIC overall_score=${report.overall.toFixed(3)}`);
   for (const [id, c] of Object.entries(report.execution?.cases ?? {})) {
     const failed = [...new Set(c.runs.flatMap((r) => Object.entries(r.checks).filter(([, v]) => !v).map(([k]) => k)))];
     console.log(`# ${id}: ${c.score.toFixed(3)}${failed.length ? ` failed=[${failed.join(",")}]` : ""}`);
   }
+  if (report.execution?.env_failures.length) {
+    console.log(`# env_failures=[${report.execution.env_failures.join(",")}] excluded_cases=[${report.execution.excluded_cases.join(",")}]`);
+  }
+  if (report.overall === null) {
+    console.log("ENV_FAILURE: every executor run faulted twice; not scored");
+    process.exit(75);
+  }
+  console.log(`METRIC execution=${(report.execution?.score ?? 0).toFixed(3)}`);
+  console.log(`METRIC overall_score=${report.overall.toFixed(3)}`);
 }

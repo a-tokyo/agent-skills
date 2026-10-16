@@ -7,6 +7,7 @@ what the model does**. Answer it before shipping.
 ## Contents
 - [The gate: same-model uplift](#the-gate-same-model-uplift)
 - [Arms](#arms)
+- [Manual with/without protocol](#manual-withwithout-protocol)
 - [Score by executing, not by reading](#score-by-executing-not-by-reading)
 - [Unit-test the scorer](#unit-test-the-scorer)
 - [Sample size, and why per-model](#sample-size-and-why-per-model)
@@ -47,6 +48,36 @@ from reality silently.
 
 Hold everything else fixed: same model, same temperature, same task text, same scorer. If the arms
 differ in more than one respect, the delta is not attributable.
+
+## Manual with/without protocol
+
+The SKILL.md 5.0 gate runs this instead of `claude plugin eval` when `plugin_eval_available` in
+`data-split.yaml` is non-zero, or when the skill is user-invoked (it never fires through the Skill tool,
+so plugin eval's with-arm measures nothing). It runs the 3.6 gate cases on the pinned model:
+
+- **Arms**: *with* gets the shipped `SKILL.md` as its system prompt; *without* gets no system prompt.
+- **Runs**: 3 per case per arm.
+- **Executor**: single-call (system prompt plus the case prompt, one completion) when the skill only
+  produces text; **agentic** (a fresh tool-using agent in a scratch copy of the case's fixtures, the
+  skill directory beside them) when the skill bundles `scripts/` or acts on files — one call cannot run
+  a script or write a file.
+- **Score**: each run is the fraction of the case's 3.6 graders that pass (0-1), skill-fired
+  indicators excluded.
+
+Write the result to `work/evaluation/uplift.json`; `delta` is mean(with) − mean(without), read exactly
+as plugin eval's Δ:
+
+```json
+{
+  "cases": [
+    { "case": "holdout-03", "with": [1.0, 0.8, 1.0], "without": [0.6, 0.6, 0.4], "delta": 0.4 }
+  ],
+  "summary": { "model": "<model>", "executor": "agentic", "runs_per_case": 3, "in_sample": true,
+               "mean_with": 0.93, "mean_without": 0.53, "mean_delta": 0.4 }
+}
+```
+
+`in_sample` is true when the gate cases are also training cases (3-9 gold standards, SKILL.md 4.2).
 
 ## Score by executing, not by reading
 

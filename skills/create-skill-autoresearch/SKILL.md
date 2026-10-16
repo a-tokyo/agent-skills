@@ -31,9 +31,7 @@ Key constraint: BUILDER and PANEL never share context. Panel receives only the s
 answer or the stated default, answer autoresearch's setup without waiting for its confirmation, and
 record each assumption in `work/experiments/craft-decisions.md`.
 
-**Background jobs** (eval runs, `claude plugin eval`, loops): capture each PID at start (`cmd & pid=$!`
-or a pidfile under `work/`), then wait on or stop only those PIDs or their process group. Never `pkill`,
-`killall` or `pgrep | xargs kill` by name or pattern: that kills unrelated processes on the machine.
+**Background jobs** (eval runs, `claude plugin eval`, loops) follow "Owned processes" in [references/pipeline-phases.md](references/pipeline-phases.md).
 
 ## Companion skills
 
@@ -47,7 +45,7 @@ The factory composes sibling skills rather than embedding them, so each stays cu
 | **premortem** | 5.1 | Ask the panel's Devil's Advocate for the risk list |
 | **tribunal** | Phase 5 (see 5.2) | Inline panel |
 | **handoff** | 4.4 | Write `HANDOFF-*.md` by hand |
-| `claude plugin eval` (Claude Code CLI) | 3.6 suite, 5.0 gate | `evaluate.sh` plus the manual uplift benchmark |
+| `claude plugin eval` (Claude Code CLI) | 3.6 suite, 5.0 gate | The manual with/without protocol (5.0) |
 
 Install skills with `npx skills add <source> --skill <name>`; `claude plugin eval` ships with Claude Code.
 
@@ -80,7 +78,8 @@ for gold standards and study materials, `work/` for everything generated, `outpu
 If the working directory is already dedicated to this build (it holds the brief and inputs), it *is* the
 workspace: create `work/` and `output/<skill-name>/` in place and keep every path below relative to it.
 The workspace is its own git repository, because the Phase 4 loop resets it: run `git init` there
-unless `git rev-parse --show-toplevel` already prints the workspace root.
+unless `git rev-parse --show-toplevel` already prints the workspace root. Inside a parent project,
+gitignore the workspace in the parent; its `work/` is committed in the workspace's own repository.
 
 Do **not** ask the user to hand-author a manifest. Scan whatever is in `input/`, classify each item as a gold standard (exemplar input/output pair or reference artifact) vs a study material, and write your derived index to `work/manifest.yaml` with train/validation/test tags. Present the derived manifest for the user to confirm or correct. See [references/pipeline-phases.md](references/pipeline-phases.md) for intake formats and the manifest schema.
 
@@ -167,23 +166,20 @@ Write the draft to `output/<skill-name>/SKILL.md` (reference files in `output/<s
 Create `work/evaluation/evaluate.sh` that:
 1. With no argument, scores every case in the current `training` split of `work/evaluation/data-split.yaml`
    (the Phase 4 metric command); with a gold standard test case path, scores that one case
-2. Extracts the input from each test case
-3. Invokes the skill on the input -- since skills are markdown instructions (not
-   executables), this means calling an LLM with the SKILL.md as a system prompt
-   and the test case input as the user message. Use `curl` to an OpenAI-compatible
-   API, or a language-specific SDK. Capture the LLM's output.
-4. Compares the output to the gold standard reference using an LLM-as-judge
-5. Emits `METRIC <dimension>=<score>` lines to stdout
-6. Emits `METRIC overall_score=<weighted_average>` (the mean over the cases scored) as the primary metric
+2. Extracts each case's input and invokes the skill on it -- skills are markdown, not executables, so
+   call an LLM (`curl` to an OpenAI-compatible API, or an SDK) with the SKILL.md as the system prompt
+   and the case input as the user message, and capture the output
+3. Compares the output to the gold standard reference using an LLM-as-judge
+4. Emits `METRIC <dimension>=<score>` lines, then `METRIC overall_score=<weighted_average>` (the mean
+   over the cases scored) as the primary metric
 
-See `self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo for a complete reference implementation.
+`self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness) repo shows the judge call and the METRIC lines for one case.
 
-**`overall_score` steers Phase 4; it is not the shipping evidence.** It measures absolute output quality
-against gold standards, with no bare-model comparison in it, so it cannot answer "does this skill help".
-That question needs a **same-model uplift benchmark** -- the same model on identical tasks with the skill
-and without -- built before ship and reported with its honest negatives. Reading effectiveness off
-`overall_score` is the most common way to conclude a working skill is useless. Standard, arms, sample
-sizes and the retry-parity rule: [references/benchmark-standard.md](references/benchmark-standard.md).
+**`overall_score` steers Phase 4; it is not the shipping evidence.** It measures absolute quality against
+gold standards with no bare-model comparison, so it cannot answer "does this skill help" -- reading
+effectiveness off it is the most common way to conclude a working skill is useless. That needs a
+**same-model uplift benchmark** (the same model on identical tasks with the skill and without), built
+before ship and reported with its honest negatives: [references/benchmark-standard.md](references/benchmark-standard.md).
 
 **Prefer deterministic checks** — line count, frontmatter, link integrity, regex pattern coverage,
 structural validation — and emit their METRIC lines directly. Use an LLM judge only for judgement
@@ -209,6 +205,8 @@ Optionally create `work/evaluation/evaluate-checks.sh` for correctness gates.
 ### 3.5 Measure Baseline
 
 Run `evaluate.sh` with the initial draft, record the scores as experiment 0, and report them to the user.
+Commit the draft as experiment 0 before Phase 4 (`git add output/<skill-name> && git commit -m "baseline"`):
+upstream autoresearch never commits one, and its `git reset --hard HEAD~1` needs that parent.
 
 ### 3.6 Scaffold the Eval Suite
 
@@ -220,7 +218,8 @@ case with `claude plugin eval init --bare <case>` (a human at a terminal may use
   with 3-9 (4.2): the prompt as a user would phrase it, input files
   copied in by a `scaffold_script` ([worked case](references/pipeline-phases.md)), graders on decisive facts — `regex` on
   `{ source: file, path: <output> }` where mechanical, `llm` only for judgement;
-- two or more **should-trigger** prompts graded `tool_used` on `Skill` (model-invoked skills only);
+- two or more **should-trigger** prompts graded `tool_used` on `Skill` (model-invoked skills only) --
+  in the two-arm run an unscored with-arm indicator;
 - one **should-not-trigger** near miss, graded by `graders/not-fired.md`:
 
 ```yaml
@@ -233,9 +232,11 @@ arm: both
 ---
 ```
 
-Record the cases in `work/evaluation/data-split.yaml` under `plugin_eval`. Claude Code is available iff
-`claude plugin eval --help` exits 0; headless and unattended runs still build and run this suite.
-Without it, log `plugin_eval: unavailable` there and still write the cases' prompts — 5.0 runs them by hand.
+Record the cases in `work/evaluation/data-split.yaml` under `plugin_eval`, and the exit code of
+`claude plugin eval --help` as `plugin_eval_available: 0|<code>`; headless and unattended runs still build
+and run this suite. A user-invoked skill (`disable-model-invocation: true`) never fires through the Skill
+tool, so plugin eval's with-arm would measure nothing: for it, or a non-zero code, still write the cases'
+prompts — 5.0 runs them by the manual with/without protocol instead.
 
 ---
 
@@ -276,8 +277,8 @@ The factory owns three records the upstream loop does not keep. Write them yours
 
 With >= 10 gold standards, split **70% training** (every experiment), **20% validation** (checked
 adaptively, below) and **10% test** (held out until Phase 5). With 3-9, use **leave-one-out rotation**:
-each experiment evaluates all but one, rotating which is held out; there is no test split, so the 3.6
-gate uses every gold standard as a case.
+each experiment evaluates all but one, and its LOG step advances the held-out case by rewriting the
+`training` list in data-split.yaml; there is no test split, so the 3.6 gate uses every gold standard as a case.
 
 Record the split in `work/evaluation/data-split.yaml`.
 
@@ -366,13 +367,16 @@ Read WITH, W/OUT and Δ per case from the JSON; the verdict comes from Δ, never
 the same-model uplift the shipping evidence needs ([references/benchmark-standard.md](references/benchmark-standard.md)):
 - Δ <= 0 on a gate gold-standard case is a **verified failure scenario** for the panel — the skill adds
   nothing there, or hurts;
-- a should-trigger case that fails WITH is a description defect — return to 4.6, not to the panel;
+- a should-trigger case whose skill-fired indicator fails in the with-arm is a description defect —
+  return to 4.6, not to the panel;
 - pass the JSON summary to the panel as a known risk list and copy it into `BENCHMARK.md`.
 
-Without Claude Code (3.6), run the manual with/without protocol in
-[references/benchmark-standard.md](references/benchmark-standard.md) on the same cases and write WITH,
-W/OUT and Δ per case to `work/evaluation/uplift.json`. The gate is never skipped: Phase 5 always starts
-with `plugin-eval.json` or `uplift.json`.
+When 3.6 recorded a non-zero `plugin_eval_available`, or the skill is user-invoked, run the manual
+with/without protocol ([references/benchmark-standard.md](references/benchmark-standard.md)) on the same
+cases instead; its `work/evaluation/uplift.json` replaces `plugin-eval.json` only then. With 3-9 gold
+standards every gate case is also a training case, so Δ is **in-sample**: `BENCHMARK.md` and the panel
+label it so. The gate is never skipped: 5.2 does not start without `plugin-eval.json` or `uplift.json` —
+the panel refuses and the build returns to 5.0.
 
 ### 5.1 Premortem
 
@@ -380,13 +384,9 @@ Invoke the **premortem skill** on the skill artifact. Feed identified risks into
 
 ### 5.2 Panel Evaluation
 
-Spawn 3 independent verifier subagents **in parallel**. Each receives ONLY:
-- The skill SKILL.md and references
-- The gold standards
-- The rubric
-- The premortem risks
-
-They do NOT receive: research notes, experiment logs (`autoresearch.jsonl`), or builder context.
+Spawn 3 independent verifier subagents **in parallel**. Each receives ONLY the skill SKILL.md and
+references, the gold standards, the rubric, and the premortem risks -- never research notes, experiment
+logs (`autoresearch.jsonl`), or builder context.
 
 **Panel roles:**
 
@@ -469,7 +469,7 @@ builds/<skill-name>/
 
 `work/` is generated, but four files are the human's to correct at phase boundaries: `manifest.yaml`,
 `evaluation/rubric.yaml` (the exit criteria), `evaluation/judges.yaml`, `evaluation/data-split.yaml`.
-Never write a credential into any of them — `work/` is often committed inside a real project repo.
+Never write a credential into any of them — `work/` is committed in the workspace's repository (1.6).
 
 Only `output/<skill-name>/` ships; its uplift benchmark belongs **outside** the skill dir, at
 `benchmarks/<skill-name>/`. To publish: [references/publishing.md](references/publishing.md).
