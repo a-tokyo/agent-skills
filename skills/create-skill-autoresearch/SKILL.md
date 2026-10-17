@@ -30,10 +30,9 @@ Key constraint: BUILDER and PANEL never share context. Panel receives only the s
 **Unattended runs** (a brief, no user at the terminal): where a step asks to confirm, adopt the brief's answer
 or the stated default without waiting, and record each assumption in `work/experiments/craft-decisions.md`.
 
-**Bundled scripts** run as `python3 <skill-dir>/scripts/<name>.py` (`<skill-dir>`: this skill's base
-directory; each has `--help`). **Background jobs** (eval runs, loops) go through `run_owned.py`
-(`start <name> -- <cmd...>`, `wait <name>`, `stop <name>`): it records each job's process group in
-`work/pids/` and signals only that group, where a name-pattern kill also hits sibling builds and the user's processes.
+**Bundled scripts** run as `python3 <skill-dir>/scripts/<name>.py` (`<skill-dir>`: this skill's base directory;
+each has `--help`). **Background jobs** (eval runs, loops) go through `run_owned.py start <name> -- <cmd...>`: it
+signals only the process group it records in `work/pids/`, where a name-pattern kill also hits sibling builds and the user's processes.
 
 ## Companion skills
 
@@ -75,13 +74,13 @@ examples, or find additional reference materials.
 
 Summarize all parameters in a table. Ask the user to confirm.
 
-Once confirmed, create the build workspace `builds/<skill-name>/` (layout under Output Structure): `input/`
-for gold standards and study materials, `work/` for everything generated, `output/<skill-name>/` to ship.
-If the working directory is already dedicated to this build (it holds the brief and inputs), it *is* the
-workspace: create `work/` and `output/<skill-name>/` in place and keep every path below relative to it.
-The workspace is its own git repository (the Phase 4 loop resets it): `git init` there unless
-`git rev-parse --show-toplevel` already prints the workspace root. Inside a parent project, gitignore it
-there; `work/` is committed in the workspace's own repository, `work/pids/` excepted.
+Once confirmed, create the build workspace `builds/<skill-name>/` (layout under Output Structure): `input/` for
+gold standards and study materials, `work/` for everything generated, `output/<skill-name>/` to ship. If the
+working directory is already dedicated to this build (it holds the brief and inputs), it *is* the workspace:
+create `work/` and `output/<skill-name>/` in place and keep every path below relative to it. The workspace is its
+own git repository (the Phase 4 loop resets it): `git init` there unless `git rev-parse --show-toplevel` already
+prints the workspace root. Inside a parent project, gitignore it there; `work/` is committed in the workspace's
+own repository, except `work/pids/` (`run_owned.py` gitignores it).
 
 Do **not** ask the user to hand-author a manifest. Scan whatever is in `input/`, classify each item as a gold standard (exemplar input/output pair or reference artifact) vs a study material, and write your derived index to `work/manifest.yaml` with train/validation/test tags. Present the derived manifest for the user to confirm or correct. See [references/pipeline-phases.md](references/pipeline-phases.md) for intake formats and the manifest schema.
 
@@ -145,11 +144,10 @@ design survives scrutiny.
 
 ### 3.3 Generate SKILL.md Draft
 
-Author the draft with **skill-creator**'s writing guide (skill anatomy, progressive disclosure,
-writing patterns), feeding it DESIGN.md and the research synthesis instead of re-interviewing --
-the factory's Phase 1-2 already answered its intent questions. Skip its eval loop and packaging;
-Phases 3.4-5 replace them. Without skill-creator, write it directly using
-[references/standalone-fallback.md](references/standalone-fallback.md).
+Author the draft with **skill-creator**'s writing guide (skill anatomy, progressive disclosure, writing
+patterns), feeding it DESIGN.md and the research synthesis instead of re-interviewing -- the factory's
+Phase 1-2 already answered its intent questions. Skip its eval loop and packaging; Phases 3.4-5 replace
+them. Without skill-creator, write it directly using [references/standalone-fallback.md](references/standalone-fallback.md).
 
 Either way, run this **pre-flight checklist** before writing -- the hard constraints' single source,
 platform rules unless labelled otherwise:
@@ -213,10 +211,9 @@ Build the suite the 5.0 gate runs, in a wrapper plugin under `work/` so nothing 
 `work/evaluation/plugin/` holds `.claude-plugin/plugin.json` (`name`, `version`) and `evals/`
 (`scripts/gate.py` copies the skill to `skills/<skill-name>/` before every run). From that directory, scaffold each
 case with `claude plugin eval init --bare <case>` (a human at a terminal may use the `init` interview):
-- one case per **gate gold standard** — the test split with >= 10 gold standards, every gold standard
-  with 3-9 (4.2): the prompt as a user would phrase it, input files
-  copied in by a `scaffold_script` ([worked case](references/pipeline-phases.md)), graders on decisive facts — `regex` on
-  `{ source: file, path: <output> }` where mechanical, `llm` only for judgement;
+- one case per **gate gold standard** — the test split with >= 10 gold standards, every gold standard with 3-9
+  (4.2): the prompt as a user would phrase it, input files copied in by a `scaffold_script` ([worked case](references/pipeline-phases.md)),
+  graders on decisive facts — `regex` on `{ source: file, path: <output> }` where mechanical, `llm` only for judgement;
 - two or more **should-trigger** prompts graded `tool_used` on `Skill` (model-invoked skills only) --
   in the two-arm run an unscored with-arm indicator;
 - one **should-not-trigger** near miss, graded `tool_used` on `Skill` with `min: 0`, `max: 0`, `arm: both`
@@ -269,9 +266,9 @@ The factory owns three records the upstream loop does not keep. Write them yours
 
 Record the split in `work/evaluation/data-split.yaml`. With >= 10 gold standards, split **70% training**
 (every experiment), **20% validation** (checked adaptively, below) and **10% test** (held out until
-Phase 5). With 3-9, use **leave-one-out rotation**:
-each experiment evaluates all but one, and its LOG step — after the keep/revert decision — advances the
-held-out case by rewriting the `training` list in data-split.yaml and committing that file alone
+Phase 5). With 3-9, use **leave-one-out rotation**: each experiment evaluates all but one, and its LOG
+step — after the keep/revert decision — advances the held-out case by rewriting the `training` list in
+data-split.yaml and committing that file alone
 (`git commit -m "rotate held-out case" -- work/evaluation/data-split.yaml`), so a later revert of
 `HEAD~1` undoes an experiment, never the rotation. There is no test split; the 3.6 gate uses every gold standard.
 
@@ -335,11 +332,11 @@ with the remaining budget on **autoresearch**; re-run the panel if the last verd
 Model-invoked skills only, after the loop ends: run **skill-creator**'s description optimizer
 (`scripts/run_loop.py`) on the best commit, with the 3.6 trigger and near-miss prompts as its seed
 queries. Its `--eval-set` is a JSON list `[{"query": "...", "should_trigger": true}]` of about 20 queries
-(the seeds plus realistic near misses); pass `--holdout 0` when the set is too small to split.
-Keep the new description only if the 3.6 trigger cases still pass and `overall_score`
-does not drop; log the decision in `autoresearch.jsonl`. Pass `--report <path>` under `work/` in
-headless runs (flags: `python3 -m scripts.run_loop --help` from the skill-creator dir). Without
-skill-creator or `claude -p`, skip 4.6 and log the skip in `autoresearch.jsonl`.
+(the seeds plus realistic near misses); pass `--holdout 0` when the set is too small to split. Keep the new
+description only if the 3.6 trigger cases still pass and `overall_score` does not drop; log the decision in
+`autoresearch.jsonl`. Pass `--report <path>` under `work/` in headless runs (flags:
+`python3 -m scripts.run_loop --help` from the skill-creator dir). Without skill-creator or `claude -p`, skip
+4.6 and log the skip in `autoresearch.jsonl`.
 
 ---
 
@@ -347,22 +344,26 @@ skill-creator or `claude -p`, skip 4.6 and log the skip in `autoresearch.jsonl`.
 
 ### 5.0 Eval Gate
 
-Run the gate with the bundled runner, from the workspace root, in the foreground:
+A full gate runs longer than one shell call waits, so start it detached from the workspace root, then
+poll it with short calls until it exits (`wait` exits 124 while it runs, then with the gate's exit code):
 
 ```bash
-python3 <skill-dir>/scripts/gate.py --model <model the skill targets> [--in-sample] \
+python3 <skill-dir>/scripts/gate.py --detach --model <model the skill targets> [--in-sample] \
   [--allow-tools Bash Write] [--executor single-call|agentic]
+python3 <skill-dir>/scripts/run_owned.py wait gate --timeout 540    # repeat until it exits
 ```
 
-It picks the mode (plugin eval when `claude plugin eval --help` exits 0 and the skill is model-invoked,
-else the manual protocol through `run-case.sh`, which needs `--executor`), runs every recorded case 3 times
-per arm via `run_owned.py`, and writes `work/evaluation/plugin-eval.json` or `uplift.json` plus `gate.json`.
-Grant only the tools the skill needs. With 3-9 gold standards pass `--in-sample` (gate cases are training
-cases; `BENCHMARK.md` and the panel label Δ in-sample). A non-zero exit says why: fix the suite or
-`run-case.sh` and re-run; only `gate.py` writes the artifact. Its plugin-eval flags: [references/pipeline-phases.md](references/pipeline-phases.md).
+`gate.py` runs as the owned job `gate`, as `run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py …`
+would (log `work/pids/gate.log`), and refuses a second start while it runs. To restart the gate, run
+`gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the mode (plugin eval when
+`claude plugin eval --help` exits 0 and the skill is model-invoked, else the manual protocol through
+`run-case.sh`, which needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
+or `uplift.json` plus `gate.json` (hashes of the skill and cases) under `work/evaluation/`. Grant only the tools
+the skill needs. With 3-9 gold standards pass `--in-sample` (gate cases are training cases; `BENCHMARK.md` and
+the panel label Δ in-sample). A non-zero exit says why: fix the suite or `run-case.sh` and re-run; only
+`gate.py` writes the artifact. Its plugin-eval flags: [references/pipeline-phases.md](references/pipeline-phases.md).
 
-Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ. This is
-the same-model uplift the shipping evidence needs ([references/benchmark-standard.md](references/benchmark-standard.md)):
+Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, the same-model uplift the shipping evidence needs ([references/benchmark-standard.md](references/benchmark-standard.md)):
 - Δ <= 0 on a gate gold-standard case is a **verified failure scenario** for the panel — the skill adds
   nothing there, or hurts;
 - a should-trigger case whose skill-fired indicator fails in the with-arm is a description defect —
@@ -375,8 +376,8 @@ Invoke the **premortem skill** on the skill artifact. Feed identified risks into
 
 ### 5.2 Panel Evaluation
 
-First validate the gate artifact from the workspace root; a non-zero exit returns the build to 5.0 —
-the gate is never skipped, and the panel never starts on a missing, partial or incomplete artifact:
+First validate the gate artifact from the workspace root; a non-zero exit returns the build to 5.0 — the gate
+is never skipped, and the panel never starts on a missing, partial, incomplete or stale artifact:
 
 ```bash
 python3 <skill-dir>/scripts/check_gate.py
@@ -385,8 +386,6 @@ python3 <skill-dir>/scripts/check_gate.py
 Then spawn 3 independent verifier subagents **in parallel**. Each receives ONLY the skill SKILL.md and
 references, the gold standards, the rubric, and the premortem risks -- never research notes, experiment
 logs (`autoresearch.jsonl`), or builder context.
-
-**Panel roles:**
 
 | Role | Focus | Bias |
 |------|-------|------|
@@ -415,11 +414,10 @@ agent that built the skill. Otherwise run the inline panel — a standalone inst
 
 ### 5.3 Consensus Protocol
 
-All scores within 1 point on every dimension → weighted average. Otherwise (a spread >= 2, or the DA
-at 1) run one anonymized synthesis round on the disputed dimensions; then converged → average, 2-of-3
-→ majority with the dissent logged in `work/experiments/craft-decisions.md`, **deadlock → escalate to
-user**. A DA `ESCALATE: <reason>` reaches the user, never the average. Full protocol and anti-patterns:
-[references/consensus-protocol.md](references/consensus-protocol.md).
+All scores within 1 point on every dimension → weighted average. Otherwise (a spread >= 2, or the DA at 1) run
+one anonymized synthesis round on the disputed dimensions; then converged → average, 2-of-3 → majority with the
+dissent logged in `work/experiments/craft-decisions.md`, **deadlock → escalate to user**. A DA
+`ESCALATE: <reason>` reaches the user, never the average. Full protocol and anti-patterns: [references/consensus-protocol.md](references/consensus-protocol.md).
 
 ### 5.4 Ship or Iterate
 
@@ -437,13 +435,15 @@ If ITERATE: turn each member's top concern and every Devil's Advocate failure sc
 improvement hypothesis in `autoresearch.ideas.md`, log the panel scores and rationales in
 `work/experiments/craft-decisions.md`, and return to Phase 4.
 
-**An exhausted budget is terminal.** ITERATE or BLOCK with no Phase 4 budget left ends the build: write
-`BENCHMARK.md` with verdict `UNSHIPPED`, the final scores and the blocking concerns. An `UNSHIPPED`
-output is a draft: never describe it as shipped, and never publish it.
+**A terminal ITERATE is `UNSHIPPED`.** ITERATE or BLOCK with no Phase 4 budget left, or after the 4.3 plateau
+rule ended the loop, ends the build: write `BENCHMARK.md` with verdict `UNSHIPPED` — the one terminal label —
+plus the final scores and the blocking concerns. An `UNSHIPPED` output is a draft: never describe it as
+shipped, and never publish it.
 
-On SHIP or SHIP WITH CAVEATS, write `BENCHMARK.md` at the build root (final scores and verdict), then
-follow [references/publishing.md](references/publishing.md) — a registration checklist, not a file copy:
-a version that disagrees with its registry entry installs the wrong thing.
+**No SHIP without the validator.** Before writing SHIP or SHIP WITH CAVEATS, re-run `check_gate.py` and copy its
+`GATE VALID:` line verbatim into `BENCHMARK.md` at the build root, beside the final scores and verdict; a non-zero
+exit (the skill changed since the gate, say) returns the build to 5.0. Then follow [references/publishing.md](references/publishing.md):
+a registration checklist, not a file copy — a version that disagrees with its registry entry installs the wrong thing.
 
 ---
 

@@ -1,4 +1,5 @@
-"""Shared helpers for gate.py and check_gate.py: workspace paths and the two YAML keys they read.
+"""Shared helpers for gate.py and check_gate.py: workspace paths, the two YAML keys they read, and
+the hashes that bind a gate run to the skill and cases it ran.
 
 No PyYAML (the factory bundles stdlib-only scripts), so `read_data_split` is a deliberately small
 reader for exactly two top-level keys of work/evaluation/data-split.yaml:
@@ -12,10 +13,15 @@ reader for exactly two top-level keys of work/evaluation/data-split.yaml:
 Case names are strings (quotes optional, `#` comments stripped). Any other shape for
 `plugin_eval` (a mapping, a multi-line flow list, a scalar) is reported as an error rather
 than guessed at.
+
+`tree_sha256` hashes a directory's sorted relative paths and file contents, skipping interpreter
+caches (`__pycache__/`, `*.pyc`) and `.DS_Store`, which running a skill's scripts or browsing it in
+Finder creates without changing what ships.
 """
 
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -141,6 +147,34 @@ def model_invoked(skill_md: Path) -> bool:
         if key.strip() == "disable-model-invocation":
             return _unquote(_strip_comment(value)).lower() != "true"
     return True
+
+
+def _hashed(path: Path, root: Path) -> bool:
+    rel = path.relative_to(root)
+    return path.is_file() and "__pycache__" not in rel.parts and path.suffix != ".pyc" and path.name != ".DS_Store"
+
+
+def tree_sha256(root: Path) -> str:
+    digest = hashlib.sha256()
+    if root.is_dir():
+        for path in sorted((p for p in root.rglob("*") if _hashed(p, root)), key=lambda p: p.relative_to(root).as_posix()):
+            digest.update(path.relative_to(root).as_posix().encode() + b"\0")
+            digest.update(hashlib.sha256(path.read_bytes()).digest())
+    return digest.hexdigest()
+
+
+def skill_sha256(workspace: Path, skill: str) -> str:
+    return tree_sha256(workspace / "output" / skill)
+
+
+def cases_sha256(workspace: Path, cases: list[str]) -> str:
+    """The recorded case names, in order, plus each case's suite directory under plugin/evals/ when it
+    has one (manual-protocol gold cases may not)."""
+    digest = hashlib.sha256()
+    for case in cases:
+        digest.update(case.encode() + b"\0")
+        digest.update(tree_sha256(workspace / PLUGIN_DIR / "evals" / case).encode())
+    return digest.hexdigest()
 
 
 def write_json(path: Path, data: object) -> None:

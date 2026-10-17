@@ -137,7 +137,9 @@ overall_score = sum(dimension_consensus / scale_max * weight) for each dimension
 
 ### ITERATE Feedback
 
-When the panel returns ITERATE, extract and structure the feedback:
+An ITERATE with no Phase 4 budget left, or after the plateau rule ended the loop, is terminal: the verdict
+is `UNSHIPPED` (SKILL.md 5.4), not feedback. Otherwise, when the panel returns ITERATE, extract and
+structure the feedback:
 1. Top concerns from each panel member
 2. Failure scenarios from the Devil's Advocate
 3. Per-dimension scores with justifications

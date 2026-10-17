@@ -380,10 +380,24 @@ arm: both
 
 ### Gate Runner (SKILL.md 5.0)
 
-`scripts/gate.py` is the only writer of the gate artifact. In plugin mode it refreshes
-`work/evaluation/plugin/skills/<skill-name>/` from `output/`, checks that `evals/` holds exactly the cases
-recorded under `plugin_eval`, and runs this from `work/evaluation/plugin/` through `run_owned.py`, waiting
-in the foreground (default timeout 90 minutes):
+`scripts/gate.py` is the only writer of the gate artifact, and it always runs as the owned job `gate`. A
+full gate can take over an hour (default plugin-eval timeout 90 minutes), longer than any agent shell call
+waits, so an agent starts it detached and polls with short calls:
+
+```bash
+python3 <skill-dir>/scripts/gate.py --detach --model <model> …       # or: run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py --model <model> …
+python3 <skill-dir>/scripts/run_owned.py wait gate --timeout 540      # exits 124 while it runs; repeat until it exits with the gate's code
+```
+
+A second start while the job is live is refused with these commands. `gate.py --restart …` stops only the
+recorded `gate` group and starts it again, detached; `gate.py --stop` stops it. On TERM the gate stops the
+eval runs it started (each in its own process group) before it exits, and leaves `gate.json` unfinished, so
+a stopped gate never validates. Without `--detach`, `gate.py` starts the job and waits for it, which suits a
+human at a terminal; if that call is cut off the job keeps running.
+
+In plugin mode it refreshes `work/evaluation/plugin/skills/<skill-name>/` from `output/`, checks that
+`evals/` holds exactly the cases recorded under `plugin_eval`, and runs this from
+`work/evaluation/plugin/` as its own owned job:
 
 ```bash
 claude plugin eval . --ablation with-without --runs 3 -j 4 --model <model> --allow-tools Bash Write \
@@ -398,10 +412,15 @@ runs, `--threshold 0` keeps a low score from failing the run (the verdict reads 
 In manual mode it calls `work/evaluation/run-case.sh <case> <with|without>` 3 times per arm per case
 (`--jobs` at once, default 4), each run in its own process group with a per-run timeout (default 20
 minutes), retries a failed run once, and writes `uplift.json`; a second failure leaves it `"partial": true`
-with an `errors` list. Both modes record `work/evaluation/gate.json` (mode, probe exit code, cases), move a
-previous artifact to `<name>.prev.json` first so a stale file can never pass, and end by running
-`check_gate.py`, which exits 0 only for a complete artifact covering exactly the recorded cases with at
-least 3 runs per arm. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
+with an `errors` list. Both modes record `work/evaluation/gate.json` (mode, probe exit code, cases, and
+sha256 hashes of `output/<skill-name>/` and of the case set — names plus each case's `evals/` directory;
+interpreter caches excluded), move a previous artifact to `<name>.prev.json` first so a stale file can never
+pass, and end by running `check_gate.py`. It exits 0 only when `gate.json` records a finished run whose hashes
+still match, and the artifact says `"partial": false`, covers exactly the recorded cases and has at least 3
+runs per arm. Any edit to the skill or the suite after the gate fails it: "skill changed since the gate;
+re-run 5.0". Its `GATE VALID:` line gives the mean Δ and the Δ <= 0 list over gold-standard cases only;
+should-trigger cases (a `tool_used` grader on `Skill`) report how many with-arm runs fired the skill, and
+near misses (`max: 0`) how many runs in both arms left it quiet. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
 of 0 while `skill-fired` passes means the skill fired but could not act — check the tool grants and the
 fixtures first. The 1-run artifact never passes `check_gate.py`; the full run replaces it.
 
@@ -438,7 +457,8 @@ adds the rest, and applies it in every experiment:
 - **Owned processes.** Start every background job (eval runs, `until` loops) with
   `scripts/run_owned.py start <name> -- <cmd...>`, and wait on or stop it with `wait <name>` /
   `stop <name>`: it stops only the process group it recorded, because on a shared machine a
-  name-pattern kill also takes down sibling builds and the user's own processes.
+  name-pattern kill also takes down sibling builds and the user's own processes. It refuses to signal
+  a job whose recorded start time it cannot confirm, and keeps `work/pids/` out of git.
 - **Clean reverts.** Discard with `git reset --hard HEAD~1 && git clean -fd -- output/<skill-name>`,
   so a reverted experiment leaves no new untracked files behind. The baseline commit (SKILL.md 3.5) is
   experiment 0, so `HEAD~1` always exists.

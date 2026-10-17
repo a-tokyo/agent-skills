@@ -3,6 +3,11 @@
 Shipping is not a file copy. A skill that is installed but unregistered is invisible; a skill whose
 version disagrees with its registry entry installs the wrong thing. This is the checklist.
 
+Only a SHIP or SHIP WITH CAVEATS build reaches it, and only with evidence: `BENCHMARK.md` carries the
+`GATE VALID:` line that `scripts/check_gate.py` printed, copied verbatim, from a run made after the last
+change to the skill. No such line — or a `GATE INVALID:` one — means the verdict is not a shipped one:
+return to 5.0. An `UNSHIPPED` build is never published.
+
 ## Contents
 - [What ships and what does not](#what-ships-and-what-does-not)
 - [Frontmatter](#frontmatter)
@@ -91,6 +96,7 @@ hand *will* drift.
 
 ## Checklist
 
+- [ ] `BENCHMARK.md` holds `check_gate.py`'s `GATE VALID:` line, verbatim, from after the last skill change
 - [ ] `version` bumped in frontmatter; `license` present
 - [ ] Body under 500 lines; references one level deep; TOC on any reference over ~100 lines
 - [ ] Benchmark exists at `benchmarks/<skill-name>/`, outside the skill directory

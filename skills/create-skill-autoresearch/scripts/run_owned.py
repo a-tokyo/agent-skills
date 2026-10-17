@@ -3,8 +3,12 @@
 
 Each job runs in its own session and process group. Its record, work/pids/<name>.json, holds the
 pid, pgid, the leader's start time, and the command. `stop` signals only a recorded group, after
-checking the group still belongs to that record, so it can never reach a sibling build or the
-user's own processes the way `pkill`/`killall`/pattern kills do.
+checking that the leader's start time still matches the record, so it can never reach a sibling
+build or the user's own processes the way `pkill`/`killall`/pattern kills do. When that identity
+cannot be read (`ps` fails, or the record has none) it refuses to signal rather than guess.
+`start` keeps work/pids/ out of git (it writes a `.gitignore` of `*` there).
+
+The job sees RUN_OWNED_JOB=<name> and RUN_OWNED_PGID=<its group id> in its environment.
 
     run_owned.py start <name> [--cwd DIR] [--log FILE] -- <cmd...>
     run_owned.py wait <name> [--timeout SECONDS]
@@ -12,7 +16,8 @@ user's own processes the way `pkill`/`killall`/pattern kills do.
     run_owned.py status <name>
 
 Paths are relative to --workspace (default: the current directory); records go to
-<workspace>/work/pids/. Needs Python 3.9+ and `ps` (for the leader's start time).
+<workspace>/work/pids/. Needs Python 3.9+ and `ps` (for the leader's start time). Tested on macOS
+and Linux.
 
 Exit codes: 0 success (wait: the job exited 0); the job's own exit code from wait; 2 usage error;
 3 state error (no record, name already running, or a group this script refuses to signal);
@@ -41,7 +46,8 @@ NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 
 # The wrapper shell is the group leader; it records the command's exit status atomically so a
 # later `wait` from another process can read it (only a parent can waitpid).
-_WRAPPER = 'rc_file=$1; shift; "$@"; rc=$?; printf "%s\\n" "$rc" > "$rc_file.tmp" && mv "$rc_file.tmp" "$rc_file"; exit "$rc"'
+_WRAPPER = ('rc_file=$1; RUN_OWNED_JOB=$2; RUN_OWNED_PGID=$$; export RUN_OWNED_JOB RUN_OWNED_PGID; shift 2; '
+            '"$@"; rc=$?; printf "%s\\n" "$rc" > "$rc_file.tmp" && mv "$rc_file.tmp" "$rc_file"; exit "$rc"')
 
 
 class OwnedError(Exception):
@@ -129,16 +135,14 @@ def _signal_group(pgid: int, sig: int) -> None:
 
 
 def _leader_is_ours(rec: Record) -> bool | None:
-    """True if the recorded leader is still running, False if it is gone, None if its pid now
-    belongs to a different process (pid reuse) and must not be signalled."""
+    """True if the recorded leader is still running, False if it is gone, None if its identity
+    cannot be confirmed (its pid now belongs to another process, the record holds no start time,
+    or `ps` cannot read one) and it must not be signalled."""
     if not _pid_alive(rec.pid):
         return False
-    if rec.lstart is not None:
-        return True if _lstart(rec.pid) == rec.lstart else None
-    try:
-        return True if os.getsid(rec.pid) == rec.pgid else None
-    except ProcessLookupError:
-        return False
+    if rec.lstart is None:
+        return None
+    return True if _lstart(rec.pid) == rec.lstart else None
 
 
 def exit_status(rec: Record) -> int | None:
@@ -154,6 +158,9 @@ def start(sdir: Path, name: str, cmd: list[str], cwd: Path, log: Path | None = N
     if not cmd:
         raise OwnedError("no command given")
     sdir.mkdir(parents=True, exist_ok=True)
+    ignore = sdir / ".gitignore"
+    if not ignore.is_file():
+        ignore.write_text("*\n")
     path = _record_path(sdir, name)
     if path.is_file():
         old = load(sdir, name)
@@ -164,7 +171,7 @@ def start(sdir: Path, name: str, cmd: list[str], cwd: Path, log: Path | None = N
     rc_file.unlink(missing_ok=True)
     with open(log_path, "wb") as log_fh:
         proc = subprocess.Popen(
-            ["/bin/sh", "-c", _WRAPPER, "run_owned", str(rc_file), *cmd],
+            ["/bin/sh", "-c", _WRAPPER, "run_owned", str(rc_file), name, *cmd],
             cwd=cwd, env=env, stdin=subprocess.DEVNULL, stdout=log_fh, stderr=subprocess.STDOUT,
             start_new_session=True,
         )
@@ -192,44 +199,61 @@ def wait(sdir: Path, name: str, timeout: float | None = None, proc: subprocess.P
         rc = exit_status(rec)
         if rc is not None:
             return rc
-        if not _leader_is_ours(rec):
+        # Waiting signals nothing, so an unverifiable identity (None) keeps waiting; only a gone leader ends it.
+        if _leader_is_ours(rec) is False:
             return EXIT_NO_STATUS
         if deadline is not None and time.monotonic() >= deadline:
             return EXIT_TIMEOUT
         time.sleep(POLL_SECONDS)
 
 
-def stop(sdir: Path, name: str, grace: float = 10.0, proc: subprocess.Popen | None = None) -> str:
-    """TERM the recorded group, then KILL after `grace` seconds. Returns a one-line outcome.
-    Pass `proc` when this process started the job, so its leader is reaped rather than left a zombie."""
+def _signalable(sdir: Path, name: str, proc: subprocess.Popen | None) -> Record:
     rec = load(sdir, name)
     if rec.pgid <= 1 or rec.pgid == os.getpgrp():
         raise OwnedError(f"refusing to signal pgid {rec.pgid}: not a group run_owned created")
     # Holding the Popen proves the pid is ours (it cannot be reused before we reap it).
     leader = proc.poll() is None if proc is not None and proc.pid == rec.pid else _leader_is_ours(rec)
     if leader is None:
-        raise OwnedError(f"refusing to signal pgid {rec.pgid}: pid {rec.pid} now belongs to another process")
-    if not _group_alive(rec.pgid):
-        outcome = f"job {name!r} already ended"
-    else:
-        # With the leader gone, any process left in the group descends from it: a new group with
-        # this id needs a new leader whose pid equals it, which _leader_is_ours would have seen.
+        raise OwnedError(f"refusing to signal pgid {rec.pgid}: cannot confirm pid {rec.pid} is the job it recorded "
+                         "(no start time, or it now belongs to another process)")
+    return rec
+
+
+def stop_many(sdir: Path, jobs: list[tuple[str, subprocess.Popen | None]], grace: float = 10.0) -> list[str]:
+    """TERM every recorded group at once, then KILL the survivors after `grace` seconds. Each name is
+    checked before any group is signalled. Pass a job's Popen when this process started it, so its
+    leader is reaped rather than left a zombie. Returns one outcome line per job."""
+    targets = [(_signalable(sdir, name, proc), proc) for name, proc in jobs]
+    # With a leader gone, any process left in its group descends from it: a new group with that id
+    # needs a new leader whose pid equals it, which _leader_is_ours would have seen.
+    live = [rec for rec, _ in targets if _group_alive(rec.pgid)]
+    for rec in live:
         _signal_group(rec.pgid, signal.SIGTERM)
-        deadline = time.monotonic() + grace
-        while _group_alive(rec.pgid) and time.monotonic() < deadline:
+    deadline = time.monotonic() + grace
+    while any(_group_alive(rec.pgid) for rec in live) and time.monotonic() < deadline:
+        for _, proc in targets:
             if proc is not None:
                 proc.poll()
-            time.sleep(POLL_SECONDS)
-        if _group_alive(rec.pgid):
+        time.sleep(POLL_SECONDS)
+    outcomes = []
+    for rec, proc in targets:
+        if rec not in live:
+            outcomes.append(f"job {rec.name!r} already ended")
+        elif _group_alive(rec.pgid):
             _signal_group(rec.pgid, signal.SIGKILL)
-            outcome = f"job {name!r} (pgid {rec.pgid}) killed after {grace:g}s grace"
+            outcomes.append(f"job {rec.name!r} (pgid {rec.pgid}) killed after {grace:g}s grace")
         else:
-            outcome = f"job {name!r} (pgid {rec.pgid}) stopped"
-    if proc is not None:
-        proc.wait()
-    rec.stopped = datetime.now(timezone.utc).isoformat(timespec="seconds")
-    _write_json(_record_path(sdir, name), asdict(rec))
-    return outcome
+            outcomes.append(f"job {rec.name!r} (pgid {rec.pgid}) stopped")
+        if proc is not None:
+            proc.wait()
+        rec.stopped = datetime.now(timezone.utc).isoformat(timespec="seconds")
+        _write_json(_record_path(sdir, rec.name), asdict(rec))
+    return outcomes
+
+
+def stop(sdir: Path, name: str, grace: float = 10.0, proc: subprocess.Popen | None = None) -> str:
+    """TERM the recorded group, then KILL after `grace` seconds. Returns a one-line outcome."""
+    return stop_many(sdir, [(name, proc)], grace)[0]
 
 
 def status(sdir: Path, name: str) -> dict:
@@ -239,10 +263,8 @@ def status(sdir: Path, name: str) -> dict:
         state = "exited"
     elif rec.stopped is not None:
         state = "stopped"
-    elif _leader_is_ours(rec):
-        state = "running"
     else:
-        state = "gone"
+        state = {True: "running", False: "gone", None: "unverifiable"}[_leader_is_ours(rec)]
     return {"name": name, "pid": rec.pid, "pgid": rec.pgid, "state": state, "exit_code": rc, "log": rec.log}
 
 
@@ -271,6 +293,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "start":
             cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
             proc = start(sdir, args.name, cmd, cwd=(args.cwd or workspace), log=args.log)
+            if load(sdir, args.name).lstart is None:
+                print(f"run_owned: warning: `ps` could not read job {args.name!r}'s start time, so `stop` will "
+                      "refuse to signal it", file=sys.stderr)
             print(json.dumps({"name": args.name, "pid": proc.pid, "pgid": proc.pid}))
             return 0
         if args.command == "wait":
