@@ -6,7 +6,7 @@ Detailed instructions for each phase of the create-skill-autoresearch factory.
 
 - Phase 1: Interview -- Detailed Question Flow
 - Phase 2: Research -- Subagent Orchestration
-- Phase 3: Draft -- Design-First Approach (DESIGN.md template, `evaluate.sh` contract, judge templates, plugin-eval worked case)
+- Phase 3: Draft -- Design-First Approach (DESIGN.md template, `evaluate.sh` contract, judge templates, plugin-eval worked case, gate runner)
 - Phase 4: Autoresearch -- Integration Details (invocation, loop conventions, data split, overfitting detection)
 - Phase 5: Verify -- Panel Prompt Templates (Verifier-A/B, Devil's Advocate, synthesis)
 
@@ -367,10 +367,43 @@ tool: Skill
 ---
 ```
 
-Run from `work/evaluation/plugin/` with `--scaffold` (or the fixtures never arrive), `--allow-tools`
-for every gated tool `prompt.md` lists, `--trust-plugin` in unattended runs, and a pinned `--model`.
-Smoke-test one case with `--runs 1` before the full gate: a with-arm score of 0 while `skill-fired`
-passes means the skill fired but could not act — check the tool grants and the fixtures first.
+```yaml
+# evals/near-miss/graders/not-fired.md — the should-not-trigger case: the skill must not fire in either arm
+---
+type: tool_used
+tool: Skill
+min: 0
+max: 0
+arm: both
+---
+```
+
+### Gate Runner (SKILL.md 5.0)
+
+`scripts/gate.py` is the only writer of the gate artifact. In plugin mode it refreshes
+`work/evaluation/plugin/skills/<skill-name>/` from `output/`, checks that `evals/` holds exactly the cases
+recorded under `plugin_eval`, and runs this from `work/evaluation/plugin/` through `run_owned.py`, waiting
+in the foreground (default timeout 90 minutes):
+
+```bash
+claude plugin eval . --ablation with-without --runs 3 -j 4 --model <model> --allow-tools Bash Write \
+  --scaffold --trust-plugin --no-publish --threshold 0 --json <workspace>/work/evaluation/plugin-eval.json
+```
+
+`--scaffold` runs each case's `scaffold_script` (without it the fixtures never arrive), `--allow-tools`
+grants the gated tools `prompt.md` lists, `--trust-plugin` answers the first-run trust prompt in unattended
+runs, `--threshold 0` keeps a low score from failing the run (the verdict reads Δ, not the exit code), and
+`--no-publish` keeps the report local. An interrupted or cost-capped run writes `"partial": true`.
+
+In manual mode it calls `work/evaluation/run-case.sh <case> <with|without>` 3 times per arm per case
+(`--jobs` at once, default 4), each run in its own process group with a per-run timeout (default 20
+minutes), retries a failed run once, and writes `uplift.json`; a second failure leaves it `"partial": true`
+with an `errors` list. Both modes record `work/evaluation/gate.json` (mode, probe exit code, cases), move a
+previous artifact to `<name>.prev.json` first so a stale file can never pass, and end by running
+`check_gate.py`, which exits 0 only for a complete artifact covering exactly the recorded cases with at
+least 3 runs per arm. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
+of 0 while `skill-fired` passes means the skill fired but could not act — check the tool grants and the
+fixtures first. The 1-run artifact never passes `check_gate.py`; the full run replaces it.
 
 ---
 
@@ -402,10 +435,10 @@ adds the rest, and applies it in every experiment:
   `git rev-parse --show-toplevel` equals the workspace root, and refuse to revert otherwise. A
   workspace nested in a parent project (a gitignored `builds/`, say) would reset the parent's last
   commit and wipe its uncommitted work; SKILL.md 1.6 makes the workspace its own repository.
-- **Owned processes.** Start every background job (eval runs, `claude plugin eval`, `until` loops)
-  with its PID captured — `cmd & pid=$!`, or a pidfile under `work/` — and wait on or stop only those
-  PIDs or their process group (`kill -- -"$pgid"`). Never `pkill`, `killall` or `pgrep | xargs kill`
-  by name or pattern: on a shared machine that kills sibling builds and the user's own processes.
+- **Owned processes.** Start every background job (eval runs, `until` loops) with
+  `scripts/run_owned.py start <name> -- <cmd...>`, and wait on or stop it with `wait <name>` /
+  `stop <name>`: it stops only the process group it recorded, because on a shared machine a
+  name-pattern kill also takes down sibling builds and the user's own processes.
 - **Clean reverts.** Discard with `git reset --hard HEAD~1 && git clean -fd -- output/<skill-name>`,
   so a reverted experiment leaves no new untracked files behind. The baseline commit (SKILL.md 3.5) is
   experiment 0, so `HEAD~1` always exists.
@@ -465,8 +498,10 @@ validation:
 test:
   - "input/input-10.md"
 plugin_eval_available: 0  # exit code of `claude plugin eval --help`; non-zero → manual protocol (SKILL.md 5.0)
-plugin_eval:              # the 3.6 gate cases
+plugin_eval:              # every case 5.0 runs, by eval dir name: a list, not a mapping (check_gate.py reads it)
   - "holdout-03"
+  - "trigger-1"
+  - "near-miss"
 ```
 
 **Overfitting detection** (70-20-10 split only):
@@ -499,7 +534,9 @@ training:            # this experiment's rotation: every case but the held-out o
   - "input/input-03.md"
 ```
 
-Rewrite `training` to the next rotation in each LOG step; `evaluate.sh` with no argument scores it.
+Rewrite `training` to the next rotation in each LOG step, after the keep/revert decision, and commit
+data-split.yaml on its own so a later experiment revert cannot roll the rotation back (SKILL.md 4.2);
+`evaluate.sh` with no argument scores it.
 
 **Overfitting detection for leave-one-out**: Since there is no fixed validation set, use per-case score variance as the signal:
 - After each kept experiment, record per-case scores (not just the aggregate)

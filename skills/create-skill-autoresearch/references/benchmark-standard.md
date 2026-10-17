@@ -51,21 +51,30 @@ differ in more than one respect, the delta is not attributable.
 
 ## Manual with/without protocol
 
-The SKILL.md 5.0 gate runs this instead of `claude plugin eval` when `plugin_eval_available` in
-`data-split.yaml` is non-zero, or when the skill is user-invoked (it never fires through the Skill tool,
-so plugin eval's with-arm measures nothing). It runs the 3.6 gate cases on the pinned model:
+`scripts/gate.py` (SKILL.md 5.0) runs this instead of `claude plugin eval` when `claude plugin eval --help`
+exits non-zero, or when the skill is user-invoked (it never fires through the Skill tool, so plugin eval's
+with-arm measures nothing). It runs the 3.6 gate cases on the pinned model:
 
 - **Arms**: *with* gets the shipped `SKILL.md` as its system prompt; *without* gets no system prompt.
 - **Runs**: 3 per case per arm.
 - **Executor**: single-call (system prompt plus the case prompt, one completion) when the skill only
   produces text; **agentic** (a fresh tool-using agent in a scratch copy of the case's fixtures, the
   skill directory beside them) when the skill bundles `scripts/` or acts on files — one call cannot run
-  a script or write a file.
+  a script or write a file. Pass the choice to `gate.py --executor`.
 - **Score**: each run is the fraction of the case's 3.6 graders that pass (0-1), skill-fired
-  indicators excluded.
+  indicators excluded. Mechanical graders (`regex`, file checks) are applied directly. An `llm` grader
+  is judged by `claude -p --model <judge>` with the grader's body as the rubric and the run's output as
+  the input, asking for PASS or FAIL; it passes on a majority of 3 calls. `<judge>` is a model from a
+  different family than the builder when one is available, else plugin eval's default judge (`haiku`).
 
-Write the result to `work/evaluation/uplift.json`; `delta` is mean(with) − mean(without), read exactly
-as plugin eval's Δ:
+The build implements one run in `work/evaluation/run-case.sh <case> <with|without>` (executable, run from
+the workspace root, `GATE_MODEL` and `GATE_RUN` in its environment): it executes the case on that arm,
+applies the graders, and prints `SCORE=<0..1>` — `gate.py` reads the last such line. A non-zero exit,
+a timeout or a missing `SCORE` line is a failed run, not a score of 0: `gate.py` retries it once, then
+records it under `errors` and marks the artifact partial.
+
+`gate.py` writes the result to `work/evaluation/uplift.json`; `delta` is mean(with) − mean(without),
+read exactly as plugin eval's Δ:
 
 ```json
 {
@@ -73,7 +82,9 @@ as plugin eval's Δ:
     { "case": "holdout-03", "with": [1.0, 0.8, 1.0], "without": [0.6, 0.6, 0.4], "delta": 0.4 }
   ],
   "summary": { "model": "<model>", "executor": "agentic", "runs_per_case": 3, "in_sample": true,
-               "mean_with": 0.93, "mean_without": 0.53, "mean_delta": 0.4 }
+               "mean_with": 0.93, "mean_without": 0.53, "mean_delta": 0.4 },
+  "partial": false,
+  "errors": []
 }
 ```
 
