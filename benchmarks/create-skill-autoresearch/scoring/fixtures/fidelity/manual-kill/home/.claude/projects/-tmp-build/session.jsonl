@@ -1,0 +1,2 @@
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "cd work/evaluation/plugin\npkill -f \"claude plugin eval\"; sleep 2"}}]}}
+{"type": "assistant", "message": {"content": [{"type": "tool_use", "name": "Bash", "input": {"command": "kill -- -\"$pgid\""}}]}}

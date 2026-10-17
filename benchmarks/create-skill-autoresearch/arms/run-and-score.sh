@@ -2,12 +2,13 @@
 # run-and-score.sh <arm> <model> <run-id> [task] [executor-runs]
 #
 # One build (run-arm.sh) followed by its deterministic score; appends one row to results/scores.csv.
+# executor-runs applies to task-2 only and defaults to 2 per holdout, the published method.
 # env_failure runs (exit 75) are retried once under a "-retry" run-id and never scored.
 # SCORE_ONLY=1 skips the build and scores an existing run dir (e.g. one whose scoring step failed).
 set -uo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BENCH="$(cd "$HERE/.." && pwd)"
-ARM="$1"; MODEL="$2"; RUN_ID="$3"; TASK_NAME="${4:-task}"; EXEC_RUNS="${5:-1}"
+ARM="$1"; MODEL="$2"; RUN_ID="$3"; TASK_NAME="${4:-task}"; EXEC_RUNS="${5:-2}"
 RUNS_ROOT="${BENCH_RUNS_ROOT:-${TMPDIR:-/tmp}/create-skill-autoresearch-bench}"
 
 if [ "${SCORE_ONLY:-0}" = "1" ]; then

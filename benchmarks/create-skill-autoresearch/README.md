@@ -134,15 +134,28 @@ cells; completion ties at 100% everywhere.
 
 ### Fidelity of unattended builds (known limitation)
 
-- **Gate artifact: 14 of 20 builds.** SKILL.md 5.0 says the gate is never skipped, and the panel
-  (5.2) does not start without `work/evaluation/plugin-eval.json` or `uplift.json`. Seven builds
-  wrote `plugin-eval.json`: all task-2, covering five Sonnet and two Haiku builds. Seven wrote the
-  manual protocol's `uplift.json`: all task, covering three Sonnet and four Haiku builds. Task's
-  skill is user-invoked, so 5.0 routes it to the manual protocol. The other six still finished and
-  wrote `BENCHMARK.md`. Four of them ran a with/without comparison but saved it under another name
-  (`uplift.txt`, logs); two task-2 Haiku builds left no gate output at all.
-- **Pattern kill: 1 of 20 builds.** pipeline-phases "Owned processes" requires stopping only
-  background jobs by captured PID, and forbids `pkill`, `killall` or `pgrep | xargs kill`. One task-2
+- **Gate artifact at the canonical path: 13 of 20 builds.** SKILL.md 5.0 says the gate is never
+  skipped, and the panel (5.2) does not start without `work/evaluation/plugin-eval.json` or
+  `uplift.json`. Seven builds wrote `plugin-eval.json`: all task-2, covering five Sonnet and two Haiku
+  builds. Six wrote the manual protocol's `uplift.json`: all task, covering three Sonnet and three
+  Haiku builds. Task's skill is user-invoked, so 5.0 routes it to the manual protocol. A seventh task
+  build (Haiku 3) wrote its `uplift.json` under `benchmarks/conventional-commits/` instead, so it does
+  not count. The other six also ran a with/without comparison and finished with a `BENCHMARK.md`, but
+  kept the result as logs, `uplift.txt` files or `BENCHMARK.md` prose: task Haiku 1, task Sonnet 1 and
+  3, and task-2 Haiku 2, 3 and 5.
+- **Strict gate validity: 2 of 20 builds.** `scoring/fidelity.py` runs the factory's own validator
+  (`check_gate.py`, added after this run) on each workspace. It requires the artifact to cover exactly
+  the cases recorded under `plugin_eval` in `data-split.yaml`, with 3 complete runs per arm. Only
+  task-2 Sonnet 1 and 2 pass. The other eleven artifacts fail on the record, not the measurement. Nine
+  builds recorded no flat case list: an empty list, a `cases:` mapping, or nothing. One
+  recorded bare numbers (`1`…`7`) against cases named `gold-01`…; another recorded `input-01` against
+  an artifact keyed `input/input-01.md`. The text these builds ran did not ask for that record in a
+  checkable form; cycle 2's `gate.py` writes it.
+- **Below-target verdict labelled shipped: 3 of 20 builds.** Task Haiku 5, task-2 Haiku 4 and task-2
+  Haiku 5 ended on ITERATE, and their `BENCHMARK.md` still calls the output shipped.
+- **Pattern kill: 1 of 20 builds.** The factory text these builds ran (pipeline-phases "Owned
+  processes") required stopping only background jobs by captured PID, and forbade `pkill`, `killall`
+  or `pgrep | xargs kill`. One task-2
   Sonnet build still ran `pkill -f "claude plugin eval"` to restart its own gate. That command also
   interrupted a sibling build's gate run: its partial `plugin-eval.json` records
   `partialReason: interrupted` at the same second. The sibling re-ran the gate and wrote a complete
@@ -151,7 +164,14 @@ cells; completion ties at 100% everywhere.
   in text they read.
 
 Unattended runs follow the factory text closely but not perfectly; the counts above are what this run
-did, not what the text promises.
+did, not what the text promises. Reproduce them with `python3 scoring/fidelity.py
+"$BENCH_RUNS_ROOT"/i-*` (offline; `python3 scoring/selftest-fidelity.py` must print `SELFTEST PASS`).
+
+**The transcripts behind these counts are not published**, nor those behind the h5 failure counts and
+the holdout-leak search below. The `i-*` builder and executor sessions alone are 1,553 session files
+(256 MB), and they record the maintainer's machine paths and environment. The scripts that derive
+these claims are published (`scoring/fidelity.py`, and the holdout search terms below), so a re-run of
+the matrix reproduces the method on fresh transcripts.
 
 **Earlier v0.3.0 runs** stay in `scores.csv`, superseded by `i-*`. `m-*-factory-v030-*` is the
 first candidate; it regressed task-2 Haiku (0.932) because builds trusted the stale written policy
@@ -184,9 +204,19 @@ run-to-run variance.
   truncated reply now throws instead of scoring 0. July and October numbers are not comparable.
 - **Environment failures.** A Claude Code self-update (2.1.300 → 2.1.301) killed every live session
   once. Other builds' machine-wide `pkill -f` cleanup (`pkill -f "plugin eval"`, `pkill -f until`)
-  killed more. Each was retried once under a `-retry` run-id and never scored. Every session now runs
-  with `DISABLE_AUTOUPDATER=1`, and the factory text requires stopping background jobs only by
-  captured PID; one `i-*` build still broke that rule (see Fidelity above).
+  killed more. Each killed session was retried once and never scored itself. Every session now runs
+  with `DISABLE_AUTOUPDATER=1`. The `i-*` factory text required stopping background jobs only by
+  captured PID, and one `i-*` build still broke that rule (see Fidelity above); the factory now starts
+  and stops them only through its bundled `scripts/run_owned.py`.
+- **Every retry** (all rows are in `results/runs.csv`; killed attempts carry `env_failure=1`):
+  - v0.2.1 (`m-*`): task Haiku 2, 3, 4 and 5, and task-2 Haiku 2 were killed (exit 143). The killed
+    attempts are kept as `-killed` rows and the retries ran under the original run-id.
+  - `f-*`: task Sonnet 1, 2 and 3, and task-2 Haiku 2 and 3, retried under `-retry`.
+  - `g-*`: task-2 Sonnet 1 to 5, retried under `-retry`; every retry was killed too (exit 143), so the
+    cell was never scored.
+  - `ar-*` (factory development experiments, not a published arm): `ar-e1-1`, `ar-e1-2` and `ar-e2-2`
+    were killed; their `-killed` rows are kept, the retries ran under the original run-id.
+  - `h-*` and `i-*`: no retries.
 - Factory arms ran unattended; builds sometimes skip steps and say so in their own reports.
 
 ## Results — July 2026 (v0.1/v0.2, task only)
@@ -200,9 +230,11 @@ temperature 0. Overall medians: bare 0.896 / 0.928, skill-creator 0.896 / 0.846,
 ```bash
 cd benchmarks/create-skill-autoresearch
 node scoring/selftest.mjs && node scoring/selftest-task2.mjs   # offline: prove the probes discriminate
+python3 scoring/selftest-fidelity.py                           # offline: prove the fidelity probes discriminate
 export ANTHROPIC_API_KEY=...                                   # or CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)
 
 # one build + its score; task = conventional-commits, task-2 = purchase-order-builder
+# (task-2 scores two executor runs per holdout by default, as published; a 5th argument overrides it)
 arms/run-and-score.sh bare sonnet bare-t2-1 task-2
 arms/run-and-score.sh skill-creator haiku sc-t2-1 task-2
 arms/run-and-score.sh factory sonnet factory-t2-1 task-2

@@ -1,0 +1,23 @@
+{
+  "schemaVersion": 1,
+  "partial": false,
+  "cases": [
+    {
+      "name": "gold-01",
+      "arms": {
+        "with": [{"score": 1, "error": null}, {"score": 1, "error": null}, {"score": 1, "error": null}],
+        "without": [{"score": 0.5, "error": null}, {"score": 0.5, "error": null}, {"score": 0.5, "error": null}]
+      },
+      "aggregates": {"delta": 0.5}
+    },
+    {
+      "name": "near-miss",
+      "arms": {
+        "with": [{"score": 1, "error": null}, {"score": 1, "error": null}, {"score": 1, "error": null}],
+        "without": [{"score": 1, "error": null}, {"score": 1, "error": null}, {"score": 1, "error": null}]
+      },
+      "aggregates": {"delta": 0}
+    }
+  ],
+  "aggregates": {"meanDelta": 0.25}
+}
