@@ -1,0 +1,14 @@
+{
+  "mode": "manual",
+  "plugin_eval_available": 0,
+  "skill": "demo",
+  "runs": 3,
+  "cases": [
+    "input-01"
+  ],
+  "artifact": "work/evaluation/uplift.json",
+  "skill_sha256": "c3aaacaf6b82d7fc58b57ebbcf07ca9d3572dda4aaa557851f0081514958be84",
+  "cases_sha256": "400c730525cc76d2d4dcb1cc19ea0a6bb879571795be6764cb52233c056cbb97",
+  "started": "2026-10-17T00:00:00+00:00",
+  "finished": "2026-10-17T00:10:00+00:00"
+}

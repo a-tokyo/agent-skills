@@ -1,0 +1,15 @@
+{
+  "mode": "plugin",
+  "plugin_eval_available": 0,
+  "skill": "demo",
+  "runs": 3,
+  "cases": [
+    "gold-01",
+    "near-miss"
+  ],
+  "artifact": "work/evaluation/plugin-eval.json",
+  "skill_sha256": "ff6b40b8d1493e0b8ce20c59aa5febded3176b92ff94b08a7cef4311e0a953db",
+  "cases_sha256": "8cedc06a73e2114d4280fd809bac8935ce48d1738a1b7122b51b529563200ffe",
+  "started": "2026-10-17T00:00:00+00:00",
+  "finished": "2026-10-17T00:10:00+00:00"
+}

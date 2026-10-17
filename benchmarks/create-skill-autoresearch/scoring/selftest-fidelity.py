@@ -10,6 +10,7 @@ Fixtures (scoring/fixtures/fidelity/):
   unshipped-incidental  UNSHIPPED verdict: "do not describe it as shipped", "Exp 5 (shipped)", "the shipped SKILL.md"
   iterate-terminal  ITERATE verdict: "do not publish as-is"; "the shipped SKILL.md" outside the verdict statement
   iterate-shipped-artifact  ITERATE verdict whose statement calls the output "the shipped artifact" (flagged)
+  stale-ship        SHIP WITH CAVEATS with a GATE VALID line, but the skill was edited after the gate (stale)
 """
 
 from __future__ import annotations
@@ -34,12 +35,15 @@ def expect(name: str, condition: bool) -> None:
 builds = {b.run: b for b in (fidelity.score(FIXTURES / name, fidelity.DEFAULT_CHECK_GATE)
                              for name in ("plugin-ok", "manual-kill", "legacy-unshipped", "unshipped-draft",
                                           "unshipped-incidental", "iterate-terminal",
-                                          "iterate-shipped-artifact"))}
+                                          "iterate-shipped-artifact", "stale-ship"))}
 
 ok = builds["plugin-ok"]
 expect("plugin-ok: artifact at canonical path", ok.artifact)
 expect("plugin-ok: gate valid", ok.gate_valid)
-expect("plugin-ok: delta<=0 case reported", "delta<=0: near-miss" in ok.gate_reason)
+expect("plugin-ok: near miss is an indicator, not a gold delta<=0 case",
+       "gold delta<=0: none" in ok.gate_reason and "near-miss quiet: near-miss 6/6" in ok.gate_reason)
+expect("plugin-ok: gate code ok", ok.gate_code == "ok")
+expect("plugin-ok: shipped verdict on a valid gate is not flagged", ok.shipped_gate_invalid is False)
 expect("plugin-ok: read text and Read paths are not kill commands", ok.kill_commands == 0)
 expect("plugin-ok: verdict SHIP WITH CAVEATS", ok.verdict == "SHIP WITH CAVEATS")
 expect("plugin-ok: 'shipped' allowed at or above the caveat band", ok.shipped_label_ok is True)
@@ -50,6 +54,13 @@ expect("manual-kill: too few runs is gate-invalid", not kill.gate_valid and "2 r
 expect("manual-kill: pkill + pgrep|xargs kill counted, owned-group kill not", kill.kill_commands == 2)
 expect("manual-kill: verdict ITERATE from the section below the heading", kill.verdict == "ITERATE")
 expect("manual-kill: ITERATE labelled shipped is flagged", kill.shipped_label_ok is False)
+expect("manual-kill: too few runs is not a stale gate", kill.gate_code == "too_few_runs")
+expect("manual-kill: ITERATE is not a shipped verdict", kill.shipped_gate_invalid is False)
+
+stale = builds["stale-ship"]
+expect("stale-ship: skill edited after the gate is a stale gate", stale.gate_code == "stale_skill"
+       and "skill changed since the gate; re-run 5.0" in stale.gate_reason)
+expect("stale-ship: SHIP WITH CAVEATS on an invalid gate is flagged", stale.shipped_gate_invalid is True)
 
 legacy = builds["legacy-unshipped"]
 expect("legacy: work/ workspace found", legacy.workspace == "work")
@@ -72,9 +83,10 @@ expect("iterate-shipped-artifact: verdict ITERATE", artifact.verdict == "ITERATE
 expect("iterate-shipped-artifact: 'the shipped artifact' in the statement is flagged", artifact.shipped_label_ok is False)
 
 totals = fidelity.summary(list(builds.values()))
-expect("summary counts", totals == {"builds": 7, "artifact_at_canonical_path": 2, "gate_valid": 1,
+expect("summary counts", totals == {"builds": 8, "artifact_at_canonical_path": 3, "gate_valid": 1,
                                     "builds_with_kill_commands": 1, "kill_commands": 2,
-                                    "below_target_labelled_shipped": 2})
+                                    "below_target_labelled_shipped": 2, "stale_gate": 1,
+                                    "shipped_with_gate_invalid": 1})
 expect("verdict: SHIP_WITH_CAVEATS spelling normalised", fidelity.verdict_of("Verdict: SHIP_WITH_CAVEATS") == "SHIP WITH CAVEATS")
 expect("verdict: none stated", fidelity.verdict_of("# notes\nno decision yet") is None)
 expect("shipped: 'never shipped' is negated", fidelity.shipped_label_ok("BLOCK. It was never shipped.", "BLOCK") is True)

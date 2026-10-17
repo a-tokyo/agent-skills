@@ -5,19 +5,132 @@
     {
       "name": "gold-01",
       "arms": {
-        "with": [{"score": 1, "error": null}, {"score": 1, "error": null}, {"score": 1, "error": null}],
-        "without": [{"score": 0.5, "error": null}, {"score": 0.5, "error": null}, {"score": 0.5, "error": null}]
+        "with": [
+          {
+            "score": 1,
+            "error": null
+          },
+          {
+            "score": 1,
+            "error": null
+          },
+          {
+            "score": 1,
+            "error": null
+          }
+        ],
+        "without": [
+          {
+            "score": 0.5,
+            "error": null
+          },
+          {
+            "score": 0.5,
+            "error": null
+          },
+          {
+            "score": 0.5,
+            "error": null
+          }
+        ]
       },
-      "aggregates": {"delta": 0.5}
+      "aggregates": {
+        "delta": 0.5
+      },
+      "graders": [
+        {
+          "name": "fact",
+          "type": "regex",
+          "config": {}
+        }
+      ]
     },
     {
       "name": "near-miss",
       "arms": {
-        "with": [{"score": 1, "error": null}, {"score": 1, "error": null}, {"score": 1, "error": null}],
-        "without": [{"score": 1, "error": null}, {"score": 1, "error": null}, {"score": 1, "error": null}]
+        "with": [
+          {
+            "score": 1,
+            "error": null,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "error": null,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "error": null,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true
+              }
+            ]
+          }
+        ],
+        "without": [
+          {
+            "score": 1,
+            "error": null,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "error": null,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true
+              }
+            ]
+          },
+          {
+            "score": 1,
+            "error": null,
+            "graders": [
+              {
+                "name": "not-fired",
+                "passed": true
+              }
+            ]
+          }
+        ]
       },
-      "aggregates": {"delta": 0}
+      "aggregates": {
+        "delta": 0
+      },
+      "graders": [
+        {
+          "name": "not-fired",
+          "type": "tool_used",
+          "config": {
+            "tool": "Skill",
+            "min": 0,
+            "max": 0,
+            "arm": "both"
+          }
+        }
+      ]
     }
   ],
-  "aggregates": {"meanDelta": 0.25}
+  "aggregates": {
+    "meanDelta": 0.25
+  }
 }
