@@ -173,7 +173,7 @@ Create `work/evaluation/evaluate.sh` that:
 2. Extracts each case's input and invokes the skill on it -- skills are markdown, not executables, so
    call an LLM (`curl` to an OpenAI-compatible API, or an SDK) with the SKILL.md as the system prompt
    and the case input as the user message, and capture the output
-3. Compares the output to the gold standard reference using an LLM-as-judge
+3. Compares the output to the gold standard reference: an answer-key scorer where checkable, else an LLM-as-judge
 4. Emits `METRIC <dimension>=<score>` lines, then `METRIC overall_score=<weighted_average>` (the mean
    over the cases scored) as the primary metric
 
@@ -184,20 +184,19 @@ bare-model comparison, so it cannot answer "does this skill help" -- reading eff
 most common way to conclude a working skill is useless. That needs a **same-model uplift benchmark** (same
 model, identical tasks, with and without the skill): [references/benchmark-standard.md](references/benchmark-standard.md).
 
-**Prefer deterministic checks** — line count, frontmatter, link integrity, regex pattern coverage,
-structural validation — and emit their METRIC lines directly. Use an LLM judge only for judgement
-dimensions (clarity, quality match, curation): structured JSON per dimension, each scored
-independently, verbatim evidence for extreme scores, a different model family from the builder. With no
-LLM available, score deterministically and log a warning.
+**The metric is an answer-key scorer whenever outputs are checkable**: deterministic checks of each output against
+its gold reference (fields, values, regex, structure) emit their METRIC lines directly — the most stable and cheapest
+evaluator in the [evaluator comparison](references/benchmark-standard.md). An LLM judge scores only judgement
+dimensions (clarity, quality match): structured JSON per dimension, each independent, verbatim evidence for extreme
+scores, a different model family from the builder. With no LLM available, score deterministically and log a warning.
 
 **Procedural / agentic skills (prefer this when it applies)**: a skill that drives a multi-step task on a
 real artifact (migrate, refactor, scaffold) or bundles `scripts/` cannot be scored by one system-prompt
 call: evaluate by **execution against a real artifact with an objective real-world metric**, its ground
 truth replacing the judge ([references/benchmark-standard.md](references/benchmark-standard.md)).
 
-When budget allows, run 2-3 judge models from different families, average per dimension, and treat
-high per-judge variance as a sign the criterion is ambiguous (`work/evaluation/judges.yaml`,
-[references/pipeline-phases.md](references/pipeline-phases.md)). Optionally add `work/evaluation/evaluate-checks.sh` correctness gates.
+When budget allows, run 2-3 judge models from different families, average per dimension, and treat high per-judge variance as a
+sign the criterion is ambiguous (`work/evaluation/judges.yaml`, [references/pipeline-phases.md](references/pipeline-phases.md)). Optionally add `work/evaluation/evaluate-checks.sh` correctness gates.
 
 ### 3.5 Measure Baseline
 
@@ -213,9 +212,9 @@ Build the suite the 5.0 gate runs, in a wrapper plugin under `work/` so nothing 
 case with `claude plugin eval init --bare <case>` (a human at a terminal may use the `init` interview):
 - one case per **gate gold standard** — the test split with >= 10 gold standards, every gold standard with 3-9
   (4.2): the prompt as a user would phrase it, input files copied in by a `scaffold_script` ([worked case](references/pipeline-phases.md)),
-  graders on decisive facts — `regex` on `{ source: file, path: <output> }` where mechanical, `llm` only for judgement;
-- two or more **should-trigger** prompts graded `tool_used` on `Skill` (model-invoked skills only) --
-  in the two-arm run an unscored with-arm indicator;
+  graders on decisive facts — `regex` on `{ source: file, path: <output> }` or `file_exists`; `llm` only where no such check exists;
+- two or more **should-trigger** prompts graded only `tool_used` on `Skill` (model-invoked skills only) --
+  in the two-arm run an unscored with-arm indicator (an output grader makes the case gold: its Δ counts);
 - one **should-not-trigger** near miss, graded `tool_used` on `Skill` with `min: 0`, `max: 0`, `arm: both`
   ([worked case](references/pipeline-phases.md)).
 
@@ -334,7 +333,8 @@ Model-invoked skills only, after the loop ends: run **skill-creator**'s descript
 queries. Its `--eval-set` is a JSON list `[{"query": "...", "should_trigger": true}]` of about 20 queries
 (the seeds plus realistic near misses); pass `--holdout 0` when the set is too small to split. Keep the new
 description only if the 3.6 trigger cases still pass and `overall_score` does not drop; log the decision in
-`autoresearch.jsonl`. Pass `--report <path>` under `work/` in headless runs (flags:
+`autoresearch.jsonl`. Read any absolute score skill-creator reports as a ranking, not a level — its grader passes
+vague output — and its with/without Δ as the signal. Pass `--report <path>` under `work/` in headless runs (flags:
 `python3 -m scripts.run_loop --help` from the skill-creator dir). Without skill-creator or `claude -p`, skip
 4.6 and log the skip in `autoresearch.jsonl`.
 

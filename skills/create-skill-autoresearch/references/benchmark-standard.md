@@ -7,6 +7,7 @@ what the model does**. Answer it before shipping.
 ## Contents
 - [The gate: same-model uplift](#the-gate-same-model-uplift)
 - [Arms](#arms)
+- [Choosing the evaluator](#choosing-the-evaluator)
 - [Manual with/without protocol](#manual-withwithout-protocol)
 - [Score by executing, not by reading](#score-by-executing-not-by-reading)
 - [Unit-test the scorer](#unit-test-the-scorer)
@@ -48,6 +49,33 @@ from reality silently.
 
 Hold everything else fixed: same model, same temperature, same task text, same scorer. If the arms
 differ in more than one respect, the delta is not attributable.
+
+## Choosing the evaluator
+
+Four evaluators were compared on one task (six skills from bad to reference, two repeats, Haiku 5.5 as
+executor and judge), against an answer-key scorer's ranking as ground truth
+([full comparison](https://github.com/a-tokyo/agent-skills/blob/main/benchmarks/create-skill-autoresearch/EVALUATORS.md)):
+
+| | Answer-key scorer | Plugin eval, `regex` graders | Plugin eval, `llm` grader | skill-creator eval |
+|---|---|---|---|---|
+| Rank agreement (Spearman) | 1.000 (test-retest) | 0.955 | 0.955 | 1.000 |
+| Separates bad from good | 0.785 | 0.900 | 0.967 | 0.463 |
+| Repeat-to-repeat drift | 0.012 | 0.036 | 0.022 | 0.017 |
+| Reports uplift | no | yes | yes | yes |
+| Cost per skill | $0.07 | $0.14 | $0.16 | $0.07 |
+
+What the factory uses where:
+
+- **Phase 4 metric** (3.4): the answer-key scorer whenever outputs are checkable — the most stable and
+  cheapest, but absolute only. Without a checkable output, an LLM judge or skill-creator-style grading,
+  read as a ranking.
+- **5.0 gate** (3.6): `claude plugin eval` with deterministic graders (`regex`, `file_exists`) — the one
+  method that both separates sharply and reports uplift. An `llm` grader only where no deterministic check
+  exists: its 2-of-3 vote turns partly correct runs into fails (it scored a middling skill 0.20, truth 0.82).
+- **Description work** (4.6): skill-creator. Its grader is lenient (a generic skill scored 0.54, truth
+  0.14), so read its absolute scores as a ranking and its with/without Δ as the signal.
+
+Limits: one task, six skills, two repeats, one model family as executor and judge.
 
 ## Manual with/without protocol
 

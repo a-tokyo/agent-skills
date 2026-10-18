@@ -74,6 +74,11 @@ No LLM judge anywhere. `node scoring/selftest.mjs` and `node scoring/selftest-ta
 scoring/fixtures/t2-good-skill` (the task-2 reference solver wrapped as a skill) scored 1.000, and of
 `scoring/fixtures/t2-bad-skill` (a generic skill) 0.22, on 2026-10-15.
 
+**Why this scorer, and what the factory uses where:** [EVALUATORS.md](EVALUATORS.md) compares it with
+`claude plugin eval` (regex and LLM graders) and skill-creator's eval on six task-2 skills. It was the
+most stable and cheapest, but measures absolute quality only; plugin eval with deterministic graders is
+the factory's 5.0 uplift gate, and skill-creator's lenient grader is read as a ranking.
+
 ## Results — October 2026 (v0.2.1 vs v0.3.0)
 
 Builders Claude Sonnet 5.5 and Haiku 5.5, n=5 per cell, medians with min–max. v0.3.0 is the `k-*`
