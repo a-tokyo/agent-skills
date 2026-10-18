@@ -11,7 +11,10 @@ take over an hour, longer than an agent's shell call waits, so start it detached
     gate.py --stop                                      # stops it (and the eval runs it started)
 
 Without --detach it starts the job and waits for it (for humans at a terminal). If that call is cut
-off, the job keeps running. A second start while a `gate` job is live is refused.
+off, the job keeps running. A second start while a `gate` job is live is refused. --detach and
+--restart first check the preconditions synchronously (the suite, the recorded cases, each case's
+`scaffold_script`, run-case.sh and --executor in manual mode) and exit 3 without starting anything,
+or stopping a running gate, when one is missing.
 
 Mode: `plugin` when `claude plugin eval --help` exits 0 and the skill is model-invoked, otherwise
 `manual`. Both run the gate cases recorded under `plugin_eval` in work/evaluation/data-split.yaml,
@@ -78,6 +81,7 @@ STOP_GRACE = 30
 CHILD_GRACE = 10
 WAIT_HINT_SECONDS = 540
 SCORE_RE = re.compile(r"^SCORE=(\S+)\s*$", re.MULTILINE)
+SCAFFOLD_RE = re.compile(r"^\s*scaffold_script:\s*(\S.*)$")
 ATTEMPTS = 2
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -155,7 +159,27 @@ def _stop_children(sdir: Path) -> None:
         print(f"gate: could not stop its eval runs: {exc}", file=sys.stderr)
 
 
-def run_plugin(ws: Path, skill: str, cases: list[str], args: argparse.Namespace) -> None:
+def _scaffold_script(case_yaml: Path) -> str | None:
+    """The `scaffold_script:` value in a case.yaml (the only key read; quotes and comments stripped)."""
+    for line in case_yaml.read_text().splitlines():
+        match = SCAFFOLD_RE.match(line)
+        if match:
+            return match.group(1).split(" #")[0].strip().strip("\"'") or None
+    return None
+
+
+def check_scaffolds(ws: Path, cases: list[str]) -> None:
+    missing = []
+    for case in cases:
+        case_dir = ws / PLUGIN_DIR / "evals" / case
+        script = _scaffold_script(case_dir / "case.yaml") if (case_dir / "case.yaml").is_file() else None
+        if script and not (case_dir / script).is_file():
+            missing.append(f"{case}: {script}")
+    if missing:
+        raise GateError(f"scaffold_script not found (relative to the case directory): {', '.join(missing)}")
+
+
+def check_suite(ws: Path, cases: list[str]) -> None:
     plugin = ws / PLUGIN_DIR
     evals = plugin / "evals"
     if not (plugin / ".claude-plugin" / "plugin.json").is_file() or not evals.is_dir():
@@ -166,6 +190,37 @@ def run_plugin(ws: Path, skill: str, cases: list[str], args: argparse.Namespace)
     if missing or extra:
         raise GateError(f"evals/ and data-split.yaml plugin_eval disagree: recorded but absent {missing or 'none'}, "
                         f"present but unrecorded {extra or 'none'}")
+    check_scaffolds(ws, cases)
+
+
+def check_adapter(ws: Path, args: argparse.Namespace) -> None:
+    adapter = ws / RUN_CASE
+    if not adapter.is_file() or not os.access(adapter, os.X_OK):
+        raise GateError(f"{RUN_CASE} is missing or not executable; 3.6 writes it (chmod +x)")
+    if args.executor is None:
+        raise GateError("manual mode: pass --executor single-call or agentic (recorded in uplift.json)")
+
+
+def preconditions(ws: Path, args: argparse.Namespace) -> tuple[str, list[str], str, int, bool]:
+    """Everything the gate needs before it runs: (skill, cases, mode, probe exit code, model-invoked).
+    Raises GateError naming the first missing piece."""
+    skill = resolve_skill(ws, args.skill)
+    split = read_data_split(ws / DATA_SPLIT)
+    if not split.plugin_eval:
+        raise GateError(f"{DATA_SPLIT}: {split.plugin_eval_error or 'plugin_eval records no gate cases'}")
+    available = probe_plugin_eval()
+    invoked = model_invoked(ws / "output" / skill / "SKILL.md")
+    mode = "plugin" if available == 0 and invoked else "manual"
+    if mode == "plugin":
+        check_suite(ws, split.plugin_eval)
+    else:
+        check_scaffolds(ws, split.plugin_eval)
+        check_adapter(ws, args)
+    return skill, split.plugin_eval, mode, available, invoked
+
+
+def run_plugin(ws: Path, skill: str, args: argparse.Namespace) -> None:
+    plugin = ws / PLUGIN_DIR
     copy = plugin / "skills" / skill
     if copy.exists():
         shutil.rmtree(copy)
@@ -220,11 +275,6 @@ def _one_run(ws: Path, idx: int, case: str, arm: str, run: int, args: argparse.N
 
 
 def run_manual(ws: Path, cases: list[str], args: argparse.Namespace) -> None:
-    adapter = ws / RUN_CASE
-    if not adapter.is_file() or not os.access(adapter, os.X_OK):
-        raise GateError(f"{RUN_CASE} is missing or not executable; 3.6 writes it (chmod +x)")
-    if args.executor is None:
-        raise GateError("manual mode: pass --executor single-call or agentic (recorded in uplift.json)")
     jobs = [(i, case, arm, run) for i, case in enumerate(cases)
             for arm in ("with", "without") for run in range(1, args.runs + 1)]
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
@@ -272,27 +322,21 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
     """The gate itself; runs inside the owned `gate` job."""
     signal.signal(signal.SIGTERM, lambda *_: _STOP.set())
     try:
-        skill = resolve_skill(ws, args.skill)
-        split = read_data_split(ws / DATA_SPLIT)
-        if not split.plugin_eval:
-            raise GateError(f"{DATA_SPLIT}: {split.plugin_eval_error or 'plugin_eval records no gate cases'}")
-        available = probe_plugin_eval()
-        invoked = model_invoked(ws / "output" / skill / "SKILL.md")
-        mode = "plugin" if available == 0 and invoked else "manual"
+        skill, cases, mode, available, invoked = preconditions(ws, args)
         artifact = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         record = {"mode": mode, "plugin_eval_available": available, "model_invoked": invoked, "skill": skill,
                   "model": args.model, "runs": args.runs, "in_sample": args.in_sample,
-                  "cases": split.plugin_eval, "artifact": str(artifact),
-                  "skill_sha256": skill_sha256(ws, skill), "cases_sha256": cases_sha256(ws, split.plugin_eval),
+                  "cases": cases, "artifact": str(artifact),
+                  "skill_sha256": skill_sha256(ws, skill), "cases_sha256": cases_sha256(ws, cases),
                   "started": _now(), "finished": None}
         write_json(ws / GATE_RECORD, record)
         _set_aside(ws / artifact)
         print(f"gate: mode={mode} (plugin eval probe exit {available}, model-invoked={invoked}), "
-              f"{len(split.plugin_eval)} cases x {args.runs} runs per arm", file=sys.stderr)
+              f"{len(cases)} cases x {args.runs} runs per arm", file=sys.stderr)
         if mode == "plugin":
-            run_plugin(ws, skill, split.plugin_eval, args)
+            run_plugin(ws, skill, args)
         else:
-            run_manual(ws, split.plugin_eval, args)
+            run_manual(ws, cases, args)
     except GateError as exc:
         print(f"gate: {exc}", file=sys.stderr)
         return EXIT_PRECONDITION
@@ -350,13 +394,20 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     """Start the gate as the owned job `gate`, then wait for it unless --detach."""
     sdir = run_owned.state_dir(ws)
     live = _running(sdir)
-    if live and args.restart:
-        print(f"gate: {run_owned.stop(sdir, JOB, grace=STOP_GRACE)}", file=sys.stderr)
-    elif live:
+    if live and not args.restart:
         print(f"gate: a `{JOB}` job is already running (pgid {live['pgid']}, log {live['log']}).\n"
               f"  poll it:   {_wait_hint(ws)}\n"
               f"  restart:   python3 {SCRIPTS / 'gate.py'} --restart <the same options>", file=sys.stderr)
         return EXIT_PRECONDITION
+    try:
+        if args.detach or args.restart:
+            preconditions(ws, args)
+    except GateError as exc:
+        print(f"gate: {exc}", file=sys.stderr)
+        print(f"gate: not started{'; the running gate was left as it is' if live else ''}", file=sys.stderr)
+        return EXIT_PRECONDITION
+    if live:
+        print(f"gate: {run_owned.stop(sdir, JOB, grace=STOP_GRACE)}", file=sys.stderr)
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     proc = run_owned.start(sdir, JOB, _job_argv(ws, args), cwd=ws, env=env)
     rec = run_owned.load(sdir, JOB)

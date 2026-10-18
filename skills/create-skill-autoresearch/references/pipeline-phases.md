@@ -390,7 +390,9 @@ python3 <skill-dir>/scripts/gate.py --detach --model <model> …       # or: run
 python3 <skill-dir>/scripts/run_owned.py wait gate --timeout 540      # exits 124 while it runs; repeat until it exits with the gate's code
 ```
 
-A second start while the job is live is refused with these commands. `gate.py --restart …` stops only the
+A second start while the job is live is refused with these commands. `--detach` and `--restart` first check
+the suite, the recorded cases, each case's `scaffold_script` and (manual mode) `run-case.sh` in the same call,
+and exit 3 before starting anything — a failed restart leaves the running gate alone. `gate.py --restart …` stops only the
 recorded `gate` group and starts it again, detached; `gate.py --stop` stops it. On TERM the gate stops the
 eval runs it started (each in its own process group) before it exits, and leaves `gate.json` unfinished, so
 a stopped gate never validates. Without `--detach`, `gate.py` starts the job and waits for it, which suits a

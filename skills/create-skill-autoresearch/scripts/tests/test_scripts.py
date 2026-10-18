@@ -581,6 +581,46 @@ class GateLifecycleTest(TempWorkspace):
         self.assertEqual(self.run_script("run_owned.py", "wait", "gate", "--timeout", "30").returncode, 0)
         self.assertIn("GATE VALID", Path(self.record("gate")["log"]).read_text())
 
+    def assert_refused_before_detaching(self, *args: str, reason: str, **env: str) -> None:
+        out = self.run_script("gate.py", "--detach", "--model", "m", *args, **env)
+        self.assertEqual(out.returncode, 3, out.stderr)
+        self.assertIn(reason, out.stderr)
+        self.assertIn("not started", out.stderr)
+        self.assertFalse((self.ws / "work" / "pids" / "gate.json").exists(), "no gate job was started")
+
+    def test_detach_checks_the_suite_first(self) -> None:
+        self.make_build(self.CASES)
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01").rename(
+            self.ws / "work" / "evaluation" / "plugin" / "evals" / "renamed")
+        self.assert_refused_before_detaching(reason="recorded but absent ['gold-01']")
+
+    def test_detach_checks_recorded_cases_first(self) -> None:
+        self.make_build([])
+        self.assert_refused_before_detaching(reason="plugin_eval records no gate cases")
+
+    def test_detach_checks_each_scaffold_script_first(self) -> None:
+        self.make_build(self.CASES)
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01" / "case.yaml").write_text(
+            'name: gold-01\ncontext:\n  scaffold_script: "fixture.sh"  # copies fixtures\n')
+        self.assert_refused_before_detaching(reason="gold-01: fixture.sh")
+
+    def test_detach_checks_the_manual_adapter_first(self) -> None:
+        self.make_build(self.CASES, invoked=False)
+        self.assert_refused_before_detaching("--executor", "single-call", reason="run-case.sh is missing")
+
+    def test_failed_restart_leaves_the_running_gate(self) -> None:
+        self.make_build(self.CASES)
+        gate = self.detach()
+        try:
+            (self.ws / "work" / "evaluation" / "plugin" / ".claude-plugin" / "plugin.json").unlink()
+            out = self.run_script("gate.py", "--restart", "--model", "m", FAKE_MODE="hang")
+            self.assertEqual(out.returncode, 3)
+            self.assertIn("the running gate was left as it is", out.stderr)
+            self.assertTrue(_group_alive(gate["pgid"]))
+            self.assertEqual(self.record("gate")["pid"], gate["pid"])
+        finally:
+            self.stop()
+
     def test_stop_without_a_gate_is_a_no_op(self) -> None:
         out = self.run_script("gate.py", "--stop")
         self.assertEqual(out.returncode, 0)
