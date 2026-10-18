@@ -51,12 +51,14 @@ unattended with a 6-iteration autoresearch budget.
   holdout. execution 0.70 · compliance 0.20 (frontmatter, model-invoked, < 300 lines, scripts present
   and referenced, no gold literals hard-coded in scripts) · craft 0.10 (description what + when,
   third person, ≥ 3 script functions, a concrete example). An executor run that times out or exits
-  non-zero without writing `po.json` is an executor fault, not a skill score: it is retried once, and
-  a second fault is an env failure for that case — excluded from the execution mean and reported in
-  `score-report.json`, never scored 0. The scorer gained this rule after the `j-*` run; there, the
-  only executor runs without `po.json` (two, in one Haiku build) ended on the executor's normal final
-  reply, stopping at the skill's own parser defect, so it changes no `j-*` number. The published
-  `k-*` run was scored under the rule and had no executor faults.
+  non-zero without writing `po.json` is retried once. A second run that exits non-zero without
+  `po.json`, or times out with an infrastructure error in its transcript (the API/network patterns
+  `arms/run-arm.sh` uses), is an env failure for that case — excluded from the execution mean and
+  reported in `score-report.json`, never scored 0. A second timeout without one is the skill's result
+  and scores 0. The scorer gained the env-failure rule after the `j-*` run; there, the only executor
+  runs without `po.json` (two, in one Haiku build) ended on the executor's normal final reply,
+  stopping at the skill's own parser defect, so it changes no `j-*` number. The published `k-*` run
+  was scored under it and had no executor faults, so the later timeout rule changes no `k-*` number.
 
 No LLM judge anywhere. `node scoring/selftest.mjs` and `node scoring/selftest-task2.mjs` must print
 `SELFTEST PASS` before any score is trusted. A live run of `node scoring/score-task2.mjs
@@ -122,7 +124,8 @@ the same rules were prose; `j-*` (harness `5ca4fa0`) is the first cycle-2 run; `
 run. The validator changed between `j-*` and `k-*`: the current one also requires a finished
 `gate.json` carrying skill and case hashes, which no earlier build has, so it fails every `i-*` and
 `j-*` build on that alone. The gate rows therefore show both validators: the `j-*`-era one
-(harness `5ca4fa0`) and the current one, which criterion 7 measures `k-*` against.
+(harness `5ca4fa0`) and the current one, which criterion 7 measures `k-*` against. "Current" here is
+the validator `k-*` ran with (harness `6d3b6ab`); the one after it is under **After `k-*`** below.
 
 | Measure | Bar | `i-*` | `j-*` | `k-*` (published) |
 |---------|-----|-------|-------|-------------------|
@@ -165,7 +168,7 @@ run. The validator changed between `j-*` and `k-*`: the current one also require
   build stopped this way. Two of the three had also left their gate running detached; task Haiku 5
   waited for its gate, so the detached gate is not the whole cause.
 
-**A validator gap: gold cases that carry a skill-fired grader are not counted as gold.**
+**A validator gap, fixed after this run: gold cases that carry a skill-fired grader were not counted as gold.**
 `check_gate.py` treats a plugin case as a should-trigger case whenever it has a `tool_used` grader on
 `Skill`, and computes the mean Δ and the Δ <= 0 list over the remaining cases only. Task-2 Haiku 2 put
 a `skill-fired` grader on each of its seven gold cases next to their output graders. The factory's own
@@ -174,12 +177,17 @@ and `graders/skill-fired.md`). So the validator reported `gold=0` and `mean gold
 whose seven gold cases each ran 3 times per arm, with Δ from +0.389 to +0.500 (mean +0.468). The gate
 measured real uplift. But the summary that should feed the verdict came out empty, and the validator
 still exits 0 with no gold case counted. Task-2 Haiku 3 uses the same layout, behind its invalid gate.
-The fix belongs in the factory: classify a case by its whole grader set, or drop `skill-fired` from
-the worked gold case, and reject a gate that counts no gold case. This release does not include it.
+The factory now classifies a case by its whole grader set (harness `cb4d484`, under **After `k-*`**).
+Re-scored with that validator, `k-*` still passes 19 of 20: task-2 Haiku 2 reports `gold=9` (two of
+its should-trigger cases also grade output) with mean Δ +0.586, and task-2 Sonnet 5 lists its
+`trigger-2` case, which also grades output, under Δ <= 0. The table above keeps the validator the run
+shipped with.
 
-Reproduce with `python3 scoring/fidelity.py "$BENCH_RUNS_ROOT"/k-*` (and `j-*`, `i-*`; add
-`--check-gate <harness@5ca4fa0>/.agents/skills/create-skill-autoresearch/scripts/check_gate.py` for
-the `j-*`-era validator). It runs offline, and `python3 scoring/selftest-fidelity.py` must print
+Reproduce with `python3 scoring/fidelity.py "$BENCH_RUNS_ROOT"/k-*` (and `j-*`, `i-*`). Pass
+`--check-gate <harness@REV>/.agents/skills/create-skill-autoresearch/scripts/check_gate.py` with REV
+`5ca4fa0` for the `j-*`-era validator and `6d3b6ab` for the one `k-*` ran with; the default, the
+validator published beside this README, fails every build up to `k-*` because their `gate.json` has
+no scorer, input or artifact hash. It runs offline, and `python3 scoring/selftest-fidelity.py` must print
 `SELFTEST PASS`. An `UNSHIPPED` verdict is its own label. For ITERATE and BLOCK the scanner reads only
 the verdict statement, so "the shipped file" elsewhere in the report names the output file and does
 not count.
@@ -236,6 +244,27 @@ The effect on criteria 7–9:
   `UNSHIPPED`.
 - **New failure modes:** two builds left a detached gate running past the end of their session,
   three stopped after the premortem without a verdict, and one validated with `gold=0`.
+
+**After `k-*`** (harness `cb4d484`…`716f524`, cycle-2 round-2 fixes; no benchmark run yet):
+- **Gold by grader.** A case is gold when any of its graders is score-bearing (anything but
+  `tool_used` on `Skill`); only a case graded by nothing but `Skill` is a trigger or near-miss
+  indicator. Every gold case needs a numeric Δ, and a gate whose data split records gold standards
+  but counts no gold case fails (`no_gold`).
+- **Gate bound to its scorer.** `gate.json` also hashes `run-case.sh`, the scorer and fixture files
+  under `input/` and `work/evaluation/`, and the artifact; any later change fails "gate inputs changed
+  since the gate; re-run 5.0" (`stale_inputs`, a stale gate in `fidelity.py`).
+- **Owned processes without `ps`.** `run_owned.py start` takes a per-name lock before checking state,
+  so concurrent starts run a job once. Each job runs under a supervisor that holds that lock while it
+  lives and stops only its own child group when `stop` writes `work/pids/<name>.stop`, so start
+  refusal and stop work where `ps` is missing or denied.
+- **Preconditions before detaching.** `gate.py --detach` / `--restart` check the suite, the recorded
+  cases, each case's `scaffold_script` and the manual adapter in the same call and exit 3 before
+  starting anything (task-2 Haiku 3's missing `fixture.sh` now fails there, not an hour later).
+- **Phase 5 runs to a verdict.** 5.1's risk list is an input to 5.2, and the build continues in the
+  same turn until `BENCHMARK.md` holds a terminal verdict and no gate job is live — the three builds
+  that stopped after the premortem.
+- **task-2 timeouts** without `po.json` score 0 unless the transcript shows an infrastructure error
+  (see Scoring).
 
 **The transcripts behind the fidelity counts are not published**, nor those behind the h5 and h3
 failure counts and the holdout-leak search below. The `k-*` session transcripts under the builds'
