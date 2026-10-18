@@ -196,8 +196,9 @@ still exits 0 with no gold case counted. Task-2 Haiku 3 uses the same layout, be
 The factory now classifies a case by its whole grader set (harness `cb4d484`, under **After `k-*`**).
 Re-scored with that validator, `k-*` still passes 19 of 20: task-2 Haiku 2 reports `gold=9` (two of
 its should-trigger cases also grade output) with mean Δ +0.586, and task-2 Sonnet 5 lists its
-`trigger-2` case, which also grades output, under Δ <= 0. The table above keeps the validator the run
-shipped with.
+`trigger-2` case, which also grades output, under Δ <= 0. Since cycle 3 the validator also reports the
+Skill indicator of such a gold case (`trigger-2` fired 3/3) instead of dropping it. The table above keeps
+the validator the run shipped with.
 
 Reproduce with `python3 scoring/fidelity.py "$BENCH_RUNS_ROOT"/k-*` (and `j-*`, `i-*`). Pass
 `--check-gate <harness@REV>/.agents/skills/create-skill-autoresearch/scripts/check_gate.py` with REV

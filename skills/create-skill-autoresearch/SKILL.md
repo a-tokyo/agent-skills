@@ -372,7 +372,7 @@ Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, t
 
 ### 5.1 Premortem
 
-Invoke the **premortem skill** on the skill artifact. Its risk list is an input to 5.2: each risk becomes an additional panel test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. Then continue in the same turn through 5.4: the build is done only when `BENCHMARK.md` holds a terminal verdict (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`) and `python3 <skill-dir>/scripts/run_owned.py status gate` shows no live gate (or `gate.py --stop` was run).
+Invoke the **premortem skill** on the skill artifact. Its risk list is an input to 5.2: each risk becomes an additional panel test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. Then continue in the same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, and a SHIP label stands on a gate that still validates. A non-zero exit names what is left; do it, then re-run.
 
 ### 5.2 Panel Evaluation
 
@@ -436,7 +436,7 @@ improvement hypothesis in `autoresearch.ideas.md`, log the panel scores and rati
 `work/experiments/craft-decisions.md`, and return to Phase 4.
 
 **A terminal ITERATE is `UNSHIPPED`.** ITERATE or BLOCK with no Phase 4 budget left, or after the 4.3 plateau
-rule ended the loop, ends the build: write `BENCHMARK.md` with verdict `UNSHIPPED` — the one terminal label —
+rule ended the loop, ends the build: write `BENCHMARK.md` with `Verdict: UNSHIPPED` — the one terminal label —
 plus the final scores and the blocking concerns. An `UNSHIPPED` output is a draft: never describe it as
 shipped, and never publish it.
 

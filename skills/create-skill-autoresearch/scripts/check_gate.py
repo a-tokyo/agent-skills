@@ -21,27 +21,40 @@ near miss). Every gold case needs a numeric delta, and when data-split.yaml reco
 (`all_cases`, `training`, `validation` or `test`) at least one case must be gold.
 
 On success it prints `GATE VALID: ...` with the mean delta and the delta<=0 list over gold cases
-only; indicators are reported apart, as how often the skill fired / stayed quiet. On failure it
-prints `GATE INVALID: <reason>`. --json prints the same verdict as JSON, with a stable `code`.
+only, then every Skill indicator, whatever its case's class: how often the skill fired in the with-arm
+(should-trigger) or stayed quiet in both arms (near miss). On failure it prints `GATE INVALID: <reason>`.
+--json prints the same verdict as JSON, with a stable `code`.
 
-    check_gate.py [--workspace DIR] [--skill NAME] [--min-runs N] [--json]
+--finish checks the build's end state instead (SKILL.md 5.1): BENCHMARK.md at the build root has a
+`Verdict: <label>` line naming SHIP, SHIP WITH CAVEATS or UNSHIPPED, no `gate` job is running, and a
+SHIP or SHIP WITH CAVEATS verdict stands on a gate that validates now and whose `GATE VALID:` line
+BENCHMARK.md carries. It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
 
-Tested on macOS and Linux. Exit codes: 0 valid, 1 invalid, 2 usage error.
+    check_gate.py [--workspace DIR] [--skill NAME] [--min-runs N] [--json] [--finish]
+
+Tested on macOS and Linux. Exit codes: 0 valid (--finish: finished), 1 invalid (unfinished), 2 usage error.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-from gate_common import (  # noqa: E402  (sibling import after disabling bytecode)
+import run_owned  # noqa: E402  (sibling imports after disabling bytecode)
+from gate_common import (  # noqa: E402
     DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE, GateError,
     cases_sha256, file_sha256, inputs_sha256, read_data_split, skill_sha256,
 )
+
+BENCHMARK = Path("BENCHMARK.md")
+TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
+VERDICT_LINE = re.compile(r"(?im)^[#>*_\s-]*verdict[*_\s]*[:—–-][*_\s`]*"
+                          r"(UNSHIPPED|SHIP[ _]+WITH[ _]+CAVEATS|ITERATE|BLOCK|ESCALATE|SHIP)\b")
 
 
 class Invalid(Exception):
@@ -83,7 +96,8 @@ class CaseResult:
     name: str
     delta: float | None
     kind: str = "gold"
-    indicator: str | None = None
+    trigger: str | None = None
+    near_miss: str | None = None
 
 
 def _mean(values: list[float]) -> float | None:
@@ -146,13 +160,8 @@ def _is_skill_grader(grader: object) -> bool:
             and (grader.get("config") or {}).get("tool") == "Skill")
 
 
-def _indicator_grader(case: dict) -> dict | None:
-    """The case's `tool_used` grader on `Skill` when that is all the case grades: a should-trigger or
-    near-miss indicator. A case with any other grader is gold, whatever Skill indicator it also has."""
-    graders = case.get("graders") or []
-    if graders and all(_is_skill_grader(g) for g in graders):
-        return next((g for g in graders if (g.get("config") or {}).get("max") == 0), graders[0])
-    return None
+def _is_near_miss(grader: dict) -> bool:
+    return (grader.get("config") or {}).get("max") == 0
 
 
 def _passed(runs: list, grader: str) -> int:
@@ -181,17 +190,19 @@ def _plugin(data: dict, recorded: list[str], min_runs: int) -> list[CaseResult]:
         delta = (case.get("aggregates") or {}).get("delta")
         numeric = isinstance(delta, (int, float)) and not isinstance(delta, bool)
         result = CaseResult(name, float(delta) if numeric else None)
-        grader = _indicator_grader(case)
-        if grader is None and not numeric:
+        graders = [g for g in case.get("graders") or [] if isinstance(g, dict)]
+        skill = [g for g in graders if _is_skill_grader(g)]
+        if graders and len(skill) == len(graders):
+            result.kind = "near_miss" if any(_is_near_miss(g) for g in skill) else "trigger"
+        elif not numeric:
             raise Invalid("no_delta", f"gold case {name!r} has no numeric with/without delta ({delta!r}); "
                                       "re-run the gate")
-        if grader is not None:
-            if (grader.get("config") or {}).get("max") == 0:
+        for grader in skill:
+            if _is_near_miss(grader):
                 runs = done["with"] + done["without"]
-                result.kind, result.indicator = "near_miss", f"{_passed(runs, grader.get('name'))}/{len(runs)}"
+                result.near_miss = f"{_passed(runs, grader.get('name'))}/{len(runs)}"
             else:
-                result.kind = "trigger"
-                result.indicator = f"{_passed(done['with'], grader.get('name'))}/{len(done['with'])}"
+                result.trigger = f"{_passed(done['with'], grader.get('name'))}/{len(done['with'])}"
         results.append(result)
     _coverage(recorded, [r.name for r in results])
     return results
@@ -261,9 +272,38 @@ def validate(workspace: Path, skill: str | None = None, min_runs: int = REQUIRED
         True, mode, str(rel), "ok", cases=len(results), gold_cases=len(gold),
         mean_delta=_mean([r.delta for r in gold if r.delta is not None]),
         non_positive=[r.name for r in gold if r.delta is not None and r.delta <= 0],
-        triggers={r.name: r.indicator for r in results if r.kind == "trigger"},
-        near_misses={r.name: r.indicator for r in results if r.kind == "near_miss"},
+        triggers={r.name: r.trigger for r in results if r.trigger is not None},
+        near_misses={r.name: r.near_miss for r in results if r.near_miss is not None},
     )
+
+
+def finish(workspace: Path, skill: str | None = None, min_runs: int = REQUIRED_RUNS) -> tuple[bool, str | None, str]:
+    """(finished, verdict, reason) for the build's end state: BENCHMARK.md at the build root states a
+    terminal verdict on a `Verdict: <label>` line, no `gate` job is live, and a SHIP or SHIP WITH CAVEATS
+    verdict stands on a gate that still validates, whose GATE VALID line BENCHMARK.md carries."""
+    bench = workspace / BENCHMARK
+    if not bench.is_file():
+        return False, None, f"no {BENCHMARK} at the build root; carry Phase 5 through 5.4 to a terminal verdict"
+    match = VERDICT_LINE.search(bench.read_text(errors="replace"))
+    if not match:
+        return False, None, f"{BENCHMARK} has no `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or UNSHIPPED)"
+    verdict = re.sub(r"[ _]+", " ", match.group(1).upper())
+    if verdict not in TERMINAL:
+        return False, verdict, (f"verdict {verdict} is not terminal: return to Phase 4, or with no budget left "
+                                "write UNSHIPPED (5.4)")
+    try:
+        live = run_owned.status(run_owned.state_dir(workspace), "gate")["state"] == "running"
+    except run_owned.OwnedError:
+        live = False
+    if live:
+        return False, verdict, "the `gate` job is still running; wait for it or run gate.py --stop"
+    if verdict != "UNSHIPPED":
+        gate = validate(workspace, skill, min_runs)
+        if not gate.valid:
+            return False, verdict, f"{verdict} needs a valid gate: {gate.line()}; return to 5.0"
+        if "GATE VALID:" not in bench.read_text(errors="replace"):
+            return False, verdict, f"{BENCHMARK} lacks check_gate.py's GATE VALID line beside the {verdict} verdict"
+    return True, verdict, "ok"
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -273,9 +313,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--min-runs", type=int, default=REQUIRED_RUNS,
                         help=f"completed runs required per arm per case (default {REQUIRED_RUNS})")
     parser.add_argument("--json", action="store_true", help="print the verdict as JSON instead of a line")
+    parser.add_argument("--finish", action="store_true",
+                        help="check the build's end state (BENCHMARK.md verdict, no live gate) instead of the gate")
     args = parser.parse_args(argv)
     if args.min_runs < 1:
         parser.error("--min-runs must be at least 1")
+    if args.finish:
+        done, label, reason = finish(args.workspace.resolve(), args.skill, args.min_runs)
+        line = f"BUILD FINISHED: verdict {label}" if done else f"BUILD UNFINISHED: {reason}"
+        print(json.dumps({"finished": done, "verdict": label, "reason": reason}) if args.json else line)
+        return 0 if done else 1
     verdict = validate(args.workspace.resolve(), args.skill, args.min_runs)
     print(json.dumps(asdict(verdict)) if args.json else verdict.line())
     return 0 if verdict.valid else 1

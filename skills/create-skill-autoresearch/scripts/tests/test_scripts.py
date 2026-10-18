@@ -26,7 +26,8 @@ import gate_common  # noqa: E402
 FAKE_CLAUDE = textwrap.dedent('''\
     #!/usr/bin/env python3
     """Fake `claude plugin eval`; behaviour from FAKE_MODE: complete | partial | hang | fewruns | silent |
-    nodelta (gold cases report a null delta). Cases named trigger-* get only a skill-fired grader,
+    nodelta (gold cases report a null delta). Cases named trigout-* get skill-fired plus an output regex
+    that passes in both arms (delta 0, the k-* task-2 Sonnet 5 trigger-2 shape); trigger-* only skill-fired,
     near-miss* only a not-fired one (max 0), holdout-* the worked case's approval regex plus skill-fired.
     A case directory holding a file named INVALID fails to load: like the real CLI, a `✗` line names it
     and the run skips it. `--max-cost-usd 0` loads the cases and stops before any run (exit 2)."""
@@ -57,6 +58,14 @@ FAKE_CLAUDE = textwrap.dedent('''\
     out = args[args.index("--json") + 1]
 
     def case(name):
+        if name.startswith("trigout"):
+            graders = [{"name": "skill-fired", "type": "tool_used", "config": {"tool": "Skill"}},
+                       {"name": "valid", "type": "regex", "config": {}}]
+            fired = {"score": 1, "error": None, "graders": [{"name": "skill-fired", "passed": True},
+                                                             {"name": "valid", "passed": True}]}
+            bare = {"score": 1, "error": None, "graders": [{"name": "valid", "passed": True}]}
+            return {"name": name, "graders": graders, "arms": {"with": [fired] * runs, "without": [bare] * runs},
+                    "aggregates": {"delta": 0}}
         if name.startswith("trigger"):
             grader = {"name": "skill-fired", "type": "tool_used", "config": {"tool": "Skill"}}
             run = {"score": 1, "error": None, "graders": [{"name": "skill-fired", "passed": True}]}
@@ -443,8 +452,17 @@ class GatePluginTest(TempWorkspace):
         self.assertTrue(verdict["valid"], verdict["reason"])
         self.assertEqual((verdict["gold_cases"], verdict["mean_delta"]), (1, 0.4),
                          "approval.md is score-bearing, so skill-fired does not make holdout-03 an indicator")
-        self.assertNotIn("holdout-03", verdict["triggers"])
-        self.assertEqual(verdict["triggers"], {"trigger-1": "3/3"})
+        self.assertEqual(verdict["triggers"], {"holdout-03": "3/3", "trigger-1": "3/3"},
+                         "its skill-fired indicator is still reported")
+
+    def test_should_trigger_case_that_grades_output_is_gold_and_keeps_its_indicator(self) -> None:
+        self.make_build(["gold-01", "trigout-2", "trigger-1"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual((verdict["cases"], verdict["gold_cases"]), (3, 2))
+        self.assertEqual(verdict["non_positive"], ["trigout-2"], "its delta 0 counts like any gold case")
+        self.assertEqual(verdict["triggers"], {"trigout-2": "3/3", "trigger-1": "3/3"})
+        self.assertEqual(verdict["mean_delta"], 0.25)
 
     def test_indicators_only_fail_when_gold_standards_are_recorded(self) -> None:
         self.make_build(["near-miss", "trigger-1"], training="\n  - input/gold-01.md")
@@ -847,6 +865,67 @@ class GateManualTest(TempWorkspace):
         out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
         self.assertEqual(out.returncode, 3)
         self.assertIn("run-case.sh is missing", out.stdout)
+
+
+class FinishTest(TempWorkspace):
+    def benchmark(self, text: str) -> None:
+        (self.ws / "BENCHMARK.md").write_text(text)
+
+    def finish(self) -> dict:
+        out = self.run_script("check_gate.py", "--finish", "--json")
+        data = json.loads(out.stdout)
+        self.assertEqual(out.returncode, 0 if data["finished"] else 1)
+        return data
+
+    def gate_line(self) -> str:
+        return self.run_script("check_gate.py").stdout.strip()
+
+    def test_missing_benchmark_is_unfinished(self) -> None:
+        self.make_build(["gold-01"])
+        self.assertIn("no BENCHMARK.md at the build root", self.finish()["reason"])
+        self.assertIn("BUILD UNFINISHED", self.run_script("check_gate.py", "--finish").stdout)
+
+    def test_benchmark_without_a_verdict_line_is_unfinished(self) -> None:
+        self.make_build(["gold-01"])
+        self.benchmark("# Benchmark\n\nScores: 0.9. The panel liked it; we SHIP soon.\n")
+        self.assertIn("no `Verdict: <label>` line", self.finish()["reason"])
+
+    def test_iterate_is_not_terminal(self) -> None:
+        self.make_build(["gold-01"])
+        self.benchmark("## Verdict: ITERATE\n")
+        data = self.finish()
+        self.assertEqual((data["finished"], data["verdict"]), (False, "ITERATE"))
+        self.assertIn("write UNSHIPPED", data["reason"])
+
+    def test_unshipped_finishes_without_a_valid_gate(self) -> None:
+        self.make_build(["gold-01"])
+        self.benchmark("# Benchmark\n\n**Verdict — UNSHIPPED** (budget exhausted; a draft, not published)\n")
+        self.assertEqual(self.finish(), {"finished": True, "verdict": "UNSHIPPED", "reason": "ok"})
+
+    def test_ship_needs_a_valid_gate_and_its_line(self) -> None:
+        self.make_build(["gold-01", "trigger-1"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        self.benchmark("**Verdict: SHIP_WITH_CAVEATS**\n")
+        self.assertIn("lacks check_gate.py's GATE VALID line", self.finish()["reason"])
+        self.benchmark(f"**Verdict: SHIP_WITH_CAVEATS**\n\n{self.gate_line()}\n")
+        self.assertEqual(self.finish()["verdict"], "SHIP WITH CAVEATS")
+        self.assertTrue(self.finish()["finished"])
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Edited.\n---\n")
+        data = self.finish()
+        self.assertFalse(data["finished"])
+        self.assertIn("skill changed since the gate", data["reason"])
+
+    def test_live_gate_is_unfinished(self) -> None:
+        self.make_build(["gold-01"])
+        self.benchmark("Verdict: UNSHIPPED\n")
+        out = self.run_script("gate.py", "--detach", "--model", "m", FAKE_MODE="hang")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        try:
+            self.assertTrue(_until(lambda: (self.ws / "work" / "pids" / "gate-plugin-eval.json").is_file()))
+            self.assertIn("still running", self.finish()["reason"])
+        finally:
+            self.assertEqual(self.run_script("gate.py", "--stop").returncode, 0)
+        self.assertTrue(self.finish()["finished"])
 
 
 class CheckGateTest(TempWorkspace):

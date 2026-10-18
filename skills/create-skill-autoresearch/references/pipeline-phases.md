@@ -431,9 +431,10 @@ the gate; re-run 5.0" for the skill or suite, "gate inputs changed since the gat
 adapter, a scorer, a fixture or the artifact. A case is gold when any of its graders is score-bearing (anything but `tool_used` on
 `Skill`), even if it also carries a Skill indicator; every gold case needs a numeric Δ, and when
 `data-split.yaml` records gold standards a gate with no gold case fails (`no_gold`). Its `GATE VALID:`
-line gives the mean Δ and the Δ <= 0 list over gold cases only; should-trigger cases (graded only by
-`tool_used` on `Skill`) report how many with-arm runs fired the skill, and near misses (`max: 0`) how
-many runs in both arms left it quiet. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
+line gives the mean Δ and the Δ <= 0 list over gold cases only, then every Skill indicator whatever its
+case's class: a should-trigger grader reports how many with-arm runs fired the skill, a near-miss grader
+(`max: 0`) how many runs in both arms left it quiet. A should-trigger prompt that also grades output is
+therefore gold: its Δ counts (Δ <= 0 caps the verdict, 5.4) and its indicator is still reported. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
 of 0 while `skill-fired` passes means the skill fired but could not act — check the tool grants and the
 fixtures first. The 1-run artifact never passes `check_gate.py`; the full run replaces it.
 
