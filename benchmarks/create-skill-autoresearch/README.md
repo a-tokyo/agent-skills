@@ -131,7 +131,12 @@ the same rules were prose; `j-*` is the published run.
   two task-2 Haiku builds, `plugin-eval.json` in the other eight task-2 builds. The two failures are
   those two task-2 Haiku builds; their artifact exists but their case record does not: Haiku 2's
   `data-split.yaml` records no `plugin_eval` cases, and Haiku 4 wrote `data-split.json` instead of
-  `data-split.yaml`.
+  `data-split.yaml`. Neither build ran the factory's gate: both bypassed `gate.py` and `check_gate.py`
+  (Haiku 2 only read `gate.py --help`, then ran its own `e2e.sh` loop; Haiku 4 wrote `uplift.json`
+  from its own batch scripts), neither built the 3.6 suite, and both still declared SHIP WITH
+  CAVEATS. The factory after this run binds the artifact to a finished, hashed `gate.py` record and
+  requires `check_gate.py`'s `GATE VALID:` line in `BENCHMARK.md` before any shipped verdict;
+  `fidelity.py` now counts a shipped verdict with an invalid gate on its own.
 - **Criterion 8 is not met.** One build, task-2 Haiku 3, started `gate.py` itself with `nohup … &`
   instead of through `scripts/run_owned.py`, then issued `pkill -f "gate.py --workspace"` and
   `pkill -f "claude plugin eval"` to restart it. That is the same 1-in-20 rate as `i-*`. Both
@@ -237,6 +242,11 @@ temperature 0. Overall medians: bare 0.896 / 0.928, skill-creator 0.896 / 0.846,
 (Sonnet / Haiku). No overall uplift; the task sat at the models' floor. Rows are kept in `scores.csv`.
 
 ## Reproduce
+
+The factory's bundled scripts (`gate.py`, `check_gate.py`, `run_owned.py`) and their offline tests run
+on macOS and Linux: the harness `checks` workflow runs them on `ubuntu-latest` in its self-test gate
+([run 39074944894](https://github.com/a-tokyo/agent-skills-harness/actions/runs/39074944894), harness
+`a3fa032`: 43 script tests, GATE PASS).
 
 ```bash
 cd benchmarks/create-skill-autoresearch
