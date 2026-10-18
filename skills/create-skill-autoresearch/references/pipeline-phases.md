@@ -464,8 +464,11 @@ adds the rest, and applies it in every experiment:
 - **Owned processes.** Start every background job (eval runs, `until` loops) with
   `scripts/run_owned.py start <name> -- <cmd...>`, and wait on or stop it with `wait <name>` /
   `stop <name>`: it stops only the process group it recorded, because on a shared machine a
-  name-pattern kill also takes down sibling builds and the user's own processes. It refuses to signal
-  a job whose recorded start time it cannot confirm, and keeps `work/pids/` out of git.
+  name-pattern kill also takes down sibling builds and the user's own processes. Each job runs under
+  a supervisor that holds `work/pids/<name>.lock` while it lives and stops its own child group when
+  `stop` writes `work/pids/<name>.stop`, so start refusal and stop need no `ps` (sandboxes deny it).
+  Only when that supervisor is gone does `stop` signal the group, and only if `ps` confirms the
+  recorded start time; otherwise it refuses. It keeps `work/pids/` out of git.
 - **Clean reverts.** Discard with `git reset --hard HEAD~1 && git clean -fd -- output/<skill-name>`,
   so a reverted experiment leaves no new untracked files behind. The baseline commit (SKILL.md 3.5) is
   experiment 0, so `HEAD~1` always exists.

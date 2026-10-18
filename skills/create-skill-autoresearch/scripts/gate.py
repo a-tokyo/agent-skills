@@ -359,8 +359,9 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
         return EXIT_PRECONDITION
     env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
     proc = run_owned.start(sdir, JOB, _job_argv(ws, args), cwd=ws, env=env)
-    log = run_owned.load(sdir, JOB).log
-    print(f"gate: started as owned job `{JOB}` (pgid {proc.pid}); log {log}", file=sys.stderr)
+    rec = run_owned.load(sdir, JOB)
+    log = rec.log
+    print(f"gate: started as owned job `{JOB}` (pgid {rec.pgid}); log {log}", file=sys.stderr)
     if args.detach or args.restart:
         print(f"gate: poll until it exits (its exit code is the gate's):\n  {_wait_hint(ws)}", file=sys.stderr)
         return 0

@@ -280,17 +280,51 @@ class RunOwnedTest(TempWorkspace):
             stranger.kill()
             stranger.wait()
 
-    def test_refuses_to_signal_when_ps_fails(self) -> None:
-        job = self.start("owned", "sleep", "30")
-        broken = self.root / "broken-ps"
-        broken.mkdir()
-        (broken / "ps").write_text("#!/bin/sh\nexit 1\n")
-        (broken / "ps").chmod(0o755)
-        out = self.run_script("run_owned.py", "stop", "owned", PATH=f"{broken}{os.pathsep}{os.environ['PATH']}")
-        self.assertEqual(out.returncode, 3)
-        self.assertIn("cannot confirm", out.stderr)
-        self.assertTrue(_group_alive(job["pgid"]), "an unreadable start time is never treated as a match")
-        self.assertEqual(self.run_script("run_owned.py", "stop", "owned").returncode, 0)
+    def test_works_end_to_end_with_ps_denied(self) -> None:
+        denied = self.root / "denied-ps"
+        denied.mkdir()
+        (denied / "ps").write_text("#!/bin/sh\necho 'ps: operation not permitted' >&2\nexit 1\n")
+        (denied / "ps").chmod(0o755)
+        no_ps = {"PATH": f"{denied}{os.pathsep}{self.bin}{os.pathsep}{os.environ['PATH']}"}
+        sibling = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        try:
+            out = subprocess.run([*_script("run_owned.py"), "--workspace", str(self.ws), "start", "boxed", "--",
+                                  "sh", "-c", "sleep 300 & sleep 300; wait"],
+                                 capture_output=True, text=True, timeout=30, env={**_env(self.bin), **no_ps})
+            self.assertEqual(out.returncode, 0, out.stderr)
+            job = json.loads(out.stdout)
+            self.assertIsNone(self.record("boxed")["lstart"], "ps really was unavailable")
+            status = json.loads(self.run_script("run_owned.py", "status", "boxed", **no_ps).stdout)
+            self.assertEqual(status["state"], "running")
+            again = self.run_script("run_owned.py", "start", "boxed", "--", "sleep", "30", **no_ps)
+            self.assertEqual(again.returncode, 3, "a duplicate start is refused without ps")
+            self.assertIn("already running", again.stderr)
+            self.assertEqual(self.run_script("run_owned.py", "wait", "boxed", "--timeout", "0.3", **no_ps).returncode,
+                             124)
+            stopped = self.run_script("run_owned.py", "stop", "boxed", "--grace", "5", **no_ps)
+            self.assertEqual(stopped.returncode, 0, stopped.stderr)
+            self.assertFalse(_group_alive(job["pgid"]), "the supervisor stopped its own group")
+            self.assertIsNone(sibling.poll(), "a sibling with the same command line survives")
+            status = json.loads(self.run_script("run_owned.py", "status", "boxed", **no_ps).stdout)
+            self.assertEqual(status["state"], "stopped")
+            self.assertEqual(self.run_script("run_owned.py", "wait", "boxed", **no_ps).returncode, 125)
+        finally:
+            sibling.kill()
+            sibling.wait()
+
+    def test_stop_signals_a_verified_group_whose_supervisor_is_gone(self) -> None:
+        job = self.start("orphan", "sleep", "300")
+        if self.record("orphan")["lstart"] is None:
+            self.run_script("run_owned.py", "stop", "orphan")
+            self.skipTest("the signal fallback needs `ps` to confirm the leader")
+        supervisor = self.record("orphan")["supervisor"]
+        os.kill(supervisor, 9)
+        self.assertTrue(_until(lambda: not _alive(supervisor)), "init reaps the killed supervisor")
+        self.assertTrue(_group_alive(job["pgid"]), "the job outlives its supervisor")
+        self.assertEqual(json.loads(self.run_script("run_owned.py", "status", "orphan").stdout)["state"], "running")
+        self.assertEqual(self.run_script("run_owned.py", "start", "orphan", "--", "true").returncode, 3)
+        out = self.run_script("run_owned.py", "stop", "orphan", "--grace", "2")
+        self.assertEqual(out.returncode, 0, out.stderr)
         self.assertFalse(_group_alive(job["pgid"]))
 
     def test_concurrent_starts_run_the_job_once(self) -> None:
