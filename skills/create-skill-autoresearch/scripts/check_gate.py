@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 """Validate the Phase 5.0 gate artifact before the panel (SKILL.md 5.2) starts.
 
-Exit 0 only if work/evaluation/gate.json records a finished gate.py run whose skill and case hashes
-still match output/<skill>/ and the recorded cases, and the canonical artifact for its mode exists
+Exit 0 only if work/evaluation/gate.json records a finished gate.py run whose hashes still match
+output/<skill>/, the recorded cases, run-case.sh, the scorer and fixture files under input/ and
+work/evaluation/ (gate_common.inputs_sha256) and the artifact itself — any edit after the gate is
+"gate inputs changed since the gate; re-run 5.0" — and the canonical artifact for its mode exists
 at its path, covers exactly the gate cases recorded under `plugin_eval` in
 work/evaluation/data-split.yaml, has at least --min-runs completed runs per arm per case, and
 records `"partial": false`:
@@ -37,8 +39,8 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 from gate_common import (  # noqa: E402  (sibling import after disabling bytecode)
-    DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, GateError,
-    cases_sha256, read_data_split, skill_sha256,
+    DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE, GateError,
+    cases_sha256, file_sha256, inputs_sha256, read_data_split, skill_sha256,
 )
 
 
@@ -115,6 +117,16 @@ def _gate_record(workspace: Path, skill: str | None, recorded: list[str]) -> dic
     if cases_sha256(workspace, recorded) != record["cases_sha256"]:
         raise Invalid("stale_cases", "gate cases changed since the gate; re-run 5.0 (data-split.yaml "
                                      "plugin_eval or the suite under plugin/evals/)")
+    if not all(key in record for key in ("run_case_sha256", "inputs_sha256", "artifact_sha256")):
+        raise Invalid("gate_unhashed", f"{GATE_RECORD} has no scorer, input or artifact hash (an older "
+                                       "gate.py); re-run 5.0")
+    then, now = record["inputs_sha256"] or {}, inputs_sha256(workspace)
+    changed = sorted(p for p in then.keys() | now.keys() if then.get(p) != now.get(p))
+    if file_sha256(workspace / RUN_CASE) != record["run_case_sha256"]:
+        changed.insert(0, str(RUN_CASE))
+    if changed:
+        shown = ", ".join(changed[:5]) + (f" and {len(changed) - 5} more" if len(changed) > 5 else "")
+        raise Invalid("stale_inputs", f"gate inputs changed since the gate; re-run 5.0 ({shown})")
     return record
 
 
@@ -220,11 +232,15 @@ def validate(workspace: Path, skill: str | None = None, min_runs: int = REQUIRED
             raise Invalid("no_split", f"{DATA_SPLIT}: {split.plugin_eval_error}")
         if not split.plugin_eval:
             raise Invalid("no_split", f"{DATA_SPLIT}: plugin_eval records no gate cases")
-        mode = _gate_record(workspace, skill, split.plugin_eval)["mode"]
+        record = _gate_record(workspace, skill, split.plugin_eval)
+        mode = record["mode"]
         rel = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         path = workspace / rel
         if not path.is_file():
             raise Invalid("no_artifact", f"mode {mode}: {rel} not found; run the gate (5.0)")
+        if file_sha256(path) != record["artifact_sha256"]:
+            raise Invalid("stale_inputs", f"gate inputs changed since the gate; re-run 5.0 ({rel} is not the "
+                                          "artifact the gate wrote)")
         try:
             data = json.loads(path.read_text())
         except json.JSONDecodeError as exc:

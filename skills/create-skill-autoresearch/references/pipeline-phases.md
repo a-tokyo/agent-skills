@@ -415,11 +415,14 @@ In manual mode it calls `work/evaluation/run-case.sh <case> <with|without>` 3 ti
 minutes), retries a failed run once, and writes `uplift.json`; a second failure leaves it `"partial": true`
 with an `errors` list. Both modes record `work/evaluation/gate.json` (mode, probe exit code, cases, and
 sha256 hashes of `output/<skill-name>/` and of the case set — names plus each case's `evals/` directory;
-interpreter caches excluded), move a previous artifact to `<name>.prev.json` first so a stale file can never
-pass, and end by running `check_gate.py`. It exits 0 only when `gate.json` records a finished run whose hashes
-still match, and the artifact says `"partial": false`, covers exactly the recorded cases and has at least 3
-runs per arm. Any edit to the skill or the suite after the gate fails it: "skill changed since the gate;
-re-run 5.0". A case is gold when any of its graders is score-bearing (anything but `tool_used` on
+interpreter caches excluded — and, when the run finishes, of `run-case.sh`, every file under `input/`,
+the scorers and fixtures under `work/evaluation/` (not `plugin/`, gate outputs, dotfiles or
+`*.tmp`/`*.out`/`*.log` scratch) and the artifact itself), move a previous artifact to `<name>.prev.json`
+first so a stale file can never pass, and end by running `check_gate.py`. It exits 0 only when `gate.json`
+records a finished run whose hashes still match, and the artifact says `"partial": false`, covers exactly
+the recorded cases and has at least 3 runs per arm. Any edit after the gate fails it: "skill changed since
+the gate; re-run 5.0" for the skill or suite, "gate inputs changed since the gate; re-run 5.0" for the
+adapter, a scorer, a fixture or the artifact. A case is gold when any of its graders is score-bearing (anything but `tool_used` on
 `Skill`), even if it also carries a Skill indicator; every gold case needs a numeric Δ, and when
 `data-split.yaml` records gold standards a gate with no gold case fails (`no_gold`). Its `GATE VALID:`
 line gives the mean Δ and the Δ <= 0 list over gold cases only; should-trigger cases (graded only by

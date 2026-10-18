@@ -37,6 +37,10 @@ DATA_SPLIT = EVAL_DIR / "data-split.yaml"
 RUN_CASE = EVAL_DIR / "run-case.sh"
 PLUGIN_DIR = EVAL_DIR / "plugin"
 REQUIRED_RUNS = 3
+# Hashed elsewhere (run-case.sh, data-split.yaml) or written by the gate itself.
+_NOT_INPUTS = {p.relative_to(EVAL_DIR)
+               for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_RECORD, DATA_SPLIT, RUN_CASE)}
+_SCRATCH_SUFFIXES = {".tmp", ".out", ".log"}
 
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
 _GATE_KEYS = ("plugin_eval", "plugin_eval_available")
@@ -181,6 +185,34 @@ def cases_sha256(workspace: Path, cases: list[str]) -> str:
         digest.update(case.encode() + b"\0")
         digest.update(tree_sha256(workspace / PLUGIN_DIR / "evals" / case).encode())
     return digest.hexdigest()
+
+
+def file_sha256(path: Path) -> str | None:
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
+
+
+def _gate_input(path: Path, ws: Path) -> bool:
+    rel = path.relative_to(ws)
+    if rel.parts[:2] != EVAL_DIR.parts:
+        return True
+    inner = rel.relative_to(EVAL_DIR)
+    return not (inner.parts[0] == PLUGIN_DIR.name or inner in _NOT_INPUTS or path.name.startswith(".")
+                or path.suffix in _SCRATCH_SUFFIXES or path.name.endswith(".prev.json"))
+
+
+def inputs_sha256(workspace: Path) -> dict[str, str]:
+    """sha256 of every file the gate cases can resolve to outside the suite: the gold standards and
+    fixtures under input/, and the scorers under work/evaluation/ (score scripts, rubrics, fixtures).
+    Skipped there: plugin/ (the skill and case hashes cover it), run-case.sh (hashed on its own), what
+    the gate writes, data-split.yaml (the case hash covers plugin_eval), dotfiles and *.tmp / *.out /
+    *.log scratch."""
+    found = {}
+    for root in (workspace / "input", workspace / EVAL_DIR):
+        if root.is_dir():
+            for path in root.rglob("*"):
+                if _hashed(path, root) and _gate_input(path, workspace):
+                    found[path.relative_to(workspace).as_posix()] = file_sha256(path)
+    return dict(sorted(found.items()))
 
 
 def write_json(path: Path, data: object) -> None:

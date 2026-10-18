@@ -585,6 +585,53 @@ class GateManualTest(TempWorkspace):
         self.assertEqual(self.run_script("gate.py", "--stop").returncode, 0)
         self.assertTrue(all(not _group_alive(r["pgid"]) for r in runs), "every running case was stopped")
 
+    def manual_gate(self) -> None:
+        self.make_build(["input-01"], invoked=False)
+        self.write_adapter()
+        (self.ws / "input").mkdir()
+        (self.ws / "input" / "po-01.json").write_text('{"approval": "director"}')
+        (self.ws / "work" / "evaluation" / "score.py").write_text("print('SCORE=1')\n")
+        out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        record = self.evaluation("gate.json")
+        self.assertEqual(sorted(record["inputs_sha256"]), ["input/po-01.json", "work/evaluation/score.py"])
+        self.assertEqual(record["artifact_sha256"],
+                         gate_common.file_sha256(self.ws / "work" / "evaluation" / "uplift.json"))
+
+    def assert_stale(self, changed: str) -> None:
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual(verdict["code"], "stale_inputs")
+        self.assertTrue(verdict["reason"].startswith("gate inputs changed since the gate; re-run 5.0"))
+        self.assertIn(changed, verdict["reason"])
+
+    def test_scratch_files_after_the_gate_are_not_inputs(self) -> None:
+        self.manual_gate()
+        evaluation = self.ws / "work" / "evaluation"
+        for scratch in (".cases.tmp", "check_gate.out", "notes.log", "uplift.prev.json"):
+            (evaluation / scratch).write_text("x")
+        self.assertEqual(self.run_script("check_gate.py").returncode, 0)
+
+    def test_adapter_edit_after_the_gate_is_stale(self) -> None:
+        self.manual_gate()
+        self.write_adapter(SCORING_ADAPTER.replace("SCORE=0.4", "SCORE=0.0"))
+        self.assert_stale("work/evaluation/run-case.sh")
+
+    def test_scorer_edit_after_the_gate_is_stale(self) -> None:
+        self.manual_gate()
+        (self.ws / "work" / "evaluation" / "score.py").write_text("print('SCORE=0')\n")
+        self.assert_stale("work/evaluation/score.py")
+
+    def test_fixture_edit_or_addition_after_the_gate_is_stale(self) -> None:
+        self.manual_gate()
+        (self.ws / "input" / "po-02.json").write_text("{}")
+        self.assert_stale("input/po-02.json")
+
+    def test_artifact_edit_after_the_gate_is_stale(self) -> None:
+        self.manual_gate()
+        path = self.ws / "work" / "evaluation" / "uplift.json"
+        path.write_text(path.read_text().replace("0.4", "0.1"))
+        self.assert_stale("uplift.json is not the artifact the gate wrote")
+
     def test_missing_adapter_is_a_precondition_error(self) -> None:
         self.make_build(["input-01"], invoked=False)
         out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
@@ -597,8 +644,12 @@ class CheckGateTest(TempWorkspace):
         record = {"mode": "manual", "skill": "demo", "cases": cases, "artifact": "work/evaluation/uplift.json",
                   "started": "2026-10-17T00:00:00+00:00", "finished": "2026-10-17T00:01:00+00:00" if finished else None}
         if hashed:
+            evaluation = self.ws / "work" / "evaluation"
             record |= {"skill_sha256": gate_common.skill_sha256(self.ws, "demo"),
-                       "cases_sha256": gate_common.cases_sha256(self.ws, cases)}
+                       "cases_sha256": gate_common.cases_sha256(self.ws, cases),
+                       "run_case_sha256": gate_common.file_sha256(evaluation / "run-case.sh"),
+                       "inputs_sha256": gate_common.inputs_sha256(self.ws),
+                       "artifact_sha256": gate_common.file_sha256(evaluation / "uplift.json")}
         (self.ws / "work" / "evaluation" / "gate.json").write_text(json.dumps(record))
 
     def write_uplift(self, cases: list[str], runs: int = 3, where: str = "work/evaluation", **extra: object) -> None:
@@ -610,8 +661,8 @@ class CheckGateTest(TempWorkspace):
 
     def gated(self, cases: list[str], **uplift: object) -> None:
         self.make_build(cases, invoked=False)
-        self.record_gate(cases)
         self.write_uplift(cases, **uplift)
+        self.record_gate(cases)
 
     def verdict(self) -> dict:
         return json.loads(self.run_script("check_gate.py", "--json").stdout)
@@ -644,9 +695,9 @@ class CheckGateTest(TempWorkspace):
 
     def test_partial_flag_must_be_present_and_false(self) -> None:
         self.make_build(["input-01"], invoked=False)
-        self.record_gate(["input-01"])
         path = self.ws / "work" / "evaluation" / "uplift.json"
         path.write_text(json.dumps({"cases": [{"case": "input-01", "with": [1.0] * 3, "without": [0.0] * 3}]}))
+        self.record_gate(["input-01"])
         self.assertIn('records no "partial": false', self.run_script("check_gate.py").stdout)
 
     def test_missing_artifact(self) -> None:
@@ -668,8 +719,8 @@ class CheckGateTest(TempWorkspace):
 
     def test_case_coverage_must_match_exactly(self) -> None:
         self.make_build(["input-01", "input-02"], invoked=False)
-        self.record_gate(["input-01", "input-02"])
         self.write_uplift(["input-01", "input-03"])
+        self.record_gate(["input-01", "input-02"])
         out = self.run_script("check_gate.py").stdout
         self.assertIn("missing ['input-02']", out)
         self.assertIn("unrecorded ['input-03']", out)
@@ -681,10 +732,10 @@ class CheckGateTest(TempWorkspace):
 
     def test_non_positive_delta_is_reported(self) -> None:
         self.make_build(["input-01"], invoked=False)
-        self.record_gate(["input-01"])
         path = self.ws / "work" / "evaluation" / "uplift.json"
         path.write_text(json.dumps({"cases": [{"case": "input-01", "with": [0.5] * 3, "without": [0.5] * 3}],
                                     "partial": False}))
+        self.record_gate(["input-01"])
         self.assertEqual(self.verdict()["non_positive"], ["input-01"])
 
 

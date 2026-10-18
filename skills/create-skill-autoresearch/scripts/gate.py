@@ -23,8 +23,9 @@ each eval run in its own owned process group, stopped on timeout.
           it prints SCORE=<0..1> as its last SCORE line -> work/evaluation/uplift.json
           (a failed run is retried once; a second failure leaves the artifact partial)
 
-It records the mode, the probe's exit code and sha256 hashes of output/<skill>/ and of the case set
-in work/evaluation/gate.json (check_gate.py fails once either changes), moves a previous artifact
+It records the mode, the probe's exit code and sha256 hashes of output/<skill>/, of the case set and,
+when the run finishes, of run-case.sh, the scorer and fixture files (gate_common.inputs_sha256) and
+the artifact in work/evaluation/gate.json (check_gate.py fails once any changes), moves a previous artifact
 aside to <name>.prev.json before running so a stale file can never pass, ends by running
 check_gate.py, and writes nothing outside work/evaluation/ and work/pids/.
 
@@ -63,7 +64,8 @@ import check_gate  # noqa: E402  (sibling imports after disabling bytecode)
 import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
-    GateError, cases_sha256, model_invoked, read_data_split, resolve_skill, skill_sha256, write_json,
+    GateError, cases_sha256, file_sha256, inputs_sha256, model_invoked, read_data_split, resolve_skill,
+    skill_sha256, write_json,
 )
 
 EXIT_INVALID = 1
@@ -299,7 +301,8 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         print("gate: stopped before it finished; gate.json records no finished run", file=sys.stderr)
         return EXIT_STOPPED
 
-    record["finished"] = _now()
+    record |= {"run_case_sha256": file_sha256(ws / RUN_CASE), "inputs_sha256": inputs_sha256(ws),
+               "artifact_sha256": file_sha256(ws / artifact), "finished": _now()}
     write_json(ws / GATE_RECORD, record)
     verdict = check_gate.validate(ws, skill, REQUIRED_RUNS)
     print(verdict.line())

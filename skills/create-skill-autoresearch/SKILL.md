@@ -358,7 +358,7 @@ would (log `work/pids/gate.log`), and refuses a second start while it runs. To r
 `gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the mode (plugin eval when
 `claude plugin eval --help` exits 0 and the skill is model-invoked, else the manual protocol through
 `run-case.sh`, which needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
-or `uplift.json` plus `gate.json` (hashes of the skill and cases) under `work/evaluation/`. Grant only the tools
+or `uplift.json` plus `gate.json` (hashes of skill, cases, scorers, fixtures, artifact) under `work/evaluation/`. Grant only the tools
 the skill needs. With 3-9 gold standards pass `--in-sample` (gate cases are training cases; `BENCHMARK.md` and
 the panel label Δ in-sample). A non-zero exit says why: fix the suite or `run-case.sh` and re-run; only
 `gate.py` writes the artifact. Its plugin-eval flags: [references/pipeline-phases.md](references/pipeline-phases.md).

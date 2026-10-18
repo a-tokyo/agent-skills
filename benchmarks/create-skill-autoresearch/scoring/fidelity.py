@@ -5,8 +5,9 @@ Per build (a run dir from arms/run-arm.sh):
   artifact          a gate artifact exists at its canonical path (work/evaluation/plugin-eval.json
                     or uplift.json in the build workspace: ws/, or work/ for runs before the rename)
   gate_valid        the factory's own validator, scripts/check_gate.py, exits 0 on that workspace
-  gate_code         its reason code (check_gate.py --json); `stale_skill` / `stale_cases` count as a stale
-                    gate: the skill or its cases changed after the gate ran. Older validators give none.
+  gate_code         its reason code (check_gate.py --json); `stale_skill` / `stale_cases` / `stale_inputs`
+                    count as a stale gate: the skill, its cases, or its scorer, fixtures or artifact
+                    changed after the gate ran. Older validators give none.
   kill_commands     commands the builder issued (tool_use `command` inputs in the session jsonl under
                     home/.claude/projects/, subagents included) containing pkill, killall, or a
                     pgrep-fed kill; text the builder merely read (tool results, skill files) is not counted
@@ -44,7 +45,7 @@ KILL_RE = re.compile(
 VERDICT_RE = re.compile(r"\b(UNSHIPPED|SHIP[ _]WITH[ _]CAVEATS|ITERATE|BLOCK|SHIP)\b")
 BELOW_TARGET = {"ITERATE", "BLOCK", "UNSHIPPED"}
 SHIPPED_VERDICTS = {"SHIP", "SHIP WITH CAVEATS"}
-STALE_CODES = {"stale_skill", "stale_cases"}
+STALE_CODES = {"stale_skill", "stale_cases", "stale_inputs"}
 SHIPPED_RE = re.compile(r"\bshipped\b", re.IGNORECASE)
 NEGATED_RE = re.compile(r"(?:\b(?:not|never|no longer)|n't)\s+(?:be\s+|been\s+|yet\s+)?$", re.IGNORECASE)
 DISCLAIMER_RE = re.compile(
