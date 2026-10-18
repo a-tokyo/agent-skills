@@ -3,7 +3,9 @@
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
-import { checkPurchaseOrder, checkCompliance, checkCraft, isExecutorFault, runWithRetry, aggregateExecution } from "./score-task2.mjs";
+import {
+  checkPurchaseOrder, checkCompliance, checkCraft, isExecutorFault, runWithRetry, aggregateExecution, INFRA_ERROR_RE,
+} from "./score-task2.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const key = JSON.parse(readFileSync(join(HERE, "..", "task-2", "holdout", "answer-key.json"), "utf8"));
@@ -37,8 +39,12 @@ expect("bad craft <= 0.5", checkCraft(bad).score <= 0.5);
 
 const ok = { poWritten: true, timedOut: false, code: 0, raw: "{}" };
 const fault = { poWritten: false, timedOut: false, code: 1, raw: "" };
+const spun = { poWritten: false, timedOut: true, code: null, raw: "", transcript: "Reading catalog.csv…\nThinking…" };
+const cutOff = { ...spun, transcript: "Reading catalog.csv…\nAPI Error: Connection closed" };
 expect("non-zero exit without po.json is a fault", isExecutorFault(fault));
-expect("timeout without po.json is a fault", isExecutorFault({ poWritten: false, timedOut: true, code: null }));
+expect("timeout without po.json or an infra error is scored", !isExecutorFault(spun));
+expect("timeout with an infra error is a fault", isExecutorFault(cutOff));
+expect("timeout without po.json scores 0", checkPurchaseOrder(spun.raw, Object.values(key)[0].expected).score === 0);
 expect("non-zero exit with po.json is scored", !isExecutorFault({ poWritten: true, timedOut: false, code: 1 }));
 expect("clean exit without po.json is scored", !isExecutorFault({ poWritten: false, timedOut: false, code: 0 }));
 const seq = (...outs) => { let i = 0; return async () => outs[i++]; };
@@ -48,6 +54,14 @@ const twice = await runWithRetry(seq(fault, fault));
 expect("two faults are an env failure", twice.attempts === 2 && twice.envFailure);
 const clean = await runWithRetry(seq(ok, fault));
 expect("a clean run is not retried", clean.attempts === 1 && !clean.envFailure);
+const slow = await runWithRetry(seq(spun, spun));
+expect("a timeout keeps its one retry, then scores 0", slow.attempts === 2 && !slow.envFailure && !slow.poWritten);
+const recovered = await runWithRetry(seq(spun, ok));
+expect("a timeout retried into a clean run is scored", recovered.attempts === 2 && recovered.poWritten);
+const infra = await runWithRetry(seq(cutOff, cutOff));
+expect("two infra timeouts are an env failure", infra.attempts === 2 && infra.envFailure);
+const armPattern = readFileSync(join(HERE, "..", "arms", "run-arm.sh"), "utf8").match(/grep -qiE '([^']+)'/)?.[1];
+expect("infra patterns match run-arm.sh", armPattern === INFRA_ERROR_RE.source && INFRA_ERROR_RE.flags === "i");
 const one = { score: 1 };
 const agg = aggregateExecution([
   { id: "h1", r: 0, envFailure: false, result: one }, { id: "h1", r: 1, envFailure: true, result: { score: 0 } },

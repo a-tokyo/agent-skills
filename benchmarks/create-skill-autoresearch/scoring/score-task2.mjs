@@ -13,8 +13,10 @@
 //   craft      0.10  — deterministic hybrid-architecture and description checks
 //
 // Execution needs ANTHROPIC_API_KEY or CLAUDE_CODE_OAUTH_TOKEN; compliance/craft run without them.
-// An executor run that times out or exits non-zero without writing po.json is an executor fault, not a
-// skill score: it is retried once, and a second fault is an env failure — excluded and reported, never 0.
+// An executor run that times out or exits non-zero without writing po.json is retried once. A second run
+// that exits non-zero without po.json, or times out with an infrastructure error (run-arm.sh's API/network
+// patterns) in its transcript, is an env failure — excluded and reported, never 0. A second timeout
+// without one is the skill's result and scores 0.
 // If no case has a scored run left, no overall_score is printed and the process exits 75.
 
 import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync, statSync } from "node:fs";
@@ -191,13 +193,22 @@ function runAgent(skillDir, skillName, caseInput, auth) {
   });
 }
 
-// Pure: a run that wrote no po.json after a timeout or a non-zero exit measured the environment, not the skill.
-export const isExecutorFault = ({ poWritten, timedOut, code }) => !poWritten && (timedOut || code !== 0);
+// The infrastructure-error patterns arms/run-arm.sh greps build transcripts for; selftest-task2 keeps them equal.
+export const INFRA_ERROR_RE =
+  /ENOTFOUND|ECONNREFUSED|ECONNRESET|ETIMEDOUT|EAI_AGAIN|network error|socket hang up|503 Service|429 Too Many|fetch failed|API Error: Connection closed|overloaded_error/i;
 
-// Runs one executor job via `attempt(n)`, retrying an executor fault once; a second fault is an env failure.
+// Pure: a run without po.json is worth one retry when it timed out or exited non-zero.
+export const isRetryable = ({ poWritten, timedOut, code }) => !poWritten && (timedOut || code !== 0);
+
+// Pure: a run without po.json measured the environment, not the skill, when it exited non-zero, or when it
+// timed out with an infrastructure error in its transcript. A timeout without one is the skill's: it scores 0.
+export const isExecutorFault = ({ poWritten, timedOut, code, transcript = "" }) =>
+  !poWritten && (timedOut ? INFRA_ERROR_RE.test(transcript) : code !== 0);
+
+// Runs one executor job via `attempt(n)`, retrying a retryable run once; a second fault is an env failure.
 export async function runWithRetry(attempt) {
   const first = await attempt(0);
-  if (!isExecutorFault(first)) return { ...first, attempts: 1, envFailure: false };
+  if (!isRetryable(first)) return { ...first, attempts: 1, envFailure: false };
   const second = await attempt(1);
   return { ...second, attempts: 2, envFailure: isExecutorFault(second) };
 }
