@@ -12,9 +12,14 @@ records `"partial": false`:
 
 An artifact without a finished gate.py record never passes: only gate.py writes the artifact.
 
-On success it prints `GATE VALID: ...` with the mean delta and the delta<=0 list over gold-standard
-cases only; should-trigger and near-miss cases (plugin mode: a `tool_used` grader on `Skill`, `max: 0`
-for a near miss) are reported apart, as how often the skill fired / stayed quiet. On failure it
+Cases are classed by their graders. A case is gold when it has any score-bearing grader (anything but
+`tool_used` on `Skill`), whatever Skill indicator it also carries; every manual-mode case is gold.
+Only a case whose sole graders are `tool_used` on `Skill` is a should-trigger indicator (`max: 0`: a
+near miss). Every gold case needs a numeric delta, and when data-split.yaml records gold standards
+(`all_cases`, `training`, `validation` or `test`) at least one case must be gold.
+
+On success it prints `GATE VALID: ...` with the mean delta and the delta<=0 list over gold cases
+only; indicators are reported apart, as how often the skill fired / stayed quiet. On failure it
 prints `GATE INVALID: <reason>`. --json prints the same verdict as JSON, with a stable `code`.
 
     check_gate.py [--workspace DIR] [--skill NAME] [--min-runs N] [--json]
@@ -123,13 +128,17 @@ def _coverage(recorded: list[str], names: list[str]) -> None:
                                   f"missing {missing or 'none'}, unrecorded {extra or 'none'}")
 
 
-def _skill_grader(case: dict) -> dict | None:
-    """The case's `tool_used` grader on `Skill`, which marks a should-trigger or near-miss case."""
-    for grader in case.get("graders") or []:
-        if not isinstance(grader, dict) or grader.get("type") != "tool_used":
-            continue
-        if (grader.get("config") or {}).get("tool") == "Skill":
-            return grader
+def _is_skill_grader(grader: object) -> bool:
+    return (isinstance(grader, dict) and grader.get("type") == "tool_used"
+            and (grader.get("config") or {}).get("tool") == "Skill")
+
+
+def _indicator_grader(case: dict) -> dict | None:
+    """The case's `tool_used` grader on `Skill` when that is all the case grades: a should-trigger or
+    near-miss indicator. A case with any other grader is gold, whatever Skill indicator it also has."""
+    graders = case.get("graders") or []
+    if graders and all(_is_skill_grader(g) for g in graders):
+        return next((g for g in graders if (g.get("config") or {}).get("max") == 0), graders[0])
     return None
 
 
@@ -157,8 +166,12 @@ def _plugin(data: dict, recorded: list[str], min_runs: int) -> list[CaseResult]:
                 raise Invalid("too_few_runs", f"case {name!r} arm {arm!r} has {len(done[arm])} completed runs; "
                                               f"{min_runs} required")
         delta = (case.get("aggregates") or {}).get("delta")
-        result = CaseResult(name, float(delta) if isinstance(delta, (int, float)) else None)
-        grader = _skill_grader(case)
+        numeric = isinstance(delta, (int, float)) and not isinstance(delta, bool)
+        result = CaseResult(name, float(delta) if numeric else None)
+        grader = _indicator_grader(case)
+        if grader is None and not numeric:
+            raise Invalid("no_delta", f"gold case {name!r} has no numeric with/without delta ({delta!r}); "
+                                      "re-run the gate")
         if grader is not None:
             if (grader.get("config") or {}).get("max") == 0:
                 runs = done["with"] + done["without"]
@@ -219,6 +232,10 @@ def validate(workspace: Path, skill: str | None = None, min_runs: int = REQUIRED
         if not isinstance(data, dict):
             raise Invalid("bad_artifact", f"{rel} is not a JSON object")
         results = (_plugin if mode == "plugin" else _manual)(data, split.plugin_eval, min_runs)
+        if split.gold_recorded and not any(r.kind == "gold" for r in results):
+            raise Invalid("no_gold", f"{DATA_SPLIT} records gold standards but no gate case is a gold case "
+                                     "(every case grades only `tool_used` on Skill); 3.6 adds one per gate "
+                                     "gold standard")
     except Invalid as exc:
         return Verdict(False, mode, None if rel is None else str(rel), exc.reason, code=exc.code)
 

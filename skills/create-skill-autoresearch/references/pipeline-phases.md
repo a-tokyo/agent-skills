@@ -360,7 +360,8 @@ pattern: "\"approval\":\\s*\"director\""
 ```
 
 ```yaml
-# graders/skill-fired.md — a with-arm indicator; excluded from the with/without score
+# graders/skill-fired.md — a with-arm indicator, excluded from the with/without score; approval.md is
+# score-bearing, so holdout-03 stays a gold case (only a case graded by nothing but Skill is an indicator)
 ---
 type: tool_used
 tool: Skill
@@ -418,9 +419,12 @@ interpreter caches excluded), move a previous artifact to `<name>.prev.json` fir
 pass, and end by running `check_gate.py`. It exits 0 only when `gate.json` records a finished run whose hashes
 still match, and the artifact says `"partial": false`, covers exactly the recorded cases and has at least 3
 runs per arm. Any edit to the skill or the suite after the gate fails it: "skill changed since the gate;
-re-run 5.0". Its `GATE VALID:` line gives the mean Δ and the Δ <= 0 list over gold-standard cases only;
-should-trigger cases (a `tool_used` grader on `Skill`) report how many with-arm runs fired the skill, and
-near misses (`max: 0`) how many runs in both arms left it quiet. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
+re-run 5.0". A case is gold when any of its graders is score-bearing (anything but `tool_used` on
+`Skill`), even if it also carries a Skill indicator; every gold case needs a numeric Δ, and when
+`data-split.yaml` records gold standards a gate with no gold case fails (`no_gold`). Its `GATE VALID:`
+line gives the mean Δ and the Δ <= 0 list over gold cases only; should-trigger cases (graded only by
+`tool_used` on `Skill`) report how many with-arm runs fired the skill, and near misses (`max: 0`) how
+many runs in both arms left it quiet. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
 of 0 while `skill-fired` passes means the skill fired but could not act — check the tool grants and the
 fixtures first. The 1-run artifact never passes `check_gate.py`; the full run replaces it.
 

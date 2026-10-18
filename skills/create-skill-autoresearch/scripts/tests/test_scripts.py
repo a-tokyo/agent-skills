@@ -25,8 +25,9 @@ import gate_common  # noqa: E402
 
 FAKE_CLAUDE = textwrap.dedent('''\
     #!/usr/bin/env python3
-    """Fake `claude plugin eval`; behaviour from FAKE_MODE: complete | partial | hang | fewruns | silent.
-    Cases named trigger-* get a skill-fired grader, near-miss* a not-fired one (max 0)."""
+    """Fake `claude plugin eval`; behaviour from FAKE_MODE: complete | partial | hang | fewruns | silent |
+    nodelta (gold cases report a null delta). Cases named trigger-* get only a skill-fired grader,
+    near-miss* only a not-fired one (max 0), holdout-* the worked case's approval regex plus skill-fired."""
     import json, os, sys, time
     from pathlib import Path
     args = sys.argv[1:]
@@ -57,11 +58,21 @@ FAKE_CLAUDE = textwrap.dedent('''\
             run = {"score": 1, "error": None, "graders": [{"name": "not-fired", "passed": True}]}
             return {"name": name, "graders": [grader], "arms": {"with": [run] * runs, "without": [run] * runs},
                     "aggregates": {"delta": 0}}
+        delta = None if mode == "nodelta" else 0.5
+        if name.startswith("holdout"):
+            graders = [{"name": "approval", "type": "regex",
+                        "config": {"target": {"source": "file", "path": "po.json"}, "pattern": "director"}},
+                       {"name": "skill-fired", "type": "tool_used", "config": {"tool": "Skill"}}]
+            good = {"score": 1, "error": None, "graders": [{"name": "approval", "passed": True},
+                                                            {"name": "skill-fired", "passed": True}]}
+            bare = {"score": 0.6, "error": None, "graders": [{"name": "approval", "passed": False}]}
+            return {"name": name, "graders": graders, "arms": {"with": [good] * runs, "without": [bare] * runs},
+                    "aggregates": {"delta": None if mode == "nodelta" else 0.4}}
         grader = {"name": "fact", "type": "regex", "config": {}}
         good = {"score": 1, "error": None, "graders": [{"name": "fact", "passed": True}]}
         bare = {"score": 0.5, "error": None, "graders": [{"name": "fact", "passed": False}]}
         return {"name": name, "graders": [grader], "arms": {"with": [good] * runs, "without": [bare] * runs},
-                "aggregates": {"delta": 0.5}}
+                "aggregates": {"delta": delta}}
 
     cases = sorted(p.name for p in Path("evals").iterdir() if (p / "prompt.md").is_file())
     data = {
@@ -137,7 +148,8 @@ class TempWorkspace(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def make_build(self, cases: list[str], invoked: bool = True, ws: Path | None = None) -> None:
+    def make_build(self, cases: list[str], invoked: bool = True, ws: Path | None = None,
+                   training: str = "[]") -> None:
         ws = ws or self.ws
         skill = ws / "output" / "demo"
         skill.mkdir(parents=True)
@@ -147,7 +159,7 @@ class TempWorkspace(unittest.TestCase):
         evaluation.mkdir(parents=True)
         listed = "\n".join(f'  - "{c}"' for c in cases)
         (evaluation / "data-split.yaml").write_text(
-            f"training: []\nplugin_eval_available: 0  # probe exit code\nplugin_eval:\n{listed}\n")
+            f"training: {training}\nplugin_eval_available: 0  # probe exit code\nplugin_eval:\n{listed}\n")
         plugin = evaluation / "plugin"
         (plugin / ".claude-plugin").mkdir(parents=True)
         (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "demo-eval", "version": "0.0.0"}')
@@ -307,6 +319,11 @@ class DataSplitReaderTest(TempWorkspace):
         self.assertIn("twice", self.read("plugin_eval: [a, a]\n").plugin_eval_error)
         self.assertEqual(self.read("plugin_eval_available: manual\n").plugin_eval_available, "manual")
 
+    def test_gold_standards_are_recorded_by_any_split_key(self) -> None:
+        self.assertFalse(self.read("training: []\nplugin_eval: [a]\n").gold_recorded)
+        self.assertTrue(self.read("test: [input/g1.md]\nplugin_eval: [a]\n").gold_recorded)
+        self.assertTrue(self.read("all_cases:\n  - input/g1.md\nplugin_eval: [a]\n").gold_recorded)
+
 
 class TreeHashTest(TempWorkspace):
     def test_hash_covers_paths_and_contents_but_not_caches(self) -> None:
@@ -359,6 +376,34 @@ class GatePluginTest(TempWorkspace):
         line = self.run_script("check_gate.py").stdout
         self.assertIn("gold=2 mean gold delta=+0.500; gold delta<=0: none; "
                       "trigger fired (with arm): trigger-1 3/3; near-miss quiet: near-miss 6/6", line)
+
+    def test_worked_case_with_a_skill_indicator_stays_gold(self) -> None:
+        cases = ["holdout-03", "near-miss", "trigger-1"]
+        self.make_build(cases, training='["input/holdout-03.md"]')
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertTrue(verdict["valid"], verdict["reason"])
+        self.assertEqual((verdict["gold_cases"], verdict["mean_delta"]), (1, 0.4),
+                         "approval.md is score-bearing, so skill-fired does not make holdout-03 an indicator")
+        self.assertNotIn("holdout-03", verdict["triggers"])
+        self.assertEqual(verdict["triggers"], {"trigger-1": "3/3"})
+
+    def test_indicators_only_fail_when_gold_standards_are_recorded(self) -> None:
+        self.make_build(["near-miss", "trigger-1"], training="\n  - input/gold-01.md")
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 1)
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual(verdict["code"], "no_gold")
+
+    def test_indicators_only_pass_without_recorded_gold_standards(self) -> None:
+        self.make_build(["near-miss", "trigger-1"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+
+    def test_gold_case_needs_a_numeric_delta(self) -> None:
+        self.make_build(["holdout-03", "trigger-1"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m", FAKE_MODE="nodelta").returncode, 1)
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual(verdict["code"], "no_delta")
+        self.assertIn("'holdout-03'", verdict["reason"])
 
     def test_skill_change_after_the_gate_is_stale(self) -> None:
         self.make_build(self.CASES)

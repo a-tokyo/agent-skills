@@ -12,7 +12,8 @@ reader for exactly two top-level keys of work/evaluation/data-split.yaml:
 
 Case names are strings (quotes optional, `#` comments stripped). Any other shape for
 `plugin_eval` (a mapping, a multi-line flow list, a scalar) is reported as an error rather
-than guessed at.
+than guessed at. Of the split keys (`all_cases`, `training`, `validation`, `test`) it reads only
+whether any holds a value: that is how check_gate.py knows the build has gold standards.
 
 `tree_sha256` hashes a directory's sorted relative paths and file contents, skipping interpreter
 caches (`__pycache__/`, `*.pyc`) and `.DS_Store`, which running a skill's scripts or browsing it in
@@ -37,6 +38,8 @@ RUN_CASE = EVAL_DIR / "run-case.sh"
 PLUGIN_DIR = EVAL_DIR / "plugin"
 REQUIRED_RUNS = 3
 
+GOLD_KEYS = ("all_cases", "training", "validation", "test")
+_GATE_KEYS = ("plugin_eval", "plugin_eval_available")
 _TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
 _INT = re.compile(r"^-?\d+$")
 
@@ -50,6 +53,7 @@ class DataSplit:
     plugin_eval: list[str] | None
     plugin_eval_error: str | None
     plugin_eval_available: int | str | None
+    gold_recorded: bool = False
 
 
 def _strip_comment(line: str) -> str:
@@ -102,7 +106,7 @@ def read_data_split(path: Path) -> DataSplit:
     found: dict[str, tuple[str, list[str]]] = {}
     for i, line in enumerate(lines):
         match = _TOP_KEY.match(line)
-        if not match or match.group(1) not in ("plugin_eval", "plugin_eval_available"):
+        if not match or match.group(1) not in _GATE_KEYS + GOLD_KEYS:
             continue
         block = []
         for nxt in lines[i + 1:]:
@@ -120,7 +124,9 @@ def read_data_split(path: Path) -> DataSplit:
     if "plugin_eval_available" in found:
         raw = _unquote(found["plugin_eval_available"][0])
         available = int(raw) if _INT.match(raw) else raw
-    return DataSplit(plugin_eval=cases, plugin_eval_error=error, plugin_eval_available=available)
+    gold = any(value not in ("", "[]") or block for key, (value, block) in found.items() if key in GOLD_KEYS)
+    return DataSplit(plugin_eval=cases, plugin_eval_error=error, plugin_eval_available=available,
+                     gold_recorded=gold)
 
 
 def resolve_skill(workspace: Path, skill: str | None) -> str:
