@@ -2,7 +2,7 @@
 the hashes that bind a gate run to the skill and cases it ran.
 
 No PyYAML (the factory bundles stdlib-only scripts), so `read_data_split` is a deliberately small
-reader for exactly two top-level keys of work/evaluation/data-split.yaml:
+reader for a few top-level keys of work/evaluation/data-split.yaml:
 
     plugin_eval_available: 0          # an integer; anything else is kept as a string
     plugin_eval: [case-a, "case-b"]   # a one-line flow list, or a block list:
@@ -12,8 +12,11 @@ reader for exactly two top-level keys of work/evaluation/data-split.yaml:
 
 Case names are strings (quotes optional, `#` comments stripped). Any other shape for
 `plugin_eval` (a mapping, a multi-line flow list, a scalar) is reported as an error rather
-than guessed at. Of the split keys (`all_cases`, `training`, `validation`, `test`) it reads only
-whether any holds a value: that is how check_gate.py knows the build has gold standards.
+than guessed at. The split keys (`all_cases`, `training`, `validation`, `test`) are read the same
+way: whether any holds a value tells check_gate.py the build has gold standards, and their entries
+are the manual protocol's gate cases. `write_gate_cases` rewrites `plugin_eval` and
+`plugin_eval_available` in place and leaves every other line as it was; `gate.py record` is its
+only caller.
 
 `tree_sha256` hashes a directory's sorted relative paths and file contents, skipping interpreter
 caches (`__pycache__/`, `*.pyc`) and `.DS_Store`, which running a skill's scripts or browsing it in
@@ -26,7 +29,7 @@ import hashlib
 import json
 import os
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 EVAL_DIR = Path("work") / "evaluation"
@@ -58,6 +61,18 @@ class DataSplit:
     plugin_eval_error: str | None
     plugin_eval_available: int | str | None
     gold_recorded: bool = False
+    gold: dict[str, list[str]] = field(default_factory=dict)
+    gold_error: str | None = None
+
+    def gate_gold(self) -> list[str]:
+        """The gold standards the gate runs (SKILL.md 3.6): the test split when it lists any (10 or more
+        gold standards), otherwise every gold standard across all_cases, training and validation."""
+        if self.gold.get("test"):
+            return list(self.gold["test"])
+        seen: dict[str, None] = {}
+        for key in ("all_cases", "training", "validation"):
+            seen.update(dict.fromkeys(self.gold.get(key, [])))
+        return list(seen)
 
 
 def _strip_comment(line: str) -> str:
@@ -80,26 +95,26 @@ def _unquote(token: str) -> str:
     return token
 
 
-def _parse_list(value: str, block: list[str]) -> tuple[list[str] | None, str | None]:
+def _parse_list(value: str, block: list[str], key: str = "plugin_eval") -> tuple[list[str] | None, str | None]:
     if value.startswith("["):
         if not value.endswith("]"):
-            return None, "plugin_eval flow list must open and close on one line"
+            return None, f"{key} flow list must open and close on one line"
         items = [_unquote(t) for t in value[1:-1].split(",")] if value[1:-1].strip() else []
     elif value.startswith("{"):
-        return None, f"plugin_eval is a mapping ({value!r}), not a list of case names"
+        return None, f"{key} is a mapping ({value!r}), not a list of case names"
     elif value:
-        return None, f"plugin_eval is a scalar ({value!r}), not a list of case names"
+        return None, f"{key} is a scalar ({value!r}), not a list of case names"
     else:
         items = []
         for raw in block:
             item = raw.strip()
             if not item.startswith("- "):
-                return None, f"plugin_eval must be a list of case names; found {item!r}"
+                return None, f"{key} must be a list of case names; found {item!r}"
             items.append(_unquote(item[2:]))
     if any(not item for item in items):
-        return None, "plugin_eval has an empty case name"
+        return None, f"{key} has an empty case name"
     if len(set(items)) != len(items):
-        return None, "plugin_eval lists a case twice"
+        return None, f"{key} lists a case twice"
     return items, None
 
 
@@ -128,9 +143,48 @@ def read_data_split(path: Path) -> DataSplit:
     if "plugin_eval_available" in found:
         raw = _unquote(found["plugin_eval_available"][0])
         available = int(raw) if _INT.match(raw) else raw
-    gold = any(value not in ("", "[]") or block for key, (value, block) in found.items() if key in GOLD_KEYS)
+    recorded = any(value not in ("", "[]") or block for key, (value, block) in found.items() if key in GOLD_KEYS)
+    gold, gold_error = {}, None
+    for key in GOLD_KEYS:
+        if key in found:
+            items, err = _parse_list(*found[key], key=key)
+            if err:
+                gold_error = gold_error or err
+            else:
+                gold[key] = items
     return DataSplit(plugin_eval=cases, plugin_eval_error=error, plugin_eval_available=available,
-                     gold_recorded=gold)
+                     gold_recorded=recorded, gold=gold, gold_error=gold_error)
+
+
+def _block_end(lines: list[str], start: int) -> int:
+    """Index after the key at `start` and its indented block (trailing blank lines stay outside)."""
+    end = start + 1
+    for i in range(start + 1, len(lines)):
+        if not lines[i].strip():
+            continue
+        if not lines[i][0].isspace():
+            break
+        end = i + 1
+    return end
+
+
+def write_gate_cases(path: Path, cases: list[str], available: int, source: str) -> None:
+    """Rewrite `plugin_eval` (as a block list) and `plugin_eval_available` in data-split.yaml, keeping
+    every other line; append them when absent. Creates the file when it does not exist."""
+    lines = path.read_text().splitlines() if path.is_file() else []
+    new = {
+        "plugin_eval_available": [f"plugin_eval_available: {available}  # exit code of `claude plugin eval --help`"],
+        "plugin_eval": [f"plugin_eval:  # written by scripts/gate.py record from {source}; re-run it, never edit"]
+                       + [f"  - {json.dumps(case)}" for case in cases],
+    }
+    for key, block in new.items():
+        at = next((i for i, line in enumerate(lines)
+                   if (m := _TOP_KEY.match(_strip_comment(line))) and m.group(1) == key), None)
+        if at is None:
+            lines += block
+        else:
+            lines[at:_block_end(lines, at)] = block
+    write_text(path, "\n".join(lines) + "\n")
 
 
 def resolve_skill(workspace: Path, skill: str | None) -> str:
@@ -215,7 +269,11 @@ def inputs_sha256(workspace: Path) -> dict[str, str]:
     return dict(sorted(found.items()))
 
 
-def write_json(path: Path, data: object) -> None:
+def write_text(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(json.dumps(data, indent=2) + "\n")
+    tmp.write_text(text)
     os.replace(tmp, path)
+
+
+def write_json(path: Path, data: object) -> None:
+    write_text(path, json.dumps(data, indent=2) + "\n")

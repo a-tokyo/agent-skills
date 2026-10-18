@@ -17,8 +17,19 @@ off, the job keeps running. A second start while a `gate` job is live is refused
 or stopping a running gate, when one is missing.
 
 Mode: `plugin` when `claude plugin eval --help` exits 0 and the skill is model-invoked, otherwise
-`manual`. Both run the gate cases recorded under `plugin_eval` in work/evaluation/data-split.yaml,
-each eval run in its own owned process group, stopped on timeout.
+`manual`. The case list is never typed by hand: `gate.py record` (3.6) writes `plugin_eval` and
+`plugin_eval_available` into work/evaluation/data-split.yaml from disk, and every gate run records
+again before it starts, so the list always matches what runs:
+
+  plugin  every case directory under work/evaluation/plugin/evals/, after a zero-cost load check
+          (`claude plugin eval . --max-cost-usd 0`) that fails on any case file plugin eval cannot
+          load — it would skip that case and the artifact would miss it
+  manual  the gate gold standards from the split: `test` when it lists any, else every entry of
+          `all_cases`, `training` and `validation`; run-case.sh gets each entry as its <case>
+
+    gate.py record [--workspace DIR] [--skill NAME]     # exit 0 recorded, 3 precondition missing
+
+Each eval run goes in its own owned process group, stopped on timeout.
 
   plugin  refresh work/evaluation/plugin/skills/<skill>/ from output/<skill>/, then run
           `claude plugin eval .` with and without the skill -> work/evaluation/plugin-eval.json
@@ -54,6 +65,7 @@ import shutil
 import signal
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor
@@ -68,7 +80,7 @@ import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
     GateError, cases_sha256, file_sha256, inputs_sha256, model_invoked, read_data_split, resolve_skill,
-    skill_sha256, write_json,
+    skill_sha256, write_gate_cases, write_json,
 )
 
 EXIT_INVALID = 1
@@ -82,6 +94,8 @@ CHILD_GRACE = 10
 WAIT_HINT_SECONDS = 540
 SCORE_RE = re.compile(r"^SCORE=(\S+)\s*$", re.MULTILINE)
 SCAFFOLD_RE = re.compile(r"^\s*scaffold_script:\s*(\S.*)$")
+NAME_RE = re.compile(r"^name:\s*(\S.*)$")
+LOAD_CHECK_TIMEOUT = 120
 ATTEMPTS = 2
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -115,9 +129,83 @@ def _set_aside(path: Path) -> None:
         os.replace(path, path.with_name(path.stem + ".prev.json"))
 
 
-def _eval_case_dirs(evals: Path) -> list[str]:
-    return sorted(p.name for p in evals.iterdir()
-                  if p.is_dir() and ((p / "case.yaml").is_file() or (p / "prompt.md").is_file()))
+def _is_case(path: Path) -> bool:
+    return path.is_dir() and ((path / "case.yaml").is_file() or (path / "prompt.md").is_file())
+
+
+def _case_yaml_name(case_yaml: Path) -> str | None:
+    for line in case_yaml.read_text().splitlines():
+        match = NAME_RE.match(line)
+        if match:
+            return match.group(1).split(" #")[0].strip().strip("\"'") or None
+    return None
+
+
+def suite_cases(ws: Path) -> list[str]:
+    """The case directories under plugin/evals/, as claude plugin eval runs them: one directory per
+    case, named like its case.yaml `name:`. Raises GateError on a layout it would run differently."""
+    plugin = ws / PLUGIN_DIR
+    evals = plugin / "evals"
+    if not (plugin / ".claude-plugin" / "plugin.json").is_file() or not evals.is_dir():
+        raise GateError(f"{PLUGIN_DIR} needs .claude-plugin/plugin.json and evals/ (scaffold the suite in 3.6)")
+    cases = sorted(p.name for p in evals.iterdir() if _is_case(p))
+    nested = sorted({p.parent.relative_to(evals).as_posix() for marker in ("case.yaml", "prompt.md")
+                     for p in evals.rglob(marker)
+                     if len(p.relative_to(evals).parts) > 2
+                     and p.relative_to(evals).parts[0] not in (*cases, "results")})
+    if nested:
+        raise GateError(f"nested eval cases {nested}: keep one directory per case directly under evals/")
+    renamed = [f"{c} (name: {n})" for c in cases if (c_yaml := evals / c / "case.yaml").is_file()
+               and (n := _case_yaml_name(c_yaml)) not in (None, c)]
+    if renamed:
+        raise GateError(f"case.yaml `name:` differs from its directory: {', '.join(renamed)}; rename one")
+    if not cases:
+        raise GateError(f"no eval cases under {PLUGIN_DIR / 'evals'} (scaffold them in 3.6)")
+    return cases
+
+
+def load_check(ws: Path) -> None:
+    """Load every case file with a zero cost ceiling: claude plugin eval reports each case file it cannot
+    load (a `✗` line) and stops before the first run, spending nothing. A case that fails to load is
+    otherwise skipped silently and the artifact misses it. Fails only on reported load errors."""
+    with tempfile.TemporaryDirectory(prefix="gate-load-check-") as tmp:
+        cmd = ["claude", "plugin", "eval", ".", "--max-cost-usd", "0", "--ablation", "none", "--trust-plugin",
+               "--no-publish", "--output-dir", tmp, "--report", str(Path(tmp) / "report.html"),
+               "--json", str(Path(tmp) / "load-check.json")]
+        try:
+            out = subprocess.run(cmd, cwd=ws / PLUGIN_DIR, stdin=subprocess.DEVNULL, capture_output=True,
+                                 text=True, timeout=LOAD_CHECK_TIMEOUT)
+        except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
+            print(f"gate: load check skipped ({exc})", file=sys.stderr)
+            return
+    failed = [line[2:].strip() for line in (out.stdout + out.stderr).splitlines() if line.startswith("✗ ")]
+    if failed:
+        raise GateError(f"{len(failed)} case file(s) fail to load, so claude plugin eval would skip them; fix "
+                        "and re-run:\n  " + "\n  ".join(failed))
+    if out.returncode not in (0, 1, 2):
+        print(f"gate: load check exited {out.returncode} without naming a case; continuing", file=sys.stderr)
+
+
+def record_cases(ws: Path, skill: str) -> tuple[list[str], str, int, bool]:
+    """Write the gate's case list into data-split.yaml from what is on disk: (cases, mode, probe exit
+    code, model-invoked). Plugin mode lists the suite's case directories after a load check; manual mode
+    lists the gate gold standards from the split (3.6)."""
+    available = probe_plugin_eval()
+    invoked = model_invoked(ws / "output" / skill / "SKILL.md")
+    mode = "plugin" if available == 0 and invoked else "manual"
+    if mode == "plugin":
+        cases, source = suite_cases(ws), str(PLUGIN_DIR / "evals")
+        load_check(ws)
+    else:
+        split = read_data_split(ws / DATA_SPLIT)
+        if split.gold_error:
+            raise GateError(f"{DATA_SPLIT}: {split.gold_error}")
+        cases, source = split.gate_gold(), "the gold standards in this file"
+        if not cases:
+            raise GateError(f"{DATA_SPLIT} lists no gold standards (all_cases, training, validation or test; "
+                            "4.2); the manual protocol runs one gate case per gold standard")
+    write_gate_cases(ws / DATA_SPLIT, cases, available, source)
+    return cases, mode, available, invoked
 
 
 def run_owned_job(sdir: Path, name: str, cmd: list[str], cwd: Path, timeout: float,
@@ -179,20 +267,6 @@ def check_scaffolds(ws: Path, cases: list[str]) -> None:
         raise GateError(f"scaffold_script not found (relative to the case directory): {', '.join(missing)}")
 
 
-def check_suite(ws: Path, cases: list[str]) -> None:
-    plugin = ws / PLUGIN_DIR
-    evals = plugin / "evals"
-    if not (plugin / ".claude-plugin" / "plugin.json").is_file() or not evals.is_dir():
-        raise GateError(f"{PLUGIN_DIR} needs .claude-plugin/plugin.json and evals/ (scaffold the suite in 3.6)")
-    on_disk = _eval_case_dirs(evals)
-    missing = [c for c in cases if c not in on_disk]
-    extra = [c for c in on_disk if c not in cases]
-    if missing or extra:
-        raise GateError(f"evals/ and data-split.yaml plugin_eval disagree: recorded but absent {missing or 'none'}, "
-                        f"present but unrecorded {extra or 'none'}")
-    check_scaffolds(ws, cases)
-
-
 def check_adapter(ws: Path, args: argparse.Namespace) -> None:
     adapter = ws / RUN_CASE
     if not adapter.is_file() or not os.access(adapter, os.X_OK):
@@ -203,20 +277,14 @@ def check_adapter(ws: Path, args: argparse.Namespace) -> None:
 
 def preconditions(ws: Path, args: argparse.Namespace) -> tuple[str, list[str], str, int, bool]:
     """Everything the gate needs before it runs: (skill, cases, mode, probe exit code, model-invoked).
-    Raises GateError naming the first missing piece."""
+    Re-records the case list from disk first, so the gate never runs a hand-edited list. Raises
+    GateError naming the first missing piece."""
     skill = resolve_skill(ws, args.skill)
-    split = read_data_split(ws / DATA_SPLIT)
-    if not split.plugin_eval:
-        raise GateError(f"{DATA_SPLIT}: {split.plugin_eval_error or 'plugin_eval records no gate cases'}")
-    available = probe_plugin_eval()
-    invoked = model_invoked(ws / "output" / skill / "SKILL.md")
-    mode = "plugin" if available == 0 and invoked else "manual"
-    if mode == "plugin":
-        check_suite(ws, split.plugin_eval)
-    else:
-        check_scaffolds(ws, split.plugin_eval)
+    cases, mode, available, invoked = record_cases(ws, skill)
+    check_scaffolds(ws, cases)
+    if mode == "manual":
         check_adapter(ws, args)
-    return skill, split.plugin_eval, mode, available, invoked
+    return skill, cases, mode, available, invoked
 
 
 def run_plugin(ws: Path, skill: str, args: argparse.Namespace) -> None:
@@ -235,6 +303,10 @@ def run_plugin(ws: Path, skill: str, args: argparse.Namespace) -> None:
         print(f"gate: claude plugin eval timed out after {args.timeout:g}s and was stopped; log: {log}", file=sys.stderr)
     elif rc != 0:
         print(f"gate: claude plugin eval exited {rc}; log: {log}", file=sys.stderr)
+    skipped = [line for line in Path(log).read_text(errors="replace").splitlines() if line.startswith("✗ ")]
+    if skipped:
+        print(f"gate: claude plugin eval could not load {len(skipped)} case file(s):\n  " + "\n  ".join(skipped),
+              file=sys.stderr)
 
 
 @dataclass
@@ -426,8 +498,21 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     return rc
 
 
+def record(ws: Path, skill: str | None) -> int:
+    try:
+        cases, mode, available, _ = record_cases(ws, resolve_skill(ws, skill))
+    except GateError as exc:
+        print(f"gate: {exc}", file=sys.stderr)
+        return EXIT_PRECONDITION
+    print(f"gate: recorded {len(cases)} gate cases for mode {mode} (plugin eval probe exit {available}) in "
+          f"{DATA_SPLIT}: {', '.join(cases)}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument("command", nargs="?", choices=["record"],
+                        help="record: write the case list into data-split.yaml from disk, then exit")
     parser.add_argument("--workspace", type=Path, default=Path("."), help="build workspace root (default: .)")
     parser.add_argument("--skill", help="skill name under output/ (default: the only one)")
     parser.add_argument("--model", help="the model the skill targets (pinned for both arms; required unless --stop)")
@@ -447,6 +532,10 @@ def main(argv: list[str] | None = None) -> int:
                         help="stop the recorded `gate` job, then start a new one detached")
     parser.add_argument("--stop", action="store_true", help="stop the recorded `gate` job and its eval runs")
     args = parser.parse_args(argv)
+    if args.command == "record":
+        if args.stop or args.detach or args.restart:
+            parser.error("record takes no --stop, --detach or --restart")
+        return record(args.workspace.resolve(), args.skill)
     if args.stop and (args.detach or args.restart):
         parser.error("--stop takes no --detach or --restart")
     if not args.stop and not args.model:

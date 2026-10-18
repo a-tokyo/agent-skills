@@ -398,9 +398,13 @@ eval runs it started (each in its own process group) before it exits, and leaves
 a stopped gate never validates. Without `--detach`, `gate.py` starts the job and waits for it, which suits a
 human at a terminal; if that call is cut off the job keeps running.
 
-In plugin mode it refreshes `work/evaluation/plugin/skills/<skill-name>/` from `output/`, checks that
-`evals/` holds exactly the cases recorded under `plugin_eval`, and runs this from
-`work/evaluation/plugin/` as its own owned job:
+Every run first records the case list as `gate.py record` does (3.6): in plugin mode the case directories
+under `evals/` (one level deep, each named like its `case.yaml` `name:`), after
+`claude plugin eval . --max-cost-usd 0 --ablation none` loads every case file and stops before the first
+run — plugin eval skips a case it cannot load (an unknown grader key, a bad enum, broken grader
+frontmatter), so the record step exits 3 naming each one instead; in manual mode the gate gold standards
+from the split. In plugin mode it then refreshes `work/evaluation/plugin/skills/<skill-name>/` from
+`output/` and runs this from `work/evaluation/plugin/` as its own owned job:
 
 ```bash
 claude plugin eval . --ablation with-without --runs 3 -j 4 --model <model> --allow-tools Bash Write \
@@ -529,8 +533,9 @@ validation:
   - "input/input-09.md"
 test:
   - "input/input-10.md"
+# The two keys below are written by `gate.py record` (SKILL.md 3.6) from disk, never by hand.
 plugin_eval_available: 0  # exit code of `claude plugin eval --help`; non-zero → manual protocol (SKILL.md 5.0)
-plugin_eval:              # every case 5.0 runs, by eval dir name: a list, not a mapping (check_gate.py reads it)
+plugin_eval:              # every case 5.0 runs: eval dir names (manual protocol: the gate gold standards)
   - "holdout-03"
   - "trigger-1"
   - "near-miss"

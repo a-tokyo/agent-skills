@@ -136,8 +136,9 @@ def _coverage(recorded: list[str], names: list[str]) -> None:
     missing = [c for c in recorded if c not in names]
     extra = [n for n in names if n not in recorded]
     if missing or extra:
+        hint = ("; a case plugin eval cannot load is skipped — `gate.py record` names it" if missing else "")
         raise Invalid("coverage", f"artifact cases differ from data-split.yaml plugin_eval: "
-                                  f"missing {missing or 'none'}, unrecorded {extra or 'none'}")
+                                  f"missing {missing or 'none'}, unrecorded {extra or 'none'}{hint}")
 
 
 def _is_skill_grader(grader: object) -> bool:

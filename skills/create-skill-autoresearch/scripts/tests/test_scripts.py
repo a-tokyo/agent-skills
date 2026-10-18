@@ -27,7 +27,9 @@ FAKE_CLAUDE = textwrap.dedent('''\
     #!/usr/bin/env python3
     """Fake `claude plugin eval`; behaviour from FAKE_MODE: complete | partial | hang | fewruns | silent |
     nodelta (gold cases report a null delta). Cases named trigger-* get only a skill-fired grader,
-    near-miss* only a not-fired one (max 0), holdout-* the worked case's approval regex plus skill-fired."""
+    near-miss* only a not-fired one (max 0), holdout-* the worked case's approval regex plus skill-fired.
+    A case directory holding a file named INVALID fails to load: like the real CLI, a `✗` line names it
+    and the run skips it. `--max-cost-usd 0` loads the cases and stops before any run (exit 2)."""
     import json, os, sys, time
     from pathlib import Path
     args = sys.argv[1:]
@@ -37,6 +39,13 @@ FAKE_CLAUDE = textwrap.dedent('''\
             fh.write(json.dumps(args) + "\\n")
     if args[:3] == ["plugin", "eval", "--help"]:
         sys.exit(int(os.environ.get("FAKE_HELP_RC", "0")))
+    invalid = sorted(p.name for p in Path("evals").iterdir() if (p / "INVALID").is_file())
+    for name in invalid:
+        print(f"✗ {Path('evals', name, 'case.yaml').resolve()}: invalid case.yaml:   graders.0: Unrecognized key")
+    if invalid:
+        print(f"{len(invalid)} case file(s) failed to load")
+    if "--max-cost-usd" in args:
+        sys.exit(2)
     mode = os.environ.get("FAKE_MODE", "complete")
     if mode == "hang":
         time.sleep(300)
@@ -74,7 +83,7 @@ FAKE_CLAUDE = textwrap.dedent('''\
         return {"name": name, "graders": [grader], "arms": {"with": [good] * runs, "without": [bare] * runs},
                 "aggregates": {"delta": delta}}
 
-    cases = sorted(p.name for p in Path("evals").iterdir() if (p / "prompt.md").is_file())
+    cases = sorted(p.name for p in Path("evals").iterdir() if (p / "prompt.md").is_file() and p.name not in invalid)
     data = {
         "schemaVersion": 1, "partial": mode == "partial",
         "partialReason": "interrupted" if mode == "partial" else None,
@@ -149,7 +158,9 @@ class TempWorkspace(unittest.TestCase):
         self._tmp.cleanup()
 
     def make_build(self, cases: list[str], invoked: bool = True, ws: Path | None = None,
-                   training: str = "[]") -> None:
+                   training: str = "[]", manual: bool | None = None) -> None:
+        """A build whose suite holds `cases`. Manual builds (default: user-invoked skills) also list them
+        as gold standards under all_cases, the manual protocol's case source."""
         ws = ws or self.ws
         skill = ws / "output" / "demo"
         skill.mkdir(parents=True)
@@ -158,8 +169,9 @@ class TempWorkspace(unittest.TestCase):
         evaluation = ws / "work" / "evaluation"
         evaluation.mkdir(parents=True)
         listed = "\n".join(f'  - "{c}"' for c in cases)
+        gold = f"all_cases:\n{listed}\n" if (not invoked if manual is None else manual) and cases else ""
         (evaluation / "data-split.yaml").write_text(
-            f"training: {training}\nplugin_eval_available: 0  # probe exit code\nplugin_eval:\n{listed}\n")
+            f"{gold}training: {training}\nplugin_eval_available: 0  # probe exit code\nplugin_eval:\n{listed}\n")
         plugin = evaluation / "plugin"
         (plugin / ".claude-plugin").mkdir(parents=True)
         (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "demo-eval", "version": "0.0.0"}')
@@ -504,14 +516,121 @@ class GatePluginTest(TempWorkspace):
         self.assertIn("plugin-eval.json not found", out.stdout)
         self.assertTrue((self.ws / "work" / "evaluation" / "plugin-eval.prev.json").is_file())
 
-    def test_unrecorded_eval_case_is_a_precondition_error(self) -> None:
+    def test_hand_edited_case_list_is_replaced_by_the_suite_on_disk(self) -> None:
         self.make_build(self.CASES)
         extra = self.ws / "work" / "evaluation" / "plugin" / "evals" / "extra"
         extra.mkdir()
         (extra / "prompt.md").write_text("x")
+        split = self.ws / "work" / "evaluation" / "data-split.yaml"
+        split.write_text(split.read_text().replace('  - "gold-02"\n', ""))
+        out = self.run_script("gate.py", "--model", "m")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        recorded = gate_common.read_data_split(split).plugin_eval
+        self.assertEqual(recorded, ["extra", "gold-01", "gold-02", "near-miss", "trigger-1"])
+        self.assertEqual(json.loads(self.run_script("check_gate.py", "--json").stdout)["cases"], 5)
+
+    def test_unloadable_case_stops_the_gate_before_it_runs(self) -> None:
+        self.make_build(self.CASES)
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-02" / "INVALID").write_text("")
         out = self.run_script("gate.py", "--model", "m")
         self.assertEqual(out.returncode, 3)
-        self.assertIn("present but unrecorded ['extra']", out.stdout)
+        self.assertIn("1 case file(s) fail to load", out.stdout)
+        self.assertIn("gold-02/case.yaml: invalid case.yaml", out.stdout)
+        self.assertNotIn("--ablation\", \"with-without", self.argv_log.read_text(), "the eval never ran")
+
+
+class RecordTest(TempWorkspace):
+    def split(self) -> gate_common.DataSplit:
+        return gate_common.read_data_split(self.ws / "work" / "evaluation" / "data-split.yaml")
+
+    def test_fresh_suite_is_recorded_with_the_probe_exit_code(self) -> None:
+        self.make_build(["gold-01", "trigger-1"])
+        path = self.ws / "work" / "evaluation" / "data-split.yaml"
+        path.write_text("# split notes\nstrategy: leave-one-out\ntraining: []\n")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 0, out.stderr)
+        self.assertIn("recorded 2 gate cases for mode plugin", out.stdout)
+        split = self.split()
+        self.assertEqual((split.plugin_eval, split.plugin_eval_available), (["gold-01", "trigger-1"], 0))
+        self.assertTrue(path.read_text().startswith("# split notes\nstrategy: leave-one-out\ntraining: []\n"))
+        load = [json.loads(line) for line in self.argv_log.read_text().splitlines() if "--max-cost-usd" in line]
+        self.assertEqual(load[-1][load[-1].index("--max-cost-usd") + 1], "0", "the load check spends nothing")
+
+    def test_record_replaces_a_flow_list_and_keeps_other_keys(self) -> None:
+        self.make_build(["gold-01"])
+        path = self.ws / "work" / "evaluation" / "data-split.yaml"
+        path.write_text('plugin_eval: ["gold-01", "ghost"]  # typed\nplugin_eval_available: 1\ntest: []\n')
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
+        self.assertEqual((self.split().plugin_eval, self.split().plugin_eval_available), (["gold-01"], 0))
+        self.assertIn("\ntest: []\n", path.read_text())
+
+    def test_record_names_each_case_that_fails_to_load(self) -> None:
+        self.make_build(["gold-01", "gold-02", "trigger-1"])
+        for case in ("gold-01", "trigger-1"):
+            (self.ws / "work" / "evaluation" / "plugin" / "evals" / case / "INVALID").write_text("")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("2 case file(s) fail to load", out.stderr)
+        self.assertIn("trigger-1/case.yaml", out.stderr)
+
+    def test_record_refuses_a_case_named_unlike_its_directory(self) -> None:
+        self.make_build(["gold-01"])
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01" / "case.yaml").write_text("name: g1\n")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("gold-01 (name: g1); rename one", out.stderr)
+
+    def test_record_refuses_nested_cases_but_not_case_fixtures(self) -> None:
+        self.make_build(["gold-01"])
+        evals = self.ws / "work" / "evaluation" / "plugin" / "evals"
+        (evals / "gold-01" / "fixtures").mkdir()
+        (evals / "gold-01" / "fixtures" / "prompt.md").write_text("fixture text")
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0, "a fixture is not a case")
+        (evals / "group" / "inner").mkdir(parents=True)
+        (evals / "group" / "inner" / "prompt.md").write_text("x")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("nested eval cases ['group/inner']", out.stderr)
+
+    def test_manual_record_prefers_the_test_split(self) -> None:
+        self.make_build(["gold-01"], invoked=False)
+        path = self.ws / "work" / "evaluation" / "data-split.yaml"
+        path.write_text("training: [input/a.md, input/b.md]\nvalidation: [input/c.md]\ntest: [input/d.md]\n")
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
+        self.assertEqual(self.split().plugin_eval, ["input/d.md"])
+        path.write_text("all_cases: [input/a.md, input/b.md]\ntraining: [input/b.md, input/c.md]\ntest: []\n")
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
+        self.assertEqual(self.split().plugin_eval, ["input/a.md", "input/b.md", "input/c.md"],
+                         "3-9 band: every gold standard, the held-out one included")
+
+    def test_manual_record_needs_gold_standards(self) -> None:
+        self.make_build([], invoked=False)
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("lists no gold standards", out.stderr)
+
+    def test_hand_edit_after_the_gate_is_rejected(self) -> None:
+        self.make_build(["gold-01", "trigger-1"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        path = self.ws / "work" / "evaluation" / "data-split.yaml"
+        path.write_text(path.read_text().replace('  - "trigger-1"\n', ""))
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual(verdict["code"], "stale_cases")
+        self.assertIn("re-run 5.0", verdict["reason"])
+
+    def test_missing_cases_point_at_record(self) -> None:
+        self.make_build(["gold-01", "gold-02"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        record = self.evaluation("gate.json")
+        artifact = self.ws / "work" / "evaluation" / "plugin-eval.json"
+        data = json.loads(artifact.read_text())
+        data["cases"] = data["cases"][:1]
+        artifact.write_text(json.dumps(data))
+        record["artifact_sha256"] = gate_common.file_sha256(artifact)
+        (self.ws / "work" / "evaluation" / "gate.json").write_text(json.dumps(record))
+        reason = json.loads(self.run_script("check_gate.py", "--json").stdout)["reason"]
+        self.assertIn("missing ['gold-02']", reason)
+        self.assertIn("`gate.py record` names it", reason)
 
 
 class GateLifecycleTest(TempWorkspace):
@@ -590,13 +709,18 @@ class GateLifecycleTest(TempWorkspace):
 
     def test_detach_checks_the_suite_first(self) -> None:
         self.make_build(self.CASES)
-        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01").rename(
-            self.ws / "work" / "evaluation" / "plugin" / "evals" / "renamed")
-        self.assert_refused_before_detaching(reason="recorded but absent ['gold-01']")
+        (self.ws / "work" / "evaluation" / "plugin" / ".claude-plugin" / "plugin.json").unlink()
+        self.assert_refused_before_detaching(reason="needs .claude-plugin/plugin.json")
 
-    def test_detach_checks_recorded_cases_first(self) -> None:
+    def test_detach_checks_for_cases_first(self) -> None:
         self.make_build([])
-        self.assert_refused_before_detaching(reason="plugin_eval records no gate cases")
+        (self.ws / "work" / "evaluation" / "plugin" / "evals").mkdir()
+        self.assert_refused_before_detaching(reason="no eval cases under")
+
+    def test_detach_checks_that_every_case_loads_first(self) -> None:
+        self.make_build(self.CASES)
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01" / "INVALID").write_text("")
+        self.assert_refused_before_detaching(reason="1 case file(s) fail to load")
 
     def test_detach_checks_each_scaffold_script_first(self) -> None:
         self.make_build(self.CASES)
@@ -643,7 +767,7 @@ class GateManualTest(TempWorkspace):
         self.assertIn("gold=2 mean gold delta=+0.500", out.stdout)
 
     def test_unavailable_plugin_eval_routes_to_manual(self) -> None:
-        self.make_build(["gold-01"], invoked=True)
+        self.make_build(["gold-01"], invoked=True, manual=True)
         self.write_adapter()
         out = self.run_script("gate.py", "--model", "m", "--executor", "agentic", FAKE_HELP_RC="1")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)

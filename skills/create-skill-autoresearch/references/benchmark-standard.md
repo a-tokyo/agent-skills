@@ -68,7 +68,8 @@ with-arm measures nothing). It runs the 3.6 gate cases on the pinned model:
   different family than the builder when one is available, else plugin eval's default judge (`haiku`).
 
 The build implements one run in `work/evaluation/run-case.sh <case> <with|without>` (executable, run from
-the workspace root, `GATE_MODEL` and `GATE_RUN` in its environment): it executes the case on that arm,
+the workspace root, `GATE_MODEL` and `GATE_RUN` in its environment; `<case>` is a gate gold standard's
+entry as data-split.yaml lists it, which `gate.py record` copies into `plugin_eval`): it executes the case on that arm,
 applies the graders, and prints `SCORE=<0..1>` — `gate.py` reads the last such line. A non-zero exit,
 a timeout or a missing `SCORE` line is a failed run, not a score of 0: `gate.py` retries it once, then
 records it under `errors` and marks the artifact partial.

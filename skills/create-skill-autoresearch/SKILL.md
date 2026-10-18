@@ -222,10 +222,10 @@ case with `claude plugin eval init --bare <case>` (a human at a terminal may use
 Headless and unattended runs still build this suite. A user-invoked skill (`disable-model-invocation: true`)
 never fires through the Skill tool, so plugin eval's with-arm would measure nothing: for it, or when
 `claude plugin eval --help` exits non-zero, 5.0 runs the gate cases by the **manual protocol** instead.
-In `work/evaluation/data-split.yaml` record that exit code as `plugin_eval_available`, and under `plugin_eval`
-every case 5.0 runs (manual protocol: the gold-standard cases only); `check_gate.py` fails unless the
-artifact covers exactly that list. Then write `work/evaluation/run-case.sh <case> <with|without>` (chmod +x):
-one run of the case, skill as system prompt or bare, scored by its graders, ending with a `SCORE=<0..1>`
+Run `python3 <skill-dir>/scripts/gate.py record`: it writes the case list into data-split.yaml from disk (manual
+protocol: the gate gold standards) after a zero-cost load of every case file; a non-zero exit names each
+case file plugin eval cannot load — fix it, re-run. Then write `work/evaluation/run-case.sh <case> <with|without>`
+(chmod +x): one run of the case, skill as system prompt or bare, scored by its graders, ending with a `SCORE=<0..1>`
 line. The 3.4 executor fits; contract in [references/benchmark-standard.md](references/benchmark-standard.md).
 
 ---
