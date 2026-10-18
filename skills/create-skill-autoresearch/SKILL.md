@@ -372,7 +372,7 @@ Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, t
 
 ### 5.1 Premortem
 
-Invoke the **premortem skill** on the skill artifact. Feed identified risks into the panel evaluation as additional test scenarios, including the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes.
+Invoke the **premortem skill** on the skill artifact. Its risk list is an input to 5.2: each risk becomes an additional panel test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. Then continue in the same turn through 5.4: the build is done only when `BENCHMARK.md` holds a terminal verdict (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`) and `python3 <skill-dir>/scripts/run_owned.py status gate` shows no live gate (or `gate.py --stop` was run).
 
 ### 5.2 Panel Evaluation
 
