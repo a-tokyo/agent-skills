@@ -6,6 +6,8 @@ pid, pgid, the leader's start time, and the command. `stop` signals only a recor
 checking that the leader's start time still matches the record, so it can never reach a sibling
 build or the user's own processes the way `pkill`/`killall`/pattern kills do. When that identity
 cannot be read (`ps` fails, or the record has none) it refuses to signal rather than guess.
+`start` holds an exclusive flock on work/pids/<name>.lock from its state check through process
+creation and the record, so concurrent starts of one name run it once and the rest are refused.
 `start` keeps work/pids/ out of git (it writes a `.gitignore` of `*` there).
 
 The job sees RUN_OWNED_JOB=<name> and RUN_OWNED_PGID=<its group id> in its environment.
@@ -27,6 +29,7 @@ Exit codes: 0 success (wait: the job exited 0); the job's own exit code from wai
 from __future__ import annotations
 
 import argparse
+import fcntl
 import json
 import os
 import re
@@ -34,6 +37,8 @@ import signal
 import subprocess
 import sys
 import time
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -162,10 +167,27 @@ def start(sdir: Path, name: str, cmd: list[str], cwd: Path, log: Path | None = N
     if not ignore.is_file():
         ignore.write_text("*\n")
     path = _record_path(sdir, name)
-    if path.is_file():
-        old = load(sdir, name)
-        if old.stopped is None and exit_status(old) is None and _leader_is_ours(old):
-            raise OwnedError(f"job {name!r} is already running (pgid {old.pgid}); stop it or pick another name")
+    with _name_lock(sdir, name):
+        if path.is_file():
+            old = load(sdir, name)
+            if old.stopped is None and exit_status(old) is None and _leader_is_ours(old):
+                raise OwnedError(f"job {name!r} is already running (pgid {old.pgid}); stop it or pick another name")
+        return _spawn(sdir, name, path, cmd, cwd, log, env)
+
+
+@contextmanager
+def _name_lock(sdir: Path, name: str) -> Iterator[None]:
+    """Serialize starts of one name: the state check, the spawn and the record are one step."""
+    fd = os.open(sdir / f"{name}.lock", os.O_RDWR | os.O_CREAT, 0o644)
+    try:
+        fcntl.flock(fd, fcntl.LOCK_EX)
+        yield
+    finally:
+        os.close(fd)
+
+
+def _spawn(sdir: Path, name: str, path: Path, cmd: list[str], cwd: Path, log: Path | None,
+           env: dict[str, str] | None) -> subprocess.Popen:
     log_path = (log or sdir / f"{name}.log").resolve()
     rc_file = (sdir / f"{name}.rc").resolve()
     rc_file.unlink(missing_ok=True)

@@ -293,6 +293,18 @@ class RunOwnedTest(TempWorkspace):
         self.assertEqual(self.run_script("run_owned.py", "stop", "owned").returncode, 0)
         self.assertFalse(_group_alive(job["pgid"]))
 
+    def test_concurrent_starts_run_the_job_once(self) -> None:
+        argv = [*_script("run_owned.py"), "--workspace", str(self.ws), "start", "race", "--", "sleep", "30"]
+        racers = [subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+                                   env=_env(self.bin)) for _ in range(6)]
+        results = [(p.wait(timeout=60), *p.communicate()) for p in racers]
+        winners = [json.loads(out) for rc, out, _ in results if rc == 0]
+        self.assertEqual(len(winners), 1, results)
+        self.assertTrue(all(rc == 3 and "already running" in err for rc, _, err in results if rc != 0), results)
+        self.assertEqual(self.record("race")["pid"], winners[0]["pid"], "the record is the winner's")
+        self.assertEqual(self.run_script("run_owned.py", "stop", "race").returncode, 0)
+        self.assertFalse(_group_alive(winners[0]["pgid"]))
+
     def test_refuses_to_start_a_running_name_twice(self) -> None:
         self.start("once", "sleep", "30")
         out = self.run_script("run_owned.py", "start", "once", "--", "sleep", "30")
