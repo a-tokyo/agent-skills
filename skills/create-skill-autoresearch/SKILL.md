@@ -31,8 +31,8 @@ Key constraint: BUILDER and PANEL never share context. Panel receives only the s
 or the stated default without waiting, and record each assumption in `work/experiments/craft-decisions.md`.
 
 **Bundled scripts** run as `python3 <skill-dir>/scripts/<name>.py` (`<skill-dir>`: this skill's base directory;
-each has `--help`). **Background jobs** (eval runs, loops) go through `run_owned.py start <name> -- <cmd...>`: it
-signals only the process group it records in `work/pids/`, where a name-pattern kill also hits sibling builds and the user's processes.
+each has `--help`). **Background jobs** (eval runs, loops) go through `run_owned.py start|stop <name>`: it signals
+only the group it records in `work/pids/`; a name-pattern kill also hits sibling builds and the user's processes.
 
 ## Companion skills
 
@@ -48,7 +48,7 @@ The factory composes sibling skills rather than embedding them, so each stays cu
 | **handoff** | 4.4 | Write `HANDOFF-*.md` by hand |
 | `claude plugin eval` (Claude Code CLI) | 3.6 suite, 5.0 gate | The manual with/without protocol (5.0) |
 
-Install skills with `npx skills add <source> --skill <name>`; `claude plugin eval` ships with Claude Code.
+Install skills with `npx skills add <source> --skill <name>`; `claude plugin eval` ships with Claude Code. A plugin install of the factory adds `hooks/hooks.json`, a guard that blocks `pkill`, `killall` and pgrep-fed kills (an `npx skills` install has no hook).
 
 ---
 
@@ -467,8 +467,8 @@ builds/<skill-name>/
   BENCHMARK.md            # FACTORY: final panel scores, plugin-eval delta, verdict (Phase 5)
 ```
 
-`work/` is generated, but four files are the human's to correct at phase boundaries: `manifest.yaml`,
-`evaluation/rubric.yaml` (the exit criteria), `evaluation/judges.yaml`, `evaluation/data-split.yaml`.
+`work/` is generated, but four files are the human's to correct at phase boundaries: `manifest.yaml`, `evaluation/rubric.yaml`
+(the exit criteria), `evaluation/judges.yaml`, `evaluation/data-split.yaml` (its splits; `gate.py record` owns `plugin_eval`).
 Never write a credential into any of them — `work/` is committed in the workspace's repository (1.6).
 
 Only `output/<skill-name>/` ships; its uplift benchmark belongs **outside** the skill dir, at

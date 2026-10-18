@@ -84,7 +84,10 @@ implementation. Never commit secrets; `.env` is git-ignored.
 - Keep diffs surgical — one concern per PR; a rename ships separately from a feature.
 - Bump the skill's `version` in its frontmatter when its behaviour changes.
 - A new skill needs an entry in both the README table and `.claude-plugin/marketplace.json`
-  (`source: "./"`, `skills: ["./skills/<name>"]`, `strict: false`). When you bump a skill's
+  (`source: "./"`, `skills: ["./skills/<name>"]`, `strict: false`). A skill that ships
+  `hooks/hooks.json` repeats those hooks inline in its entry and in `all-skills`, rooted at
+  `${CLAUDE_PLUGIN_ROOT}/skills/<name>/` (the entry roots the plugin at the repo, so the skill's own
+  hooks file never loads there). When you bump a skill's
   `version`, update that same skill's entry in `marketplace.json` to match — the two are
   independent fields Claude Code doesn't sync automatically.
 - Commit subject in imperative mood; explain *why* in the body.

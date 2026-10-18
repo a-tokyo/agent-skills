@@ -11,6 +11,9 @@ Fixtures (scoring/fixtures/fidelity/):
   iterate-terminal  ITERATE verdict: "do not publish as-is"; "the shipped SKILL.md" outside the verdict statement
   iterate-shipped-artifact  ITERATE verdict whose statement calls the output "the shipped artifact" (flagged)
   stale-ship        SHIP WITH CAVEATS with a GATE VALID line, but the skill was edited after the gate (stale)
+  guard-blocked     session shaped like the kill-guard smoke run: a pkill and a pgrep|xargs kill the guard
+                    blocked (one result as a string, one as text blocks; an api-request-blob copy of a
+                    call), a killall that ran, and an owned stop
 """
 
 from __future__ import annotations
@@ -35,7 +38,7 @@ def expect(name: str, condition: bool) -> None:
 builds = {b.run: b for b in (fidelity.score(FIXTURES / name, fidelity.DEFAULT_CHECK_GATE)
                              for name in ("plugin-ok", "manual-kill", "legacy-unshipped", "unshipped-draft",
                                           "unshipped-incidental", "iterate-terminal",
-                                          "iterate-shipped-artifact", "stale-ship"))}
+                                          "iterate-shipped-artifact", "stale-ship", "guard-blocked"))}
 
 ok = builds["plugin-ok"]
 expect("plugin-ok: artifact at canonical path", ok.artifact)
@@ -82,9 +85,16 @@ artifact = builds["iterate-shipped-artifact"]
 expect("iterate-shipped-artifact: verdict ITERATE", artifact.verdict == "ITERATE")
 expect("iterate-shipped-artifact: 'the shipped artifact' in the statement is flagged", artifact.shipped_label_ok is False)
 
+guard = builds["guard-blocked"]
+expect("guard-blocked: two blocked attempts counted apart", guard.kill_blocked == 2)
+expect("guard-blocked: only the killall that ran is a kill command", guard.kill_commands == 1
+       and guard.kill_examples == ["killall python3"])
+expect("manual-kill: calls without ids are never blocked", kill.kill_blocked == 0)
+
 totals = fidelity.summary(list(builds.values()))
-expect("summary counts", totals == {"builds": 8, "artifact_at_canonical_path": 3, "gate_valid": 1,
-                                    "builds_with_kill_commands": 1, "kill_commands": 2,
+expect("summary counts", totals == {"builds": 9, "artifact_at_canonical_path": 3, "gate_valid": 1,
+                                    "builds_with_kill_commands": 2, "kill_commands": 3,
+                                    "builds_with_blocked_kills": 1, "kill_blocked": 2,
                                     "below_target_labelled_shipped": 2, "stale_gate": 1,
                                     "shipped_with_gate_invalid": 1})
 expect("verdict: SHIP_WITH_CAVEATS spelling normalised", fidelity.verdict_of("Verdict: SHIP_WITH_CAVEATS") == "SHIP WITH CAVEATS")

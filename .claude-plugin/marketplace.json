@@ -24,6 +24,21 @@
       "source": "./",
       "skills": ["./skills/create-skill-autoresearch"],
       "strict": false,
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python3",
+                "args": ["${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/kill_guard.py"],
+                "timeout": 10
+              }
+            ]
+          }
+        ]
+      },
       "version": "0.3.0",
       "description": "Factory for building production-grade agent skills: interviews you for purpose and gold standards, researches the domain (gold standards win where docs disagree), drafts the skill with Anthropic's skill-creator, autonomously improves it against an LLM-as-judge (or real-world) metric, gates it with a with/without claude plugin eval, and verifies it with an independent multi-agent panel — delegating to tribunal when installed. Ships a same-model-uplift benchmark standard (scored by execution, honest negatives required) and a publish checklist, and stops the improvement loop on a plateau inside judge variance. Composes its companions instead of copying them (skill-creator, writing-for-agents, autoresearch, premortem, handoff), with a built-in fallback for standalone installs; the full batteries-included environment is the agent-skills-harness."
     },
@@ -56,6 +71,21 @@
       "source": "./",
       "skills": ["./skills/"],
       "strict": false,
+      "hooks": {
+        "PreToolUse": [
+          {
+            "matcher": "Bash",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "python3",
+                "args": ["${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/kill_guard.py"],
+                "timeout": 10
+              }
+            ]
+          }
+        ]
+      },
       "description": "Install every skill in this repository as one plugin: production-grade, tailwind-v3-to-v4-migration, create-skill-autoresearch, tribunal, database-documentation, and app-ai-guardrails."
     }
   ]

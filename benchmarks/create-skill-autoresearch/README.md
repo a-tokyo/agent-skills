@@ -38,6 +38,15 @@ Holdouts never reach a builder in either task.
 `tribunal` is absent from every arm, so Phase 5 runs the factory's inline panel. Factory arms run
 unattended with a 6-iteration autoresearch budget.
 
+A factory that ships `hooks/hooks.json` (v0.3.0 from cycle 3 on) loads as a plugin
+(`claude -p --plugin-dir <run>/plugins/create-skill-autoresearch`), so its kill guard — a `PreToolUse`
+hook that blocks `pkill`, `killall` and pgrep-fed kills — is active; the skill is then listed as
+`create-skill-autoresearch:create-skill-autoresearch`. Earlier `factory` runs and `factory-v021` place
+the skill under the fake HOME's `~/.claude/skills/` instead. [`arms/smoke-kill-guard.sh`](arms/smoke-kill-guard.sh)
+is a one-call check that the guard blocks a dummy `pkill` under that load. Its single run on
+2026-10-18 (Haiku 5.5, Claude Code 2.1.301) passed: the agent got the guard's message as a tool error,
+the session continued, and `fidelity.py` counted 0 kill commands and 1 blocked attempt.
+
 ## Scoring — deterministic, arm-independent, fixed before any run
 
 - **task** — [`scoring/score.mjs`](scoring/score.mjs): a fixed executor (Haiku 5.5, thinking off)
@@ -119,7 +128,9 @@ scored like the rest.
 Counted by [`scoring/fidelity.py`](scoring/fidelity.py) over every build's run directory: the
 factory's own validator (`check_gate.py`) on the workspace, the commands the builder issued (Bash
 tool calls in the session transcripts under `home/.claude/projects/`, not text it read), and the
-verdict statement in `BENCHMARK.md`. `i-*` (harness `8f6a323`) is the last run before cycle 2, when
+verdict statement in `BENCHMARK.md`. Since cycle 3 it counts kill attempts the kill guard blocked
+(`kill_blocked`: the call's tool result carries the guard's message) apart from kill commands that ran
+(`kill_commands`, the criterion-8 count); no run before cycle 3 loaded the guard. `i-*` (harness `8f6a323`) is the last run before cycle 2, when
 the same rules were prose; `j-*` (harness `5ca4fa0`) is the first cycle-2 run; `k-*` is the published
 run. The validator changed between `j-*` and `k-*`: the current one also requires a finished
 `gate.json` carrying skill and case hashes, which no earlier build has, so it fails every `i-*` and

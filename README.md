@@ -73,6 +73,12 @@ Or install every skill at once:
 /plugin install all-skills@a-tokyo-skills
 ```
 
+The plugin install of `create-skill-autoresearch` (and `all-skills`) also adds the factory's kill guard,
+a `PreToolUse` hook ([`hooks/kill_guard.py`](skills/create-skill-autoresearch/hooks/kill_guard.py), needs
+`python3`). While the plugin is enabled it blocks Bash calls containing `pkill`, `killall` or a
+pgrep-fed `kill` in every session, because a name-pattern kill also stops sibling builds and your own
+processes; `kill <pid>` still works. An `npx skills` install copies the hook file but never runs it.
+
 ## License
 
 MIT [Ahmed Tokyo](https://www.ahmedtokyo.com)

@@ -89,13 +89,23 @@ EOF
 
 # ---------- arm setup: skill injection into the fake HOME ----------
 mkdir -p "$HOME/.claude/skills"
+PLUGIN_ARGS=()
 case "$ARM" in
   bare) ;;
   skill-creator)
     cp -R "$REPO/.agents/skills/skill-creator" "$HOME/.claude/skills/skill-creator"
     ;;
   factory|factory-v021)
-    cp -R "$FACTORY_DIR" "$HOME/.claude/skills/create-skill-autoresearch"
+    # A factory that ships hooks/hooks.json (v0.3.0+: the kill guard) loads as a plugin so its hooks
+    # are active; Claude Code loads a directory with SKILL.md at its root as a one-skill plugin.
+    # The pinned v0.2.1 has no hooks and keeps the user-level skill placement.
+    if [ -f "$FACTORY_DIR/hooks/hooks.json" ]; then
+      mkdir -p "$RUN/plugins"
+      cp -R "$FACTORY_DIR" "$RUN/plugins/create-skill-autoresearch"
+      PLUGIN_ARGS=(--plugin-dir "$RUN/plugins/create-skill-autoresearch")
+    else
+      cp -R "$FACTORY_DIR" "$HOME/.claude/skills/create-skill-autoresearch"
+    fi
     for s in "$COMPANIONS_DIR"/*/; do
       [ -f "$s/SKILL.md" ] && cp -R "$s" "$HOME/.claude/skills/$(basename "$s")"
     done
@@ -140,6 +150,7 @@ set +e
     --model "$MODEL_ID" \
     --dangerously-skip-permissions \
     --max-turns "$MAX_TURNS" \
+    ${PLUGIN_ARGS[@]+"${PLUGIN_ARGS[@]}"} \
   ) <"/dev/null" >"$RUN/transcript.txt" 2>&1
 EXIT_CODE=$?
 set -e
