@@ -165,9 +165,15 @@ if [ "$HOST" = "cursor" ]; then
       elif [ -f "$GUARD_DIR/kill_guard.py" ]; then
         GUARD_CMD="python3 $GUARD_DIR/kill_guard.py"
       fi
+      # The finish guard (v0.3.0+) rides along as a `stop` hook, as hosts.md documents; cursor-agent -p
+      # 2026.10.18 runs no stop hook, so on this CLI it is installed but never fires.
+      STOP_HOOK=""
+      if [ -f "$GUARD_DIR/finish-guard" ]; then
+        STOP_HOOK=", \"stop\": [ { \"command\": \"sh $GUARD_DIR/finish-guard\", \"timeout\": 30, \"loop_limit\": 1 } ]"
+      fi
       if [ -n "$GUARD_CMD" ]; then
-        printf '{ "version": 1, "hooks": { "beforeShellExecution": [ { "command": "%s", "timeout": 10 } ] } }\n' \
-          "$GUARD_CMD" > "$WORK/.cursor/hooks.json"
+        printf '{ "version": 1, "hooks": { "beforeShellExecution": [ { "command": "%s", "timeout": 10 } ]%s } }\n' \
+          "$GUARD_CMD" "$STOP_HOOK" > "$WORK/.cursor/hooks.json"
       fi
       ;;
   esac

@@ -14,5 +14,6 @@
   "finished": "2026-10-17T00:10:00+00:00",
   "run_case_sha256": null,
   "inputs_sha256": {},
-  "artifact_sha256": "b295a228553b844dbd840a06822cb710d9c7bc4dab2191de271bbd94ab0146b0"
+  "artifact_sha256": "b295a228553b844dbd840a06822cb710d9c7bc4dab2191de271bbd94ab0146b0",
+  "split_sha256": "d212e1670eade8e0b3081a5b1fccf2f84ec0581131945a77ccf08353d81e219d"
 }

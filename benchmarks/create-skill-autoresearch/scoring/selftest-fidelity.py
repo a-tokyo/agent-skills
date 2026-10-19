@@ -16,6 +16,9 @@ Fixtures (scoring/fixtures/fidelity/):
                     call), a killall that ran, and an owned stop
   cursor-blocked    a cursor-agent stream-json transcript (HOST=cursor): a hook-rejected pkill, a killall
                     that ran, an ls
+  panel-above       plugin-ok plus a rubric, three role receipts and a SHIP WITH CAVEATS consensus written by
+                    check_gate.py, a SHIP verdict (above the consensus) and one finish-guard send-back
+  panel-finished    the same with a SHIP WITH CAVEATS verdict carrying both lines: --finish passes
 """
 
 from __future__ import annotations
@@ -41,7 +44,7 @@ builds = {b.run: b for b in (fidelity.score(FIXTURES / name, fidelity.DEFAULT_CH
                              for name in ("plugin-ok", "manual-kill", "legacy-unshipped", "unshipped-draft",
                                           "unshipped-incidental", "iterate-terminal",
                                           "iterate-shipped-artifact", "stale-ship", "guard-blocked",
-                                          "cursor-blocked"))}
+                                          "cursor-blocked", "panel-above", "panel-finished"))}
 
 ok = builds["plugin-ok"]
 expect("plugin-ok: artifact at canonical path", ok.artifact)
@@ -98,12 +101,24 @@ cursor = builds["cursor-blocked"]
 expect("cursor-blocked: a hook-rejected pkill in a cursor-agent transcript is blocked", cursor.kill_blocked == 1)
 expect("cursor-blocked: the killall that ran is a kill command", cursor.kill_examples == ["killall python3"])
 
+above, done = builds["panel-above"], builds["panel-finished"]
+expect("panel-above: three role receipts read", above.panel_receipts == ["verifier-a", "verifier-b", "devils-advocate"])
+expect("panel-above: consensus SHIP WITH CAVEATS allows SHIP WITH CAVEATS",
+       (above.consensus, above.allowed) == ("SHIP WITH CAVEATS", "SHIP WITH CAVEATS"))
+expect("panel-above: SHIP above the consensus is flagged and unfinished", above.above_consensus and above.finished is False)
+expect("panel-above: one finish-guard send-back counted", above.finish_guard_blocks == 1)
+expect("panel-finished: the allowed verdict with both lines finishes", done.finished is True and not done.above_consensus)
+expect("plugin-ok: SHIP WITH CAVEATS without a panel consensus is unfinished", ok.finished is False and ok.consensus is None)
+
 totals = fidelity.summary(list(builds.values()))
-expect("summary counts", totals == {"builds": 10, "artifact_at_canonical_path": 3, "gate_valid": 1,
+expect("summary counts", totals == {"builds": 12, "artifact_at_canonical_path": 5, "gate_valid": 3,
                                     "builds_with_kill_commands": 3, "kill_commands": 4,
                                     "builds_with_blocked_kills": 2, "kill_blocked": 3,
                                     "below_target_labelled_shipped": 2, "stale_gate": 1,
-                                    "shipped_with_gate_invalid": 1})
+                                    "shipped_with_gate_invalid": 1, "finished": 1,
+                                    "builds_with_three_receipts": 2, "builds_with_consensus": 2,
+                                    "verdict_above_consensus": 1, "builds_sent_back_by_finish_guard": 2,
+                                    "finish_guard_blocks": 2})
 expect("verdict: SHIP_WITH_CAVEATS spelling normalised", fidelity.verdict_of("Verdict: SHIP_WITH_CAVEATS") == "SHIP WITH CAVEATS")
 expect("verdict: none stated", fidelity.verdict_of("# notes\nno decision yet") is None)
 expect("shipped: 'never shipped' is negated", fidelity.shipped_label_ok("BLOCK. It was never shipped.", "BLOCK") is True)

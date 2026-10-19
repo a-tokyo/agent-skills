@@ -1,0 +1,7 @@
+name: demo-rubric
+dimensions:
+  - name: correctness
+    weight: 0.6
+  - name: clarity
+    weight: 0.4
+target_score: 0.85
