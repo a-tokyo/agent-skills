@@ -85,11 +85,13 @@ headless CLI as the factory describes, so `references/hosts.md` has to carry tha
   holdout. execution 0.70 · compliance 0.20 (frontmatter, model-invoked, < 300 lines, scripts present
   and referenced, no gold literals hard-coded in scripts) · craft 0.10 (description what + when,
   third person, ≥ 3 script functions, a concrete example). An executor run that times out or exits
-  non-zero without writing `po.json` is retried once. A second run that exits non-zero without
-  `po.json`, or times out with an infrastructure error in its transcript (the API/network patterns
-  `arms/run-arm.sh` uses), is an env failure for that case — excluded from the execution mean and
-  reported in `score-report.json`, never scored 0. A second timeout without one is the skill's result
-  and scores 0. The scorer gained the env-failure rule after the `j-*` run; there, the only executor
+  non-zero without writing `po.json` is retried once. A second such run is an env failure for that
+  case — excluded from the execution mean and reported in `score-report.json`, never scored 0 — only
+  when its transcript carries an infrastructure signature (the API/network patterns `arms/run-arm.sh`
+  uses, an auth error, or claude failing to spawn); without one, a timeout or a non-zero exit is the
+  skill's result and scores 0. That positive-signature rule dates from the release head; before it a
+  non-zero exit alone was an env failure, but no published task-2 report (151 rows, all with
+  `score-report.json`) excluded a run, so it changes no number. The scorer gained the env-failure rule after the `j-*` run; there, the only executor
   runs without `po.json` (two, in one Haiku build) ended on the executor's normal final reply,
   stopping at the skill's own parser defect, so it changes no `j-*` number. The published `k-*` run
   was scored under it and had no executor faults, so the later timeout rule changes no `k-*` number.
@@ -187,11 +189,13 @@ README (byte-identical to the one the builds ran), and `check_gate.py --finish` 
   interim `q-*` run below). The change in between is `6a9f6f2`'s ending: 5.1 writes the premortem to a
   file and the build ends by running the validator. All 22 builds issued `check_gate.py --finish`
   (commands counted as `fidelity.py` counts kill commands), against 17 of 20 in `p-*`.
-- **Honest negative: five verdicts cover an earlier artifact than the one shipped.** Task Sonnet 2,
-  task-2 Sonnet 1, 2 and 5 (SHIP WITH CAVEATS) and task-2 Haiku 4 (`UNSHIPPED`) state in `BENCHMARK.md`
-  that the panel scored the skill before a last fix and was not re-run. Their gates are not stale, so
-  the uplift measurement covers the final skill; the panel's scores do not, and neither the validator
-  nor `fidelity.py` checks for it.
+- **Honest negative: eight verdicts cover an earlier artifact than the one shipped.** Task Sonnet 2,
+  task-2 Sonnet 1, 2 and 5 and task-2 Haiku 1 (SHIP WITH CAVEATS), and task-2 Haiku 2, 4 and 5
+  (`UNSHIPPED`) state in `BENCHMARK.md` that the panel scored the skill before a last fix and was not
+  re-run (Haiku 1: two docstring-only edits; Haiku 5: substantive fixes). Their gates are not stale, so
+  the uplift measurement covers the final skill; the panel's scores do not. The factory these builds ran
+  did not check for it; the release head does: `check_gate.py --panel` (5.2) records the skill hash the
+  panel scores, and `--finish` rejects a SHIP or SHIP WITH CAVEATS on any other.
 
 ### Cursor builds (Amendment 3)
 
