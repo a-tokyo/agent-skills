@@ -267,3 +267,4 @@ p-t1-factory-v030-haiku-4,factory,haiku,1.000,0.333,0.863,0.818,854,claude-cli,e
 p-t1-factory-v030-haiku-5,factory,haiku,1.000,1.000,0.768,0.861,1047,claude-cli,exit=0,task
 p-t1-factory-v030-haiku-2,factory,haiku,1.000,0.667,0.911,0.896,1792,claude-cli,exit=0,task
 p-t1-factory-v030-haiku-1,factory,haiku,1.000,1.000,0.810,0.886,1903,claude-cli,exit=0,task
+a3-t1-factory-cursor-sonnet-1,factory,sonnet,1.000,0.667,0.952,0.921,2549,claude-cli,exit=0 host=cursor,task

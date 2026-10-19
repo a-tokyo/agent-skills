@@ -256,7 +256,8 @@ for line in open(sys.argv[1], errors="replace"):
         usage = event["usage"]
 if usage:
     total = sum(int(usage.get(k) or 0) for k in ("inputTokens", "cacheReadTokens", "cacheWriteTokens"))
-    print(json.dumps({"input_total": total, "output_tokens": int(usage.get("outputTokens") or 0), "source": "cursor-result"}))
+    print(json.dumps({"input_total": total, "output_tokens": int(usage.get("outputTokens") or 0),
+                      "source": "cursor-result"}, separators=(",", ":")))  # the token_field sed expects no spaces
 PY
 )" || TOKENS=""
   MODEL_ID="cursor:$CURSOR_MODEL"

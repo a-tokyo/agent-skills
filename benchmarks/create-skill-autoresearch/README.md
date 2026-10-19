@@ -57,6 +57,14 @@ and the builder can see user-level Cursor skills and rules. Tokens come from the
 `result` event (the top-level session; subagent usage is not broken out). `fidelity.py` reads the
 stream-json transcript's shell calls, counting a hook-rejected one as blocked.
 
+Smoke build `a3-t1-factory-cursor-sonnet-1` (task, 2026-10-19, harness `6a9f6f2`, cursor-agent
+2026.10.16): exit 0 in 2549 s, overall **0.921** (compliance 1.000, craft 0.667, execution 0.952),
+7.46M input / 79k output tokens, `meta.json` `claude_on_path: false`. Its gate validated in manual mode
+(`uplift.json`, 6 gold cases, mean Δ +0.329, `input-05` at Δ <= 0) with `cursor-agent` as the executor,
+research and panel ran as Cursor subagents, and it ended `UNSHIPPED` (training 0.813 below the 0.85
+target), which `check_gate.py --finish` accepts. One build is a smoke test, not a result; its token cells
+were filled from `meta.json` after a separator bug in the cursor branch left them empty.
+
 ## Scoring — deterministic, arm-independent, fixed before any run
 
 - **task** — [`scoring/score.mjs`](scoring/score.mjs): a fixed executor (Haiku 5.5, thinking off)
