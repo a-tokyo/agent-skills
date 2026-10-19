@@ -51,9 +51,12 @@ the session continued, and `fidelity.py` counted 0 kill commands and 1 blocked a
 `cursor-agent -p --force --trust --output-format stream-json` (Sonnet 5.5 = `claude-sonnet-5-5-high`;
 `CURSOR_MODEL` overrides). The skills go in the workspace's `.agents/skills/`, the kill guard runs as a
 project `beforeShellExecution` hook in `.cursor/hooks.json`, and the build's PATH holds no `claude`
-(checked before the run; `meta.json` records `host` and `claude_on_path`). cursor-agent needs its real
-login, so this arm keeps the maintainer's HOME: the workspace and git config are isolated, HOME is not,
-and the builder can see user-level Cursor skills and rules. Tokens come from the transcript's final
+(checked before the run; `meta.json` records `host`, `claude_on_path` and `home_isolated`). cursor-agent
+keeps its login in the macOS login Keychain, so on macOS the arm now isolates HOME as the Claude arm does,
+with one symlink (`Library/Keychains`) carrying the login: the maintainer's `~/.cursor`, `~/.claude` and
+`~/.agents` skills, rules, plugins and hooks are out of reach. Cursor's own bundled skills and any
+team-managed plugins still load, since they come with the account. Off macOS the arm keeps the maintainer's
+HOME (`home_isolated: false`). Tokens come from the transcript's final
 `result` event (the top-level session; subagent usage is not broken out). `fidelity.py` reads the
 stream-json transcript's shell calls, counting a hook-rejected one as blocked.
 
@@ -63,7 +66,11 @@ Smoke build `a3-t1-factory-cursor-sonnet-1` (task, 2026-10-19, harness `6a9f6f2`
 (`uplift.json`, 6 gold cases, mean Δ +0.329, `input-05` at Δ <= 0) with `cursor-agent` as the executor,
 research and panel ran as Cursor subagents, and it ended `UNSHIPPED` (training 0.813 below the 0.85
 target), which `check_gate.py --finish` accepts. One build is a smoke test, not a result; its token cells
-were filled from `meta.json` after a separator bug in the cursor branch left them empty.
+were filled from `meta.json` after a separator bug in the cursor branch left them empty. It ran before
+HOME isolation, with the maintainer's HOME: `~/.claude/skills` (the builder read the synced `tribunal`
+skill's `SKILL.md` there) and `~/.cursor` skills and rules were visible to it. Its prompt also named the
+`cursor-agent` command to use as executor and judge; the arm's prompt now says only to use the host's
+headless CLI as the factory describes, so `references/hosts.md` has to carry that.
 
 ## Scoring — deterministic, arm-independent, fixed before any run
 
@@ -97,13 +104,42 @@ scoring/fixtures/t2-good-skill` (the task-2 reference solver wrapped as a skill)
 most stable and cheapest, but measures absolute quality only; plugin eval with deterministic graders is
 the factory's 5.0 uplift gate, and skill-creator's lenient grader is read as a ranking.
 
-## Results — cycle 3 final run (`p-*`, October 2026)
+## Results — release candidate (`r-*`, pending)
 
-The published v0.3.0 result. Builders Claude Sonnet 5.5 and Haiku 5.5, n=5 per cell, medians with
-min–max, `overall` column of [`results/scores.csv`](results/scores.csv). v0.3.0 is the `p-*` run:
-the factory at harness `0c94f94` (cycle 3: `gate.py record`, the kill-guard hook, the evaluator
-guidance, `check_gate.py --finish`), loaded with `--plugin-dir` so the kill guard was active in all 20
-builds. All 20 exited 0 and produced a skill: no environment failures, no retries, no executor
+The release matrix reruns all 20 `p-*` cells (task and task-2 × Sonnet 5.5 and Haiku 5.5, n=5) on the
+factory head this PR publishes, against the same `m-*` baselines, and its tables and fidelity counts go
+here. It has not run yet. Until it does, the latest measured result is `p-*` below, which measured the
+factory at harness `0c94f94`, not the release candidate: the changes listed next are unmeasured by any
+n=5 matrix.
+
+### Changes since `p-*` (harness `0c94f94`..`f902b51`)
+
+- **Any host** (`6a9f6f2`, Amendment 3): `references/hosts.md` maps each step to Claude Code, Cursor,
+  Codex and OpenCode; without `claude plugin eval` the gate runs the manual protocol with no `claude` call;
+  the kill guard ships for all four hosts; `references/authoring-rules.md` is read on every build.
+- **Unattended endings** (`6a9f6f2`): 5.1 writes the premortem to a file and ends by running 5.2's
+  validator, and `check_gate.py --finish` accepts `UNSHIPPED` only after a logged gate attempt.
+- **Native Windows** (`5a60328`, `3cfdb03`, `f902b51`): `run_owned.py` owns jobs through a Job Object on
+  Windows and needs no `fcntl`, `/bin/sh` or `ps` anywhere; `gate.py` runs `run-case.sh` with Git for
+  Windows' bash; the kill guard blocks Windows name kills (`taskkill /IM`, `Stop-Process -Name`) and its
+  `hooks/kill-guard` launcher finds `python3`, `python` or `py -3`. CI runs the script tests on Windows and
+  macOS.
+- **Gate checks**: `run_owned.py start` refuses to overwrite a live job it cannot verify (`da9442a`); the
+  input hash covers the whole wrapper plugin and golden `*.out` files (`a79b3b6`); `gate.py record` reports
+  gold standards on disk that the manual split leaves out (`8f15fd0`); `--finish` needs the validator's
+  current `GATE VALID` line (`e42a158`); data-split names decode JSON escapes (`0053757`).
+- **Kill guard**: multi-line pattern kills are caught (`8f112e7`); the OpenCode plugin exports only the
+  plugin (`0f35594`); unreadable input answers `{"permission": "allow"}` for Cursor (`3cfdb03`).
+- **Text**: Codex runs pass `--skip-git-repo-check` and trust hooks in `/hooks` (`951da88`, `1478991`);
+  the gate-path rule is stated once (`966ee9e`); `name` matches its folder (`966ee9e`).
+
+## Results — cycle 3 run (`p-*`, October 2026)
+
+The latest measured v0.3.0 result, on the factory at harness `0c94f94`. Builders Claude Sonnet 5.5 and
+Haiku 5.5, n=5 per cell, medians with min–max, `overall` column of
+[`results/scores.csv`](results/scores.csv). The factory at harness `0c94f94` (cycle 3: `gate.py record`,
+the kill-guard hook, the evaluator guidance, `check_gate.py --finish`) was loaded with `--plugin-dir` so
+the kill guard was active in all 20 builds. All 20 exited 0 and produced a skill: no environment failures, no retries, no executor
 faults. bare, skill-creator and v0.2.1 are the `m-*` baselines, as in the cycle-2 run below.
 
 | Task | Model | bare | skill-creator | factory v0.2.1 | **factory v0.3.0** |
@@ -160,8 +196,10 @@ and `check_gate.py --finish` on each workspace.
 - **Criterion 7 is met: 19 of 20.** The failure, task-2 Haiku 3, never ran the gate. It skipped 3.6
   and 5.0 (no `gate.py record`, no `gate.py`), so `check_gate.py` reports "plugin_eval is not
   recorded". It then ran `check_gate.py` and `--finish` and wrote `Verdict: UNSHIPPED`. The label is
-  honest, but a skipped gate is a rule break the validator reports and cannot prevent: `--finish`
-  accepts UNSHIPPED without a valid gate, by design.
+  honest, and `--finish` at `0c94f94` accepted it. Since `6a9f6f2`, `--finish` accepts `UNSHIPPED` only
+  after a gate attempt logged in `work/evaluation/gate-attempts.jsonl`, so this build would now get
+  `BUILD UNFINISHED` and be told to run 3.6 and 5.0; it still accepts `UNSHIPPED` after a gate that
+  failed to start or produced an invalid artifact.
 - **Criterion 12 is met:** no build failed "artifact cases differ" (cycle 2's final run had two).
 - **Criteria 8 and 13: met, with the guard untested.** No build executed a pattern kill. The guard
   was loaded in all 20 builds and blocked nothing, because no builder tried one, so this run does not
