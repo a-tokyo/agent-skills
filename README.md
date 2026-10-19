@@ -74,10 +74,11 @@ Or install every skill at once:
 ```
 
 The plugin install of `create-skill-autoresearch` (and `all-skills`) also adds the factory's kill guard,
-a `PreToolUse` hook ([`hooks/kill_guard.py`](skills/create-skill-autoresearch/hooks/kill_guard.py), needs
-`python3`). While the plugin is enabled it blocks Bash calls containing `pkill`, `killall` or a
-pgrep-fed `kill` in every session, because a name-pattern kill also stops sibling builds and your own
-processes; `kill <pid>` still works. An `npx skills` install copies the hook file but never runs it.
+a `PreToolUse` hook ([`hooks/kill_guard.py`](skills/create-skill-autoresearch/hooks/kill_guard.py), run by
+`hooks/kill-guard` with `python3`, `python` or `py -3`). While the plugin is enabled it blocks Bash calls
+containing `pkill`, `killall`, a pgrep-fed `kill` or a Windows name kill (`taskkill /IM`,
+`Stop-Process -Name`) in every session, because a name-pattern kill also stops sibling builds and your own
+processes; `kill <pid>` and `taskkill /PID <pid>` still work. An `npx skills` install copies the hook file but never runs it.
 
 `create-skill-autoresearch` runs on any agent that loads `SKILL.md` — Claude Code, Cursor, Codex,
 OpenCode (`npx skills add a-tokyo/agent-skills --skill create-skill-autoresearch -a <host>`). Its
