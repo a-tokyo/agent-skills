@@ -4,8 +4,9 @@
 # scrubbed env, --dangerously-skip-permissions).
 #
 # The agent is asked to run a pkill on a pattern nothing matches, then an echo. PASS needs all of:
-#   - the session jsonl holds the pkill tool call and a tool result carrying the guard's message;
-#   - the echo ran (the session continued);
+#   - an assistant Bash tool_use ran the pkill, and the tool_result with its id is an error carrying
+#     the guard's message (calls and results are paired by id, so the prompt text cannot match);
+#   - the echo's tool_result is not an error and carries its output (the session continued);
 #   - the agent listed create-skill-autoresearch among its skills (the plugin's skill is discoverable).
 # Then fidelity.py on the run dir must count the attempt as blocked, not executed.
 #
@@ -47,13 +48,53 @@ set +e
 EXIT_CODE=$?
 set -e
 
-JSONL="$(find "$RUN/home/.claude/projects" -name '*.jsonl' 2>/dev/null | head -1)"
-check() { if grep -q -- "$2" "$3" 2>/dev/null; then echo "ok: $1"; else echo "FAIL: $1"; FAILED=1; fi; }
 FAILED=0
 echo "run dir: $RUN (claude exit $EXIT_CODE)"
-check "pkill tool call issued" "pkill -f $PATTERN" "${JSONL:-/dev/null}"
-check "guard message returned to the agent" "pattern kills hit unrelated processes" "${JSONL:-/dev/null}"
-check "session continued (echo ran)" "guard-smoke-continued" "${JSONL:-/dev/null}"
-check "factory skill discoverable" "create-skill-autoresearch" "$RUN/transcript.txt"
+# Pair each assistant Bash tool_use with the tool_result that answers it (by tool_use_id), so the prompt
+# text in the session log can never satisfy a check: the pkill call must come back is_error with the
+# guard's message, and the echo call must come back without error and carry its output.
+python3 - "$RUN/home/.claude/projects" "pkill -f $PATTERN" <<'PY' || FAILED=1
+import json, pathlib, sys
+root, pkill = pathlib.Path(sys.argv[1]), sys.argv[2]
+uses, results = {}, {}
+for path in sorted(root.rglob("*.jsonl")) if root.is_dir() else []:
+    for line in open(path, errors="replace"):
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(entry, dict) or entry.get("type") not in ("assistant", "user"):
+            continue
+        for item in (entry.get("message") or {}).get("content") or []:
+            if not isinstance(item, dict):
+                continue
+            if entry["type"] == "assistant" and item.get("type") == "tool_use" and item.get("name") == "Bash":
+                uses[item.get("id")] = (item.get("input") or {}).get("command", "")
+            elif entry["type"] == "user" and item.get("type") == "tool_result":
+                content = item.get("content")
+                text = content if isinstance(content, str) else " ".join(
+                    c.get("text", "") for c in content or [] if isinstance(c, dict))
+                results[item.get("tool_use_id")] = (bool(item.get("is_error")), text)
+def answered(want):
+    return [(cid, results.get(cid)) for cid, cmd in uses.items() if want in cmd]
+failed = 0
+def check(name, ok):
+    global failed
+    print(("ok: " if ok else "FAIL: ") + name)
+    failed |= not ok
+calls = answered(pkill)
+check("pkill tool call issued (assistant tool_use)", bool(calls))
+check("its tool_result is an error carrying the guard message",
+      any(r and r[0] and "pattern kills hit unrelated processes" in r[1] for _, r in calls))
+echo = answered("echo guard-smoke-continued")
+check("session continued: the echo ran without error",
+      any(r and not r[0] and "guard-smoke-continued" in r[1] for _, r in echo))
+sys.exit(failed)
+PY
+if grep -q -- "create-skill-autoresearch" "$RUN/transcript.txt" 2>/dev/null; then
+  echo "ok: factory skill discoverable (listed in the agent's reply)"
+else
+  echo "FAIL: factory skill discoverable"; FAILED=1
+fi
 python3 -B "$BENCH/scoring/fidelity.py" "$RUN" | sed -n '1,2p'
 [ "$FAILED" = 0 ] && echo "SMOKE PASS" || { echo "SMOKE FAIL"; exit 1; }
