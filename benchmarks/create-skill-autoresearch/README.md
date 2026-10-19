@@ -112,7 +112,7 @@ here. It has not run yet. Until it does, the latest measured result is `p-*` bel
 factory at harness `0c94f94`, not the release candidate: the changes listed next are unmeasured by any
 n=5 matrix.
 
-### Changes since `p-*` (harness `0c94f94`..`f902b51`)
+### Changes since `p-*` (harness `0c94f94`..`8e505b0`)
 
 - **Any host** (`6a9f6f2`, Amendment 3): `references/hosts.md` maps each step to Claude Code, Cursor,
   Codex and OpenCode; without `claude plugin eval` the gate runs the manual protocol with no `claude` call;
