@@ -205,10 +205,10 @@ upstream autoresearch never commits one, and its `git reset --hard HEAD~1` needs
 
 ### 3.6 Scaffold the Eval Suite
 
-**Pick the path first.** When `claude plugin eval --help` exits 0 and the skill is model-invoked, build the plugin-eval
-suite below. Otherwise — another host, Claude Code absent, or a user-invoked skill (`disable-model-invocation: true`
-never fires through the Skill tool, so plugin eval's with-arm would measure nothing) — skip it: 5.0 runs the gate
-gold standards by the **manual protocol**, with no `claude` call anywhere.
+**Pick the path first.** Build the plugin-eval suite below only when the build runs in Claude Code, `claude plugin eval
+--help` exits 0 and the skill is model-invoked. Otherwise — another host (plugin eval cannot run its model), or a user-invoked
+skill (`disable-model-invocation: true` never fires through the Skill tool, so plugin eval's with-arm would measure nothing)
+— skip it: 5.0 runs the gate gold standards by the **manual protocol** (`--backend manual`), with no `claude` call anywhere.
 
 Plugin path: build the suite in a wrapper plugin under `work/` so nothing eval-related ships: `work/evaluation/plugin/` holds `.claude-plugin/plugin.json` (`name`, `version`) and `evals/`
 (`scripts/gate.py` copies the skill to `skills/<skill-name>/` before every run). From that directory, scaffold each
@@ -248,7 +248,7 @@ live there during the session and are archived to `work/experiments/` when it en
   (regex `^METRIC overall_score=([0-9.]+)$`); the other `METRIC` lines are per-dimension context
 - **Direction**: `higher_is_better`
 - **In-scope files**: `output/<skill-name>/SKILL.md`, `output/<skill-name>/references/*`, `output/<skill-name>/scripts/*`
-- **Out-of-scope files**: `input/`, `work/`
+- **Out-of-scope files**: `input/`, `work/` for experiment edits; the LOG step still writes the factory's records below and the 4.2 rotation
 - **Constraints**: the hard constraints in 3.3; if `work/evaluation/evaluate-checks.sh` exists, it
   must exit 0 **before** measuring — a failing check is a discard, not a measurement
 - **Budget**: From rubric config `max_iterations` (default 20)
@@ -357,12 +357,13 @@ python3 <skill-dir>/scripts/run_owned.py wait gate --timeout 540    # repeat unt
 
 `gate.py` runs as the owned job `gate`, as `run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py …`
 would (log `work/pids/gate.log`), and refuses a second start while it runs. To restart the gate, run
-`gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the path by the 3.6 rule (the manual
-protocol runs `run-case.sh` and needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
+`gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the path by the 3.6 rule (`--backend plugin|manual`
+forces one; manual runs `run-case.sh` and needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
 or `uplift.json` plus `gate.json` (hashes of skill, cases, scorers, fixtures, artifact) under `work/evaluation/`. Grant only the tools
 the skill needs. With 3-9 gold standards pass `--in-sample` (gate cases are training cases; `BENCHMARK.md` and
 the panel label Δ in-sample). A non-zero exit says why: fix the suite or `run-case.sh` and re-run; only
-`gate.py` writes the artifact. Its plugin-eval flags: [references/pipeline-phases.md](references/pipeline-phases.md).
+`gate.py` writes the artifact. Every file under `work/evaluation/` is a gate input, so keep scratch and logs (saved
+`check_gate.py` output included) under `work/experiments/`. Plugin-eval flags: [references/pipeline-phases.md](references/pipeline-phases.md).
 
 Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, the same-model uplift the shipping evidence needs ([references/benchmark-standard.md](references/benchmark-standard.md)):
 - Δ <= 0 on a gate gold-standard case is a **verified failure scenario** for the panel — the skill adds
@@ -373,7 +374,7 @@ Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, t
 
 ### 5.1 Premortem
 
-Run the **premortem skill** on the skill artifact with its present-and-ask step replaced: write the whole risk list to `work/experiments/premortem.md` and pick no mitigation — every risk becomes a 5.2 test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. **5.1 ends by running 5.2's `check_gate.py` command in the same reply**, never by presenting the risks or announcing the panel. Continue in the same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run.
+Run the **premortem skill** on the skill artifact with its present-and-ask step replaced: write the whole risk list to `work/experiments/premortem.md` and pick no mitigation — every risk becomes a 5.2 test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. **5.1 ends by running 5.2's `check_gate.py` command in the same reply**, never by presenting the risks or announcing the panel. Continue in the same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates and a panel that scored the current skill, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run.
 
 ### 5.2 Panel Evaluation
 
@@ -381,7 +382,7 @@ First validate the gate artifact from the workspace root; a non-zero exit return
 is never skipped, and the panel never starts on a missing, partial, incomplete or stale artifact:
 
 ```bash
-python3 <skill-dir>/scripts/check_gate.py
+python3 <skill-dir>/scripts/check_gate.py --panel   # also writes work/experiments/panel.json: the skill hash scored
 ```
 
 Then spawn 3 independent verifier subagents **in parallel**. Each receives ONLY the skill SKILL.md and
@@ -429,7 +430,7 @@ dissent logged in `work/experiments/craft-decisions.md`, **deadlock → escalate
 | Any dimension < 3/10 by majority | **BLOCK** -- address blocking concern first |
 
 A 5.0 gate gold-standard case with Δ <= 0 caps the verdict at SHIP WITH CAVEATS until a re-run shows Δ > 0
-or the panel records why that case cannot benefit.
+(`--finish` enforces it); record why that case cannot benefit. Any skill change after the panel means re-running 5.2.
 
 If ITERATE: turn each member's top concern and every Devil's Advocate failure scenario into an
 improvement hypothesis in `autoresearch.ideas.md`, log the panel scores and rationales in

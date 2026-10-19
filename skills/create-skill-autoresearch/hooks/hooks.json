@@ -1,9 +1,9 @@
 {
-  "description": "create-skill-autoresearch kill guard: blocks pattern kills (pkill, killall, pgrep-fed kill, taskkill /IM, Stop-Process -Name) in Bash calls; stop owned jobs with scripts/run_owned.py",
+  "description": "create-skill-autoresearch kill guard: blocks pattern kills (pkill, killall, pgrep-fed kill, taskkill /IM, Stop-Process -Name) in Bash and PowerShell calls; stop owned jobs with scripts/run_owned.py",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash",
+        "matcher": "Bash|PowerShell",
         "hooks": [
           {
             "type": "command",

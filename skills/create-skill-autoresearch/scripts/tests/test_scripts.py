@@ -140,8 +140,10 @@ SCORING_ADAPTER = textwrap.dedent('''\
 
 
 def _env(bin_dir: Path, **extra: str) -> dict[str, str]:
+    """CLAUDECODE=1 as inside Claude Code, where the gate defaults to plugin eval; pass CLAUDECODE="" for
+    another host."""
     return {**os.environ, "PATH": f"{bin_dir}{os.pathsep}{os.environ['PATH']}",
-            "PYTHONDONTWRITEBYTECODE": "1", **extra}
+            "PYTHONDONTWRITEBYTECODE": "1", "CLAUDECODE": "1", **extra}
 
 
 def _path_without_claude() -> str:
@@ -442,6 +444,27 @@ class RunOwnedTest(TempWorkspace):
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertFalse(_group_alive(job["pgid"]))
 
+    def test_fallback_refuses_a_pgid_its_verified_leader_does_not_lead(self) -> None:
+        stranger = subprocess.Popen(SLEEP, **DETACHED)
+        job = self.start("orphan", *SLEEP)
+        try:
+            if self.record("orphan")["lstart"] is None:
+                self.skipTest("the signal fallback needs `ps` to confirm the leader")
+            supervisor = self.record("orphan")["supervisor"]
+            os.kill(supervisor, signal.SIGTERM if WINDOWS else 9)
+            self.assertTrue(_until(lambda: not _alive(supervisor)))
+            path = self.ws / "work" / "pids" / "orphan.json"
+            path.write_text(json.dumps(self.record("orphan") | {"pgid": stranger.pid}))
+            out = self.run_script("run_owned.py", "stop", "orphan", "--grace", "1")
+            self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+            self.assertIn(f"pid {job['pid']}, does not lead that group", out.stderr)
+            self.assertIsNone(stranger.poll(), "the group the edited record names is untouched")
+            self.assertTrue(_alive(job["pid"]))
+        finally:
+            run_owned._signal_group(job["pgid"], run_owned.KILL)
+            stranger.kill()
+            stranger.wait()
+
     def test_concurrent_starts_run_the_job_once(self) -> None:
         argv = [*_script("run_owned.py"), "--workspace", str(self.ws), "start", "race", "--", *SLEEP]
         racers = [subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
@@ -488,7 +511,7 @@ class DataSplitReaderTest(TempWorkspace):
     def test_non_ascii_case_names_round_trip_through_write_and_read(self) -> None:
         path = self.ws / "data-split.yaml"
         cases = ["gold-é", "naïve-02", "日本-03", "plain-04"]
-        gate_common.write_gate_cases(path, cases, 0, "plugin/evals")
+        gate_common.write_gate_cases(path, cases, 0, "plugin/evals", "probe exit code")
         self.assertIn('"gold-\\u00e9"', path.read_text(), "written as JSON escapes")
         self.assertEqual(gate_common.read_data_split(path).plugin_eval, cases)
 
@@ -653,6 +676,37 @@ class GatePluginTest(TempWorkspace):
         self.assertEqual(recorded, ["extra", "gold-01", "gold-02", "near-miss", "trigger-1"])
         self.assertEqual(json.loads(self.run_script("check_gate.py", "--json").stdout)["cases"], 5)
 
+    def victim(self, name: str = "victim") -> Path:
+        """A SKILL-shaped directory in the temp root, outside the workspace: what --skill must never reach."""
+        victim = self.root / "elsewhere" / name
+        victim.mkdir(parents=True)
+        (victim / "SKILL.md").write_text("---\nname: victim\ndescription: Not the build's.\n---\n")
+        return victim
+
+    def test_skill_that_is_a_path_is_refused_and_nothing_outside_is_touched(self) -> None:
+        self.make_build(self.CASES)
+        victim = self.victim()
+        for skill in (str(victim), "../../elsewhere/victim", f"..{os.sep}victim", "demo/../demo", "demo/x", "Demo", ""):
+            with self.subTest(skill=skill):
+                for script, args in (("gate.py", ["--model", "m"]), ("gate.py", ["record"]), ("check_gate.py", [])):
+                    out = self.run_script(script, *args, "--skill", skill)
+                    self.assertNotEqual(out.returncode, 0, out.stdout + out.stderr)
+                    self.assertIn("is not a skill name", out.stdout + out.stderr)
+                self.assertTrue((victim / "SKILL.md").is_file())
+        self.assertFalse(self.argv_log.exists() and "with-without" in self.argv_log.read_text(), "no eval ran")
+
+    def test_symlinked_skill_copy_is_refused_before_anything_is_deleted(self) -> None:
+        self.make_build(self.CASES)
+        victim = self.victim("demo")
+        try:
+            (self.ws / "work" / "evaluation" / "plugin" / "skills").symlink_to(victim.parent, target_is_directory=True)
+        except OSError as exc:
+            self.skipTest(f"no symlinks here: {exc}")
+        out = self.run_script("gate.py", "--model", "m")
+        self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+        self.assertIn("refuses a symlink", out.stdout)
+        self.assertTrue((victim / "SKILL.md").is_file())
+
     def test_unloadable_case_stops_the_gate_before_it_runs(self) -> None:
         self.make_build(self.CASES)
         (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-02" / "INVALID").write_text("")
@@ -724,12 +778,25 @@ class RecordTest(TempWorkspace):
         self.assertEqual(out.returncode, 3)
         self.assertIn("nested eval cases ['group/inner']", out.stderr)
 
-    def test_manual_record_prefers_the_test_split(self) -> None:
+    def test_manual_record_gates_the_test_split_from_ten_gold_standards(self) -> None:
+        self.make_build(["gold-01"], invoked=False)
+        path = self.ws / "work" / "evaluation" / "data-split.yaml"
+        gold = [f"input/g{i:02d}.md" for i in range(10)]
+        path.write_text(f"training: [{', '.join(gold[:7])}]\nvalidation: [{', '.join(gold[7:9])}]\ntest: [{gold[9]}]\n")
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
+        self.assertEqual(self.split().plugin_eval, ["input/g09.md"])
+        path.write_text(f"training: [{', '.join(gold)}]\ntest: []\n")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("10 gold standards and no test split", out.stderr)
+
+    def test_manual_record_gates_every_gold_standard_below_ten(self) -> None:
         self.make_build(["gold-01"], invoked=False)
         path = self.ws / "work" / "evaluation" / "data-split.yaml"
         path.write_text("training: [input/a.md, input/b.md]\nvalidation: [input/c.md]\ntest: [input/d.md]\n")
-        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
-        self.assertEqual(self.split().plugin_eval, ["input/d.md"])
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3, "4 gold standards have no test split (SKILL.md 4.2)")
+        self.assertIn("4 gold standards and a test split of 1", out.stderr)
         path.write_text("all_cases: [input/a.md, input/b.md]\ntraining: [input/b.md, input/c.md]\ntest: []\n")
         self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
         self.assertEqual(self.split().plugin_eval, ["input/a.md", "input/b.md", "input/c.md"],
@@ -954,6 +1021,36 @@ class GateManualTest(TempWorkspace):
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertEqual(self.evaluation("gate.json")["plugin_eval_available"], 1)
 
+    def test_another_host_runs_the_manual_protocol_even_with_claude_installed(self) -> None:
+        self.make_build(["gold-01"], invoked=True, manual=True)
+        self.write_adapter()
+        record = self.run_script("gate.py", "record", CLAUDECODE="")
+        self.assertEqual(record.returncode, 0, record.stderr)
+        self.assertIn("mode manual (plugin eval probe exit not-probed)", record.stdout)
+        out = self.run_script("gate.py", "--model", "gpt-5.6", "--executor", "agentic", CLAUDECODE="")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual((self.evaluation("gate.json")["mode"], self.evaluation("gate.json")["backend"]),
+                         ("manual", "manual"))
+        self.assertFalse(self.argv_log.exists(), "the other host's model id never reached claude")
+
+    def test_backend_manual_inside_claude_code_never_calls_claude(self) -> None:
+        self.make_build(["gold-01"], invoked=True, manual=True)
+        self.write_adapter()
+        out = self.run_script("gate.py", "--backend", "manual", "--model", "m", "--executor", "agentic")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.evaluation("gate.json")["mode"], "manual")
+        self.assertFalse(self.argv_log.exists())
+
+    def test_backend_plugin_that_cannot_run_is_a_precondition_error(self) -> None:
+        self.make_build(["gold-01"], invoked=True, manual=True)
+        out = self.run_script("gate.py", "record", "--backend", "plugin", CLAUDECODE="", no_claude=True)
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("--backend plugin needs `claude plugin eval`", out.stderr)
+        self.make_build([], invoked=False, ws=self.root / "user-invoked")
+        out = self.run_script("gate.py", "record", "--backend", "plugin", ws=self.root / "user-invoked")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("a user-invoked skill never fires", out.stderr)
+
     def test_run_timeout_leaves_a_partial_artifact(self) -> None:
         self.make_build(["input-01", "slow"], invoked=False)
         self.write_adapter()
@@ -1170,11 +1267,47 @@ class FinishTest(TempWorkspace):
         self.assertIn(self.gate_line(), data["reason"], "the reason quotes the line to copy")
         self.benchmark(f"**Verdict: SHIP_WITH_CAVEATS**\n\n{self.gate_line()}\n")
         self.assertEqual(self.finish()["verdict"], "SHIP WITH CAVEATS")
+        self.assertIn("needs the panel receipt work/experiments/panel.json", self.finish()["reason"])
+        self.assertEqual(self.run_script("check_gate.py", "--panel").returncode, 0)
         self.assertTrue(self.finish()["finished"])
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Edited.\n---\n")
         data = self.finish()
         self.assertFalse(data["finished"])
         self.assertIn("skill changed since the gate", data["reason"])
+
+    def test_ship_on_a_panel_that_scored_an_earlier_skill_is_unfinished(self) -> None:
+        self.make_build(["gold-01", "trigger-1"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        panel = self.run_script("check_gate.py", "--panel")
+        self.assertEqual(panel.returncode, 0, panel.stdout + panel.stderr)
+        self.assertIn("PANEL RECEIPT: work/experiments/panel.json", panel.stderr)
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Fixed after the panel.\n---\n")
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0, "the re-run gate validates")
+        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n")
+        data = self.finish()
+        self.assertFalse(data["finished"], "the r-t2-factory-v030-haiku-5 shape: fixed after the panel, re-gated")
+        self.assertIn("the panel scored an earlier output/demo/", data["reason"])
+        self.assertEqual(self.run_script("check_gate.py", "--panel").returncode, 0)
+        self.assertTrue(self.finish()["finished"])
+
+    def test_plain_ship_with_a_gold_delta_at_or_below_zero_is_unfinished(self) -> None:
+        self.make_build(["gold-01", "trigout-2"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        self.assertEqual(self.run_script("check_gate.py", "--panel").returncode, 0)
+        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n")
+        self.assertIn("gold delta<=0 on trigout-2 caps the verdict at SHIP WITH CAVEATS", self.finish()["reason"])
+        self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n")
+        self.assertTrue(self.finish()["finished"])
+        self.assertEqual(self.run_script("check_gate.py", "--panel", "--finish").returncode, 2)
+
+    def test_one_run_gate_never_finishes_a_ship(self) -> None:
+        self.make_build(["gold-01"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m", "--runs", "1").returncode, 1)
+        self.assertIn("1 completed runs; 3 required", self.gate_line())
+        self.benchmark("Verdict: SHIP\n\nGATE VALID: mode=plugin artifact=work/evaluation/plugin-eval.json cases=1\n")
+        self.assertIn("SHIP needs a valid gate", self.finish()["reason"])
+        for args in (["--min-runs", "1"], ["--finish", "--min-runs", "1"]):
+            self.assertEqual(self.run_script("check_gate.py", *args).returncode, 2, "no flag lowers the 3 runs")
 
     def test_live_gate_is_unfinished(self) -> None:
         self.make_build(["gold-01"])

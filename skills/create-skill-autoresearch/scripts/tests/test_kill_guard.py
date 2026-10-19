@@ -37,6 +37,12 @@ ALLOWED = [
     "ls skills/ && cat SKILL.md",
     "git log --oneline -5",
     "npm test 2>&1 | tail -5",
+    'kill %1 && find . -name "*.log"',
+    "docker ps | grep x; kill 123",
+    "ps aux | grep gate\nkill 4242",
+    "pid=$(cat work/pids/gate.pid); kill $pid",
+    "kill 4242 &\nps -p 4242",
+    "echo a & echo b",
 ]
 
 WINDOWS_ALLOWED = [
@@ -70,6 +76,9 @@ WINDOWS_BLOCKED = [
     "pkill.exe -f gate",
     "Stop-Pro`cess -Name node",
     "t^askkill /im node.exe",
+    "Get-Process node | kill",
+    "$p = Get-Process claude; $p.Kill()",
+    "kill (Get-Process node).Id",
 ]
 
 BLOCKED = [
@@ -90,6 +99,13 @@ BLOCKED = [
     "kill `pgrep -f gate`",
     "for p in $(pgrep -f run-case); do kill $p; done",
     "bash -c 'pkill -f gate'",
+    "kill $(command pgrep -f gate.py)",
+    "kill $(sudo pgrep -f gate.py)",
+    "kill $(env LC_ALL=C pgrep -f gate.py)",
+    "exec kill $(builtin command pgrep x)",
+    "xargs kill < <(pgrep -f gate)",
+    "while read p; do kill $p; done < <(pgrep -f eval)",
+    "pgrep -f eval | while read p; do kill $p; done",
 ]
 
 QUOTING_AND_WHITESPACE = [
@@ -167,6 +183,12 @@ class KillGuardTest(unittest.TestCase):
         for command in WINDOWS_BLOCKED:
             with self.subTest(command=command):
                 self.assertIn("taskkill /PID <pid>", self.assert_exit(command, 2).stderr)
+
+    def test_powershell_tool_calls_are_checked(self) -> None:
+        event = bash("Stop-Process -Name node") | {"tool_name": "PowerShell"}
+        self.assertEqual(run_hook(event).returncode, 2)
+        event["tool_input"]["command"] = "Stop-Process -Id 4242"
+        self.assertEqual(run_hook(event).returncode, 0)
 
     def test_other_tools_and_unreadable_input_pass(self) -> None:
         self.assertEqual(run_hook({"tool_name": "Write", "tool_input": {"content": "pkill -f x"}}).returncode, 0)
@@ -303,6 +325,12 @@ class CursorPluginTest(unittest.TestCase):
         self.assertEqual(hook["command"], 'sh "${CURSOR_PLUGIN_ROOT}/hooks/kill-guard"')
         self.assertNotEqual(manifest["hooks"], "hooks/hooks.json", "hooks/hooks.json is Claude's format")
 
+    def test_hosts_md_labels_the_sh_plugin_hook_unsupported_on_native_windows(self) -> None:
+        """Cursor runs hooks through PowerShell on native Windows and fails open when `sh` cannot start."""
+        hosts = (SKILL / "references" / "hosts.md").read_text(encoding="utf-8")
+        self.assertIn("**The Cursor plugin hook is unsupported on native Windows.**", hosts)
+        self.assertIn("py -3 <skill-dir>\\hooks\\kill_guard.py", hosts)
+
 
 def run_configured(command: str, variable: str, payload: dict) -> subprocess.CompletedProcess:
     """Run a hook's configured shell-form command the way a host does: the plugin-root placeholder
@@ -316,7 +344,7 @@ class HooksJsonTest(unittest.TestCase):
     def test_bash_pretooluse_hook_runs_the_guard_from_the_plugin_root(self) -> None:
         config = json.loads((SKILL / "hooks" / "hooks.json").read_text())
         [entry] = config["hooks"]["PreToolUse"]
-        self.assertEqual(entry["matcher"], "Bash")
+        self.assertEqual(entry["matcher"], "Bash|PowerShell", "Claude Code on Windows runs shell commands as PowerShell")
         [hook] = entry["hooks"]
         self.assertEqual(hook["type"], "command")
         self.assertEqual(hook["command"], 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/kill-guard"',

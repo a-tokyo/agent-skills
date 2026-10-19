@@ -54,9 +54,12 @@ _NOT_INPUTS = {p.as_posix() for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_REC
 _GENERATED_DIRS = tuple(f"{d.as_posix()}/" for d in (PLUGIN_DIR / "skills", PLUGIN_DIR / "evals" / "results"))
 
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
+# SKILL.md 4.2: from this many gold standards the split holds out a test set; below it, leave-one-out.
+TEST_SPLIT_MIN = 10
 _GATE_KEYS = ("plugin_eval", "plugin_eval_available")
 _TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
 _INT = re.compile(r"^-?\d+$")
+SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 
 
 class GateError(Exception):
@@ -72,15 +75,25 @@ class DataSplit:
     gold: dict[str, list[str]] = field(default_factory=dict)
     gold_error: str | None = None
 
-    def gate_gold(self) -> list[str]:
-        """The gold standards the gate runs (SKILL.md 3.6): the test split when it lists any (10 or more
-        gold standards), otherwise every gold standard across all_cases, training and validation."""
-        if self.gold.get("test"):
-            return list(self.gold["test"])
+    def all_gold(self) -> list[str]:
+        """Every gold standard the split names, once, in key order."""
         seen: dict[str, None] = {}
-        for key in ("all_cases", "training", "validation"):
+        for key in GOLD_KEYS:
             seen.update(dict.fromkeys(self.gold.get(key, [])))
         return list(seen)
+
+    def gate_gold(self) -> list[str]:
+        """The gold standards the gate runs (SKILL.md 3.6, 4.2): the test split with 10 or more gold
+        standards, every gold standard with 3-9. Raises GateError on a split that breaks that rule."""
+        total, test = len(self.all_gold()), self.gold.get("test", [])
+        if total >= TEST_SPLIT_MIN and not test:
+            raise GateError(f"{total} gold standards and no test split; with {TEST_SPLIT_MIN} or more, 4.2 holds "
+                            "out 10% under `test` and the gate runs those")
+        if total < TEST_SPLIT_MIN and test:
+            raise GateError(f"{total} gold standards and a test split of {len(test)}; with fewer than "
+                            f"{TEST_SPLIT_MIN}, 4.2 has no test split and the gate runs every gold standard: "
+                            "list the `test` entries under all_cases or training instead")
+        return list(test) if test else self.all_gold()
 
 
 def _strip_comment(line: str) -> str:
@@ -184,12 +197,10 @@ def _block_end(lines: list[str], start: int) -> int:
     return end
 
 
-def write_gate_cases(path: Path, cases: list[str], available: int | str, source: str) -> None:
-    """Rewrite `plugin_eval` (as a block list) and `plugin_eval_available` in data-split.yaml, keeping
-    every other line; append them when absent. Creates the file when it does not exist."""
+def write_gate_cases(path: Path, cases: list[str], available: int | str, source: str, why: str) -> None:
+    """Rewrite `plugin_eval` (as a block list) and `plugin_eval_available` (commented with `why`) in
+    data-split.yaml, keeping every other line; append them when absent. Creates the file when absent."""
     lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
-    why = ("exit code of `claude plugin eval --help`" if isinstance(available, int)
-           else "user-invoked skill: always the manual protocol, claude not probed")
     new = {
         "plugin_eval_available": [f"plugin_eval_available: {available}  # {why}"],
         "plugin_eval": [f"plugin_eval:  # written by scripts/gate.py record from {source}; re-run it, never edit"]
@@ -246,16 +257,26 @@ def utf8_stdio() -> None:
             stream.reconfigure(encoding="utf-8", errors="replace")
 
 
+def check_skill_name(skill: object) -> str:
+    """The SKILL.md 3.3 `name` rule, so a skill name can never be a path: a gate deletes and rewrites
+    work/evaluation/plugin/skills/<name>/."""
+    if not isinstance(skill, str) or len(skill) > 64 or not SKILL_NAME.fullmatch(skill):
+        raise GateError(f"skill name {skill!r} is not a skill name (lowercase letters, digits and single hyphens, "
+                        "<= 64 chars; a name under output/, never a path)")
+    return skill
+
+
 def resolve_skill(workspace: Path, skill: str | None) -> str:
     output = workspace / "output"
-    if skill:
+    if skill is not None:
+        check_skill_name(skill)
         if not (output / skill / "SKILL.md").is_file():
             raise GateError(f"no skill at {output / skill / 'SKILL.md'}")
         return skill
     found = sorted(p.parent.name for p in output.glob("*/SKILL.md")) if output.is_dir() else []
     if len(found) != 1:
         raise GateError(f"found {len(found)} skills under {output}; pass --skill <name>")
-    return found[0]
+    return check_skill_name(found[0])
 
 
 def model_invoked(skill_md: Path) -> bool:
@@ -361,7 +382,7 @@ def write_text(path: Path, text: str) -> None:
             os.replace(tmp, path)
             return
         except PermissionError:
-            # Windows: a reader holding path open blocks the replace for a moment.
+            # Windows: a reader holding path open blocks the replace for a moment (50 x 20 ms: a second).
             if os.name != "nt":
                 raise
             time.sleep(0.02)

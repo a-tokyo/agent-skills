@@ -64,8 +64,8 @@ is installed.
 
 | Host | Ships as | Install | Status |
 |---|---|---|---|
-| Claude Code | `hooks/hooks.json` (`PreToolUse`, `Bash`) | plugin install, or `claude --plugin-dir <skill-dir>` | verified live (`claude -p --plugin-dir`: blocked a `killall`, ran the next command) |
-| Cursor | `.cursor-plugin/plugin.json` → `hooks/cursor-hooks.json` (`beforeShellExecution`) | plugin install; or for an `npx skills` install add the hook to `.cursor/hooks.json` (below) | verified live as a plugin (`cursor-agent --plugin-dir <skill-dir>`: `${CURSOR_PLUGIN_ROOT}` expanded, a `killall` was rejected, the next command ran) and as a project hook |
+| Claude Code | `hooks/hooks.json` (`PreToolUse`, matcher `Bash\|PowerShell`: Claude Code on Windows runs shell commands through its PowerShell tool) | plugin install, or `claude --plugin-dir <skill-dir>` | verified live (`claude -p --plugin-dir`: blocked a `killall`, ran the next command) |
+| Cursor | `.cursor-plugin/plugin.json` → `hooks/cursor-hooks.json` (`beforeShellExecution`) | plugin install (not on native Windows, below); or for an `npx skills` install add the hook to `.cursor/hooks.json` (below) | verified live as a plugin (`cursor-agent --plugin-dir <skill-dir>`: `${CURSOR_PLUGIN_ROOT}` expanded, a `killall` was rejected, the next command ran) and as a project hook |
 | Codex | the same script on `PreToolUse` | add to `~/.codex/hooks.json` or `<repo>/.codex/hooks.json` (below), then trust it in `/hooks`: Codex skips an untrusted hook | contract tested offline; untested in Codex |
 | OpenCode | `hooks/opencode-kill-guard.js` (`tool.execute.before`) | symlink it into `.opencode/plugins/` or `~/.config/opencode/plugins/` | plugin tested with node; untested in OpenCode |
 
@@ -77,8 +77,11 @@ Cursor, for a skill installed at `<skill-dir>` (a project hook runs from the pro
   { "command": "sh <skill-dir>/hooks/kill-guard", "timeout": 10 } ] } }
 ```
 
-On native Windows Cursor runs hook commands through PowerShell (Cursor's forum; untested here): use
-`py -3 <skill-dir>\hooks\kill_guard.py` there.
+**The Cursor plugin hook is unsupported on native Windows.** Cursor runs hook commands through PowerShell
+there (Cursor's forum; untested here), where `sh` is usually not on PATH, its hooks file has no per-OS
+command, and a hook that cannot start fails open (Cursor's hooks doc: exit codes other than 0 and 2 allow the
+action), so the guard would silently not run. Add the project hook above instead, with
+`py -3 <skill-dir>\hooks\kill_guard.py` as its command.
 
 Codex (`commandWindows` is its Windows override; for a vetted headless run, `codex exec
 --dangerously-bypass-hook-trust` runs enabled hooks without the `/hooks` trust step):
@@ -107,7 +110,9 @@ script tests in CI (`windows-latest`), not yet by a live build on a Windows host
 ## What needs Claude Code
 
 - **`claude plugin eval`** (3.6 suite, 5.0 plugin path). Elsewhere the gate runs the manual protocol with no
-  `claude` call; `gate.py` picks the path by SKILL.md 3.6's rule.
+  `claude` call; `gate.py` picks the path by SKILL.md 3.6's rule: plugin eval only inside Claude Code
+  (which sets `$CLAUDECODE`), else manual, even where `claude` is installed, since the build targets its own
+  host's model. `--backend plugin|manual` forces one.
 - **skill-creator's description optimizer** (4.6) measures triggering through `claude -p`. Elsewhere revise the
   description by hand against the same eval-set queries and log that no trigger rate was measured.
 - **The reserved words `anthropic`/`claude`** in a skill `name` are a Claude platform rule; the 3.3 checklist

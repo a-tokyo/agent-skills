@@ -66,13 +66,18 @@ else:
 EXIT_STATE = 3
 EXIT_TIMEOUT = 124
 EXIT_NO_STATUS = 125
+# How often wait/stop re-read the exit status, lock and stop file: prompt, and cheap on CPU.
 POLL_SECONDS = 0.2
+# A live supervisor holds its lock for good, so a second tells a live job from one that just exited.
 LOCK_RETRY_SECONDS = 1.0
 # A start waits this long for a concurrent start of the same name to finish, then sees its live job.
 START_LOCK_SECONDS = 30.0
+# Time for the supervisor to start Python and the wrapper and report its pid; a cold Python start on
+# Windows (antivirus scanning a new process) can take several seconds.
 READY_SECONDS = 15.0
 # The wrapper waits this long for `start` to write the record before giving up on the command.
 GO_SECONDS = 30.0
+# Beyond the grace, time for the supervisor to KILL, reap and write its reply before stop gives up.
 STOP_MARGIN_SECONDS = 10.0
 SUPERVISE = "_supervise"
 WRAP = "_wrap"
@@ -128,7 +133,8 @@ def _stop_path(sdir: Path, name: str) -> Path:
 
 
 def _replace(src: Path, dst: Path) -> None:
-    """os.replace; on Windows a reader holding dst open makes it fail for a moment, so retry briefly."""
+    """os.replace; on Windows a reader holding dst open makes it fail for a moment, so retry briefly
+    (50 x 20 ms: a second for the reader to let go)."""
     for _ in range(50):
         try:
             os.replace(src, dst)
@@ -185,7 +191,7 @@ def _lock(path: Path, wait: float) -> int | None:
         if time.monotonic() >= deadline:
             os.close(fd)
             return None
-        time.sleep(0.05)
+        time.sleep(0.05)  # 20 tries a second: a lock frees the moment its holder exits
     return fd
 
 
@@ -244,7 +250,8 @@ def _lstart(pid: int) -> str | None:
         finally:
             _K32.CloseHandle(handle)
     try:
-        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True, timeout=10)
+        out = subprocess.run(["ps", "-o", "lstart=", "-p", str(pid)], capture_output=True, text=True,
+                             timeout=10)  # `ps -p` answers at once; ten seconds bounds a stalled one
     except (OSError, subprocess.TimeoutExpired):
         return None
     value = out.stdout.strip()
@@ -287,7 +294,7 @@ def _kill_tree(pid: int) -> None:
     taskkill = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32" / "taskkill.exe"
     try:
         subprocess.run([str(taskkill), "/PID", str(pid), "/T", "/F"], stdin=subprocess.DEVNULL,
-                       capture_output=True, timeout=60)
+                       capture_output=True, timeout=60)  # /T walks the whole tree; a minute bounds a stalled one
     except (OSError, subprocess.TimeoutExpired):
         pass
 
@@ -439,7 +446,7 @@ def _await_ready(ready_file: Path, proc: subprocess.Popen) -> int | None:
             pass
         if proc.poll() is not None and not ready_file.exists():
             return None
-        time.sleep(0.02)
+        time.sleep(0.02)  # the handshake takes well under a second; a short poll keeps start fast
     return None
 
 
@@ -491,7 +498,7 @@ def _wrap(argv: list[str]) -> int:
         if time.monotonic() >= deadline:
             print(f"run_owned: job {name!r} was never recorded; the command did not run", file=sys.stderr)
             return EXIT_NO_STATUS
-        time.sleep(0.02)
+        time.sleep(0.02)  # start writes the go file right after the record; a short poll keeps start fast
     env = {**os.environ, "RUN_OWNED_JOB": name, "RUN_OWNED_PGID": str(os.getpid()), "RUN_OWNED_TOKEN": token,
            "RUN_OWNED_STOP_FILE": stop_file}
     exe = (shutil.which(cmd[0]) or cmd[0]) if WINDOWS else cmd[0]
@@ -586,7 +593,23 @@ def _target(sdir: Path, name: str, proc: subprocess.Popen | None) -> _Target:
     if leader is None:
         raise OwnedError(f"refusing to signal pgid {rec.pgid}: its supervisor is gone and it cannot confirm pid "
                          f"{rec.pid} is the job it recorded (no start time, `ps` unavailable, or a reused pid)")
+    if leader and not _leads_its_group(rec):
+        raise OwnedError(f"refusing to signal pgid {rec.pgid}: the verified leader, pid {rec.pid}, does not lead "
+                         "that group (the record was edited, or the leader moved groups)")
     return _Target(rec, proc, "signal" if leader else "ended")
+
+
+def _leads_its_group(rec: Record) -> bool:
+    """The fallback signals rec.pgid once pid and start time match, so the group must be the verified
+    leader's own: run_owned makes the leader its group's leader (Windows: pgid is the leader's pid)."""
+    if rec.pgid != rec.pid:
+        return False
+    if WINDOWS:
+        return True
+    try:
+        return os.getpgid(rec.pid) == rec.pgid
+    except OSError:
+        return False
 
 
 def stop_many(sdir: Path, jobs: list[tuple[str, subprocess.Popen | None]], grace: float = 10.0) -> list[str]:
