@@ -186,15 +186,39 @@ class CursorPluginTest(unittest.TestCase):
         self.assertNotEqual(manifest["hooks"], "hooks/hooks.json", "hooks/hooks.json is Claude's format")
 
 
+def run_configured(command: str, variable: str, payload: dict) -> subprocess.CompletedProcess:
+    """Run a hook's configured shell-form command the way a host does: the plugin-root placeholder
+    expanded to the skill directory, through `sh -c`, the event on stdin."""
+    return subprocess.run(["/bin/sh", "-c", command.replace("${" + variable + "}", str(SKILL))],
+                          input=json.dumps(payload), capture_output=True, text=True, timeout=30,
+                          env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+
+
 class HooksJsonTest(unittest.TestCase):
     def test_bash_pretooluse_hook_runs_the_guard_from_the_plugin_root(self) -> None:
         config = json.loads((SKILL / "hooks" / "hooks.json").read_text())
         [entry] = config["hooks"]["PreToolUse"]
         self.assertEqual(entry["matcher"], "Bash")
         [hook] = entry["hooks"]
-        self.assertEqual((hook["type"], hook["command"]), ("command", "python3"))
-        self.assertEqual(hook["args"], ["${CLAUDE_PLUGIN_ROOT}/hooks/kill_guard.py"])
-        self.assertTrue((SKILL / hook["args"][0].replace("${CLAUDE_PLUGIN_ROOT}/", "")).is_file())
+        self.assertEqual(hook["type"], "command")
+        self.assertEqual(hook["command"], 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/kill_guard.py"',
+                         "one shell-form string, no args: portable across CLI versions and hosts")
+        self.assertNotIn("args", hook)
+
+    def test_configured_claude_command_executes_and_blocks(self) -> None:
+        [hook] = json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"]
+        blocked = run_configured(hook["command"], "CLAUDE_PLUGIN_ROOT", bash("pkill -f gate.py"))
+        self.assertEqual(blocked.returncode, 2, blocked.stderr)
+        self.assertIn("pattern kills hit unrelated processes", blocked.stderr)
+        self.assertEqual(run_configured(hook["command"], "CLAUDE_PLUGIN_ROOT", bash("ls")).returncode, 0)
+
+    def test_configured_cursor_command_executes_and_answers_json(self) -> None:
+        manifest = json.loads((SKILL / ".cursor-plugin" / "plugin.json").read_text())
+        [hook] = json.loads((SKILL / manifest["hooks"]).read_text())["hooks"]["beforeShellExecution"]
+        deny = run_configured(hook["command"], "CURSOR_PLUGIN_ROOT", cursor("killall node"))
+        self.assertEqual((deny.returncode, json.loads(deny.stdout)["permission"]), (0, "deny"))
+        allow = run_configured(hook["command"], "CURSOR_PLUGIN_ROOT", cursor("ls"))
+        self.assertEqual(json.loads(allow.stdout), {"permission": "allow"})
 
 
 if __name__ == "__main__":

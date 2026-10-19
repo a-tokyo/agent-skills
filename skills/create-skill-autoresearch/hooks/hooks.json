@@ -7,8 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3",
-            "args": ["${CLAUDE_PLUGIN_ROOT}/hooks/kill_guard.py"],
+            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/kill_guard.py\"",
             "timeout": 10
           }
         ]
