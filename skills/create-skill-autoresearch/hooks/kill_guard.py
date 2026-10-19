@@ -73,8 +73,9 @@ ALLOW = {"permission": "allow"}
 
 
 def normalise(command: str) -> str:
-    """Quotes, line continuations and backslashes removed; line breaks kept (they separate commands)."""
-    return re.sub(r"[\"'\\]", "", re.sub(r"\\\r?\n", " ", command))
+    """Quotes, line continuations and backslashes removed; line breaks kept (they separate commands). Bash
+    deletes a backslash-newline pair outright, so `pki\\<newline>ll` is `pkill`: the halves are joined."""
+    return re.sub(r"[\"'\\]", "", re.sub(r"\\\r?\n", "", command))
 
 
 def simple_commands(text: str) -> list[str]:
@@ -130,7 +131,7 @@ def _windows_kill(commands: list[str]) -> bool:
 
 def is_pattern_kill(command: str) -> bool:
     text = normalise(command)
-    as_path = normalise(re.sub(r"\\\r?\n", " ", command).replace("\\", "/"))
+    as_path = normalise(re.sub(r"\\\r?\n", "", command).replace("\\", "/"))
     if any(_sh_kill(simple_commands(t)) for t in (text, as_path)):
         return True
     return any(_windows_kill(simple_commands(t)) for t in (text, as_path, re.sub(r"[`^]", "", text)))

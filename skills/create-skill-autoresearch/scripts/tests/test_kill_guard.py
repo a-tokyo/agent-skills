@@ -117,6 +117,9 @@ QUOTING_AND_WHITESPACE = [
     "kill \\\n  $(pgrep -f gate)",
     "pgrep -f gate |\txargs   kill",
     "k\"ill\"all node",
+    # Copilot review on agent-skills#24: bash deletes a backslash-newline pair, joining the halves.
+    "pki\\\nll -f gate",
+    "kil\\\nl $(pgrep -f gate)",
 ]
 
 # Copilot review on agent-skills#24: a pipe or a substitution split across lines slipped past the
