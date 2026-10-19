@@ -395,6 +395,18 @@ class DataSplitReaderTest(TempWorkspace):
         self.assertIn("twice", self.read("plugin_eval: [a, a]\n").plugin_eval_error)
         self.assertEqual(self.read("plugin_eval_available: manual\n").plugin_eval_available, "manual")
 
+    def test_double_quoted_names_are_json_decoded(self) -> None:
+        self.assertEqual(self.read('plugin_eval: ["gold-\\u00e9", "a\\"b", "plain"]\n').plugin_eval,
+                         ["gold-é", 'a"b', "plain"])
+        self.assertEqual(self.read("plugin_eval:\n  - 'it''s'\n  - \"x\\\\y\"\n").plugin_eval, ["it''s", "x\\y"])
+
+    def test_non_ascii_case_names_round_trip_through_write_and_read(self) -> None:
+        path = self.ws / "data-split.yaml"
+        cases = ["gold-é", "naïve-02", "日本-03", "plain-04"]
+        gate_common.write_gate_cases(path, cases, 0, "plugin/evals")
+        self.assertIn('"gold-\\u00e9"', path.read_text(), "written as JSON escapes")
+        self.assertEqual(gate_common.read_data_split(path).plugin_eval, cases)
+
     def test_gold_standards_are_recorded_by_any_split_key(self) -> None:
         self.assertFalse(self.read("training: []\nplugin_eval: [a]\n").gold_recorded)
         self.assertTrue(self.read("test: [input/g1.md]\nplugin_eval: [a]\n").gold_recorded)
@@ -582,6 +594,14 @@ class RecordTest(TempWorkspace):
         self.assertTrue(path.read_text().startswith("# split notes\nstrategy: leave-one-out\ntraining: []\n"))
         load = [json.loads(line) for line in self.argv_log.read_text().splitlines() if "--max-cost-usd" in line]
         self.assertEqual(load[-1][load[-1].index("--max-cost-usd") + 1], "0", "the load check spends nothing")
+
+    def test_record_and_gate_handle_a_non_ascii_case_name(self) -> None:
+        self.make_build(["gold-é", "trigger-1"])
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
+        self.assertEqual(self.split().plugin_eval, ["gold-é", "trigger-1"])
+        out = self.run_script("gate.py", "--model", "m")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.run_script("check_gate.py").returncode, 0)
 
     def test_record_replaces_a_flow_list_and_keeps_other_keys(self) -> None:
         self.make_build(["gold-01"])

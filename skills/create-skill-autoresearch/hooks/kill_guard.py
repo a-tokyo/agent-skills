@@ -16,11 +16,13 @@ OpenCode runs it through hooks/opencode-kill-guard.js. Input it cannot read is l
 must never stop every shell call. A command that only mentions one of these words (a grep for `pkill`)
 is blocked too; the message says what to run instead.
 
-Detection runs on the command with quotes and backslashes removed, so `p'k'ill`, `"pkill"`,
-`\\pkill` and line continuations do not hide a kill. Blocked:
+Detection runs on the whole command with quotes and backslashes removed and line breaks flattened, so
+`p'k'ill`, `"pkill"`, `\\pkill`, line continuations and a pipe or `$( … )` split across lines do not
+hide a kill. Blocked:
   pkill, killall                              anywhere as a word (any path: /usr/bin/pkill)
-  pgrep | pidof | ps ... | ... kill           a process listing piped into kill on the same line
-  kill ... $(pgrep ...), `pgrep ...` ... kill a process listing substituted into a line with kill
+  pgrep | pidof | ps ... | ... kill           a process listing piped into kill
+  kill ... $(pgrep ...), `pgrep ...` ... kill a process listing substituted into a command that kills
+                                              (`pids=$(pgrep x)` then `kill $pids` included)
 """
 
 from __future__ import annotations
@@ -33,21 +35,21 @@ MESSAGE = ("Blocked by create-skill-autoresearch's kill guard. Use scripts/run_o
            "pattern kills hit unrelated processes. To stop one known process, kill its PID.")
 _LISTERS = r"(?:pgrep|pidof|ps)"
 NAMED_KILL = re.compile(r"\b(?:pkill|killall)\b")
-PIPED_KILL = re.compile(rf"\b{_LISTERS}\b[^\n]*\|[^\n]*\bkill\b")
+PIPED_KILL = re.compile(rf"\b{_LISTERS}\b.*\|.*\bkill\b")
 SUBSTITUTED_LISTING = re.compile(rf"(?:\$\(|`)\s*{_LISTERS}\b")
 KILL = re.compile(r"\bkill\b")
 CURSOR_EVENT = "beforeShellExecution"
 
 
 def normalise(command: str) -> str:
-    return re.sub(r"[\"'\\]", "", command.replace("\\\n", " "))
+    """Quotes and backslashes removed, every line break flattened to a space."""
+    return re.sub(r"\s*[\r\n]+\s*", " ", re.sub(r"[\"'\\]", "", command.replace("\\\n", " ")))
 
 
 def is_pattern_kill(command: str) -> bool:
     text = normalise(command)
-    if NAMED_KILL.search(text) or PIPED_KILL.search(text):
-        return True
-    return any(KILL.search(line) and SUBSTITUTED_LISTING.search(line) for line in text.splitlines())
+    return bool(NAMED_KILL.search(text) or PIPED_KILL.search(text)
+                or (KILL.search(text) and SUBSTITUTED_LISTING.search(text)))
 
 
 def main() -> int:

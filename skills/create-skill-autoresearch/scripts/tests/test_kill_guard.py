@@ -65,6 +65,17 @@ QUOTING_AND_WHITESPACE = [
     "k\"ill\"all node",
 ]
 
+# Copilot review on agent-skills#24: a pipe or a substitution split across lines slipped past the
+# per-line match.
+MULTILINE = [
+    "kill $(\n  pgrep -f x\n)",
+    "pgrep -f x |\n  xargs kill",
+    "pgrep -f x\\\n | xargs kill -9",
+    "kill -TERM `\npgrep -f gate`",
+    "pids=$(pgrep -f gate.py)\nkill $pids",
+    "ps aux |\n grep eval |\n awk '{print $2}' |\n xargs kill",
+]
+
 
 def run_hook(payload: object) -> subprocess.CompletedProcess:
     data = payload if isinstance(payload, str) else json.dumps(payload)
@@ -98,6 +109,18 @@ class KillGuardTest(unittest.TestCase):
         for command in QUOTING_AND_WHITESPACE:
             with self.subTest(command=command):
                 self.assert_exit(command, 2)
+
+    def test_multiline_pipes_and_substitutions_are_blocked(self) -> None:
+        for command in MULTILINE:
+            with self.subTest(command=command):
+                self.assert_exit(command, 2)
+                self.assertEqual(json.loads(run_hook(cursor(command)).stdout)["permission"], "deny")
+
+    def test_multiline_commands_without_a_pattern_kill_pass(self) -> None:
+        for command in ("ls\npython3 scripts/run_owned.py stop gate", "pgrep -f gate.py\necho done",
+                        "git status |\n  head -5", "kill 4242\necho stopped"):
+            with self.subTest(command=command):
+                self.assert_exit(command, 0)
 
     def test_other_tools_and_unreadable_input_pass(self) -> None:
         self.assertEqual(run_hook({"tool_name": "Write", "tool_input": {"content": "pkill -f x"}}).returncode, 0)

@@ -91,8 +91,16 @@ def _strip_comment(line: str) -> str:
 
 
 def _unquote(token: str) -> str:
+    """A double-quoted token is decoded as JSON (the form write_gate_cases emits, so `\\u00e9` and other
+    escapes round-trip); a single-quoted one has its quotes stripped; anything else is kept as written."""
     token = token.strip()
-    if len(token) >= 2 and token[0] == token[-1] and token[0] in "\"'":
+    if len(token) >= 2 and token[0] == token[-1] == '"':
+        try:
+            decoded = json.loads(token)
+        except json.JSONDecodeError:
+            return token[1:-1]
+        return decoded if isinstance(decoded, str) else token[1:-1]
+    if len(token) >= 2 and token[0] == token[-1] == "'":
         return token[1:-1]
     return token
 
