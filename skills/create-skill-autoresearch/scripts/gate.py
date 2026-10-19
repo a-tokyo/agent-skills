@@ -48,8 +48,9 @@ check_gate.py, and writes nothing outside work/evaluation/ and work/pids/.
             [--timeout 5400] [--case-timeout 1200] [--detach] [--restart]
     gate.py --stop [--workspace DIR]
 
-run-case.sh receives GATE_MODEL and GATE_RUN in its environment and runs from the workspace root.
-Tested on macOS and Linux.
+run-case.sh receives GATE_MODEL and GATE_RUN in its environment and runs from the workspace root; on
+Windows the gate runs it with Git for Windows' bash (CLAUDE_CODE_GIT_BASH_PATH, else bash on PATH or the
+default Git install; WSL's bash.exe is skipped). Tested on macOS, Linux and Windows.
 
 Exit codes: 0 complete and valid (--detach, --restart, --stop: started or stopped); 1 the gate ran but the artifact is
 missing, partial or invalid (the message says why); 2 usage error; 3 a precondition is missing
@@ -79,8 +80,8 @@ import check_gate  # noqa: E402  (sibling imports after disabling bytecode)
 import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
-    GateError, cases_sha256, file_sha256, inputs_sha256, model_invoked, read_data_split, resolve_skill,
-    log_attempt, skill_sha256, write_gate_cases, write_json,
+    GateError, cases_sha256, file_sha256, inputs_sha256, model_invoked, omitted_gold, read_data_split, resolve_skill,
+    log_attempt, skill_sha256, utf8_stdio, write_gate_cases, write_json,
 )
 
 EXIT_INVALID = 1
@@ -114,10 +115,42 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
+def _claude() -> str | None:
+    """The claude executable on PATH; on Windows npm installs it as claude.cmd, which only PATHEXT finds."""
+    return shutil.which("claude")
+
+
+def _git_bash() -> str | None:
+    """Windows: Git for Windows' bash.exe, never WSL's launcher in System32."""
+    system32 = Path(os.environ.get("SystemRoot", r"C:\Windows")) / "System32"
+    candidates = [os.environ.get("CLAUDE_CODE_GIT_BASH_PATH"), shutil.which("bash")]
+    candidates += [str(Path(os.environ[var]).joinpath(*rest)) for var, *rest in (
+        ("ProgramFiles", "Git", "bin", "bash.exe"), ("ProgramFiles(x86)", "Git", "bin", "bash.exe"),
+        ("LOCALAPPDATA", "Programs", "Git", "bin", "bash.exe")) if os.environ.get(var)]
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file() and Path(candidate).parent.resolve() != system32.resolve():
+            return candidate
+    return None
+
+
+def _adapter_argv(ws: Path) -> list[str]:
+    adapter = (ws / RUN_CASE).resolve()
+    if os.name != "nt":
+        return [str(adapter)]
+    bash = _git_bash()
+    if bash is None:
+        raise GateError(f"manual mode on Windows runs {RUN_CASE} with Git for Windows' bash, and none was found; "
+                        "install Git for Windows or set CLAUDE_CODE_GIT_BASH_PATH to its bash.exe")
+    return [bash, adapter.as_posix()]
+
+
 def probe_plugin_eval() -> int:
     """Exit code of `claude plugin eval --help`: 127 if claude is missing, 124 on timeout."""
+    claude = _claude()
+    if claude is None:
+        return 127
     try:
-        return subprocess.run(["claude", "plugin", "eval", "--help"], stdin=subprocess.DEVNULL,
+        return subprocess.run([claude, "plugin", "eval", "--help"], stdin=subprocess.DEVNULL,
                               capture_output=True, timeout=PROBE_TIMEOUT).returncode
     except FileNotFoundError:
         return 127
@@ -135,7 +168,7 @@ def _is_case(path: Path) -> bool:
 
 
 def _case_yaml_name(case_yaml: Path) -> str | None:
-    for line in case_yaml.read_text().splitlines():
+    for line in case_yaml.read_text(encoding="utf-8", errors="replace").splitlines():
         match = NAME_RE.match(line)
         if match:
             return match.group(1).split(" #")[0].strip().strip("\"'") or None
@@ -170,12 +203,12 @@ def load_check(ws: Path) -> None:
     load (a `✗` line) and stops before the first run, spending nothing. A case that fails to load is
     otherwise skipped silently and the artifact misses it. Fails only on reported load errors."""
     with tempfile.TemporaryDirectory(prefix="gate-load-check-") as tmp:
-        cmd = ["claude", "plugin", "eval", ".", "--max-cost-usd", "0", "--ablation", "none", "--trust-plugin",
+        cmd = [_claude() or "claude", "plugin", "eval", ".", "--max-cost-usd", "0", "--ablation", "none", "--trust-plugin",
                "--no-publish", "--output-dir", tmp, "--report", str(Path(tmp) / "report.html"),
                "--json", str(Path(tmp) / "load-check.json")]
         try:
             out = subprocess.run(cmd, cwd=ws / PLUGIN_DIR, stdin=subprocess.DEVNULL, capture_output=True,
-                                 text=True, timeout=LOAD_CHECK_TIMEOUT)
+                                 encoding="utf-8", errors="replace", timeout=LOAD_CHECK_TIMEOUT)
         except (FileNotFoundError, subprocess.TimeoutExpired) as exc:
             print(f"gate: load check skipped ({exc})", file=sys.stderr)
             return
@@ -196,7 +229,7 @@ def record_cases(ws: Path, skill: str) -> tuple[list[str], str, int | str, bool]
     available: int | str = probe_plugin_eval() if invoked else NOT_PROBED
     mode = "plugin" if available == 0 else "manual"
     if mode == "plugin":
-        cases, source = suite_cases(ws), str(PLUGIN_DIR / "evals")
+        cases, source = suite_cases(ws), (PLUGIN_DIR / "evals").as_posix()
         load_check(ws)
     else:
         split = read_data_split(ws / DATA_SPLIT)
@@ -206,6 +239,12 @@ def record_cases(ws: Path, skill: str) -> tuple[list[str], str, int | str, bool]
         if not cases:
             raise GateError(f"{DATA_SPLIT} lists no gold standards (all_cases, training, validation or test; "
                             "4.2); the manual protocol runs one gate case per gold standard")
+        omitted = omitted_gold(ws, [c for key in ("all_cases", "training", "validation", "test")
+                                    for c in split.gold.get(key, [])])
+        if omitted:
+            raise GateError(f"{DATA_SPLIT} leaves out gold standards found on disk: {', '.join(omitted)}; list each "
+                            "under all_cases, training, validation or test (4.2), or move a file that is not a "
+                            "gold standard out of that folder")
     write_gate_cases(ws / DATA_SPLIT, cases, available, source)
     return cases, mode, available, invoked
 
@@ -251,7 +290,7 @@ def _stop_children(sdir: Path) -> None:
 
 def _scaffold_script(case_yaml: Path) -> str | None:
     """The `scaffold_script:` value in a case.yaml (the only key read; quotes and comments stripped)."""
-    for line in case_yaml.read_text().splitlines():
+    for line in case_yaml.read_text(encoding="utf-8", errors="replace").splitlines():
         match = SCAFFOLD_RE.match(line)
         if match:
             return match.group(1).split(" #")[0].strip().strip("\"'") or None
@@ -273,6 +312,7 @@ def check_adapter(ws: Path, args: argparse.Namespace) -> None:
     adapter = ws / RUN_CASE
     if not adapter.is_file() or not os.access(adapter, os.X_OK):
         raise GateError(f"{RUN_CASE} is missing or not executable; 3.6 writes it (chmod +x)")
+    _adapter_argv(ws)
     if args.executor is None:
         raise GateError("manual mode: pass --executor single-call or agentic (recorded in uplift.json)")
 
@@ -296,7 +336,7 @@ def run_plugin(ws: Path, skill: str, args: argparse.Namespace) -> None:
         shutil.rmtree(copy)
     shutil.copytree(ws / "output" / skill, copy)
 
-    cmd = ["claude", "plugin", "eval", ".", "--ablation", "with-without", "--runs", str(args.runs),
+    cmd = [_claude() or "claude", "plugin", "eval", ".", "--ablation", "with-without", "--runs", str(args.runs),
            "-j", str(args.jobs), "--model", args.model, "--allow-tools", *args.allow_tools,
            "--scaffold", "--trust-plugin", "--no-publish", "--threshold", "0",
            "--json", str((ws / PLUGIN_ARTIFACT).resolve())]
@@ -305,7 +345,8 @@ def run_plugin(ws: Path, skill: str, args: argparse.Namespace) -> None:
         print(f"gate: claude plugin eval timed out after {args.timeout:g}s and was stopped; log: {log}", file=sys.stderr)
     elif rc != 0:
         print(f"gate: claude plugin eval exited {rc}; log: {log}", file=sys.stderr)
-    skipped = [line for line in Path(log).read_text(errors="replace").splitlines() if line.startswith("✗ ")]
+    skipped = [line for line in Path(log).read_text(encoding="utf-8", errors="replace").splitlines()
+               if line.startswith("✗ ")]
     if skipped:
         print(f"gate: claude plugin eval could not load {len(skipped)} case file(s):\n  " + "\n  ".join(skipped),
               file=sys.stderr)
@@ -327,11 +368,11 @@ def _one_run(ws: Path, idx: int, case: str, arm: str, run: int, args: argparse.N
     error, log = "not run", ""
     for attempt in range(1, ATTEMPTS + 1):
         name = f"gate-c{idx:02d}-{arm}-r{run}-a{attempt}"
-        rc, log = run_owned_job(sdir, name, [str((ws / RUN_CASE).resolve()), case, arm], ws, args.case_timeout, env)
+        rc, log = run_owned_job(sdir, name, [*_adapter_argv(ws), case, arm], ws, args.case_timeout, env)
         if rc is None:
             error = f"timed out after {args.case_timeout:g}s"
             continue
-        found = SCORE_RE.findall(Path(log).read_text(errors="replace"))
+        found = SCORE_RE.findall(Path(log).read_text(encoding="utf-8", errors="replace"))
         if rc != 0:
             error = f"exit {rc}"
         elif not found:
@@ -392,15 +433,31 @@ def run_manual(ws: Path, cases: list[str], args: argparse.Namespace) -> None:
         print(f"gate: {err['case']} {err['arm']} run {err['run']}: {err['error']} (log {err['log']})", file=sys.stderr)
 
 
+def _watch_stop_file() -> None:
+    """run_owned's stop file asks the job to stop; on Windows it is the only request before the Job
+    Object ends, so the gate stops its eval runs itself while the grace period lasts."""
+    stop_file = os.environ.get("RUN_OWNED_STOP_FILE")
+    if not stop_file:
+        return
+
+    def watch() -> None:
+        while not _STOP.wait(POLL_SECONDS):
+            if os.path.exists(stop_file):
+                _STOP.set()
+
+    threading.Thread(target=watch, daemon=True).start()
+
+
 def run_gate(ws: Path, args: argparse.Namespace) -> int:
     """The gate itself; runs inside the owned `gate` job."""
     signal.signal(signal.SIGTERM, lambda *_: _STOP.set())
+    _watch_stop_file()
     try:
         skill, cases, mode, available, invoked = preconditions(ws, args)
         artifact = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         record = {"mode": mode, "plugin_eval_available": available, "model_invoked": invoked, "skill": skill,
                   "model": args.model, "runs": args.runs, "in_sample": args.in_sample,
-                  "cases": cases, "artifact": str(artifact),
+                  "cases": cases, "artifact": artifact.as_posix(),
                   "skill_sha256": skill_sha256(ws, skill), "cases_sha256": cases_sha256(ws, cases),
                   "started": _now(), "finished": None}
         write_json(ws / GATE_RECORD, record)
@@ -429,8 +486,15 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
     return 0 if verdict.valid else EXIT_INVALID
 
 
-def _inside_gate_job() -> bool:
-    return os.environ.get("RUN_OWNED_JOB") == JOB and os.environ.get("RUN_OWNED_PGID") == str(os.getpgrp())
+def _inside_gate_job(ws: Path) -> bool:
+    """True when this process is the `gate` job's command: its token matches the job's record."""
+    token = os.environ.get("RUN_OWNED_TOKEN")
+    if os.environ.get("RUN_OWNED_JOB") != JOB or not token:
+        return False
+    try:
+        return run_owned.load(run_owned.state_dir(ws), JOB).token == token
+    except run_owned.OwnedError:
+        return False
 
 
 def _running(sdir: Path) -> dict | None:
@@ -454,8 +518,11 @@ def _job_argv(ws: Path, args: argparse.Namespace) -> list[str]:
     return argv
 
 
+PYTHON = f'"{sys.executable}"' if os.name == "nt" else "python3"
+
+
 def _wait_hint(ws: Path) -> str:
-    return f"python3 {SCRIPTS / 'run_owned.py'} --workspace {ws} wait {JOB} --timeout {WAIT_HINT_SECONDS}"
+    return f"{PYTHON} {SCRIPTS / 'run_owned.py'} --workspace {ws} wait {JOB} --timeout {WAIT_HINT_SECONDS}"
 
 
 def _stop(sdir: Path) -> int:
@@ -473,7 +540,7 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     if live and not args.restart:
         print(f"gate: a `{JOB}` job is already running (pgid {live['pgid']}, log {live['log']}).\n"
               f"  poll it:   {_wait_hint(ws)}\n"
-              f"  restart:   python3 {SCRIPTS / 'gate.py'} --restart <the same options>", file=sys.stderr)
+              f"  restart:   {PYTHON} {SCRIPTS / 'gate.py'} --restart <the same options>", file=sys.stderr)
         return EXIT_PRECONDITION
     try:
         if args.detach or args.restart:
@@ -499,7 +566,7 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     except KeyboardInterrupt:
         print(f"\ngate: still running in the background: {_wait_hint(ws)}", file=sys.stderr)
         return 130
-    sys.stdout.write(Path(log).read_text(errors="replace"))
+    sys.stdout.write(Path(log).read_text(encoding="utf-8", errors="replace"))
     return rc
 
 
@@ -517,6 +584,7 @@ def record(ws: Path, skill: str | None) -> int:
 
 
 def main(argv: list[str] | None = None) -> int:
+    utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("command", nargs="?", choices=["record"],
                         help="record: write the case list into data-split.yaml from disk, then exit")
@@ -554,7 +622,7 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.stop:
             return _stop(run_owned.state_dir(ws))
-        if _inside_gate_job():
+        if _inside_gate_job(ws):
             return run_gate(ws, args)
         return supervise(ws, args)
     except run_owned.OwnedError as exc:

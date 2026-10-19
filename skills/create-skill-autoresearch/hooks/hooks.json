@@ -1,5 +1,5 @@
 {
-  "description": "create-skill-autoresearch kill guard: blocks pkill, killall and pgrep-fed kill in Bash calls; stop owned jobs with scripts/run_owned.py",
+  "description": "create-skill-autoresearch kill guard: blocks pattern kills (pkill, killall, pgrep-fed kill, taskkill /IM, Stop-Process -Name) in Bash calls; stop owned jobs with scripts/run_owned.py",
   "hooks": {
     "PreToolUse": [
       {
@@ -7,7 +7,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "python3 \"${CLAUDE_PLUGIN_ROOT}/hooks/kill_guard.py\"",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/kill-guard\"",
             "timeout": 10
           }
         ]

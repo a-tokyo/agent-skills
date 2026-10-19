@@ -66,7 +66,9 @@ where this file and that page disagree, the page wins and this file is updated.
 ## Evaluation
 
 - **Evaluations before instructions**: a baseline without the skill, at least 3 scenarios that hit real gaps, then
-  the least text that passes them. The factory's 3.4-3.6 build exactly this.
+  the least text that passes them. The factory fixes its evaluations before the draft: the Phase 1 gold
+  standards (3 or more) are the scenarios and the confirmed 2.3 rubric scores them, both settled before 3.3
+  writes a line; 3.4-3.6 then turn them into scripts, and 3.5 measures the draft against them.
 - **Test on every model the skill targets**: a smaller model may need more detail, a larger one less.
 - Watch how the agent actually navigates the skill (its transcripts, not just its outputs) and fix the structure,
   not only the wording.

@@ -12,6 +12,7 @@ marks what the factory's own tests or benchmark ran.
 - Headless runs, judges and executors
 - Subagents
 - Kill guard
+- Operating systems
 - What needs Claude Code
 
 ## Skills and install
@@ -34,14 +35,16 @@ switch only when the user asks for manual-only there.
 |---|---|---|---|---|
 | Claude Code | `claude -p "<prompt>"` | `--model <id>` | `--allowedTools …`, `--dangerously-skip-permissions` | `--output-format json\|stream-json` |
 | Cursor | `cursor-agent -p "<prompt>"` | `--model <id>` (`--list-models`) | `--force --trust` | `--output-format json\|stream-json` |
-| Codex | `codex exec "<prompt>"` | `-m <id>` | `--sandbox workspace-write` | `--json` |
+| Codex | `codex exec --skip-git-repo-check "<prompt>"` | `-m <id>` | `--sandbox workspace-write` | `--json` |
 | OpenCode | `opencode run "<prompt>"` | `-m <provider/model>` | `--auto` | `--format json` |
 
 The same command serves every headless role: the 3.4 executor and judge, the manual-protocol agentic
 executor and `llm` grader (benchmark-standard.md), and a fresh-session subagent. Pass the skill as context
 in the prompt (or install it in the run's workspace for an agentic run), keep stdin closed (`</dev/null`),
 and set a timeout. Choose the judge from a different model family than the builder when the host offers
-one (`cursor-agent --list-models`, `opencode models`). Verified: Cursor and Claude Code.
+one (`cursor-agent --list-models`, `opencode models`). `codex exec` refuses a directory outside a git repository
+unless given `--skip-git-repo-check`, and the judge and executor run in scratch directories, so always pass it.
+Verified: Cursor and Claude Code.
 
 ## Subagents
 
@@ -53,14 +56,17 @@ another, giving it only that role's inputs; that keeps the context walls the pan
 
 ## Kill guard
 
-`hooks/kill_guard.py` reads either contract and blocks `pkill`, `killall` and pgrep-fed kills; `run_owned.py`
-is the guard where none of these is installed.
+`hooks/kill_guard.py` reads either contract and blocks pattern kills: `pkill`, `killall`, a `pgrep`/`pidof`/`ps`
+listing fed to `kill`, and on Windows `taskkill /IM` or `/FI`, `Stop-Process -Name` and a `Get-Process` listing fed to a
+kill (`taskkill /PID <n>` and `Stop-Process -Id <n>` pass). The hook configs run it through `hooks/kill-guard`, which
+picks `python3`, `python` or `py -3`; with none it lets the call through. `run_owned.py` is the guard where no hook
+is installed.
 
 | Host | Ships as | Install | Status |
 |---|---|---|---|
-| Claude Code | `hooks/hooks.json` (`PreToolUse`, `Bash`) | plugin install, or `claude --plugin-dir <skill-dir>` | verified (plugin load, smoke run) |
-| Cursor | `.cursor-plugin/plugin.json` → `hooks/cursor-hooks.json` (`beforeShellExecution`) | plugin install; or for an `npx skills` install add the hook to `.cursor/hooks.json` (below) | contract tested offline; verified live as a project hook under `cursor-agent` (blocked a `pkill`, allowed the next command); the plugin install path is untested |
-| Codex | the same script on `PreToolUse` | add to `~/.codex/hooks.json` or `<repo>/.codex/hooks.json` (below); Codex asks you to trust hooks | contract tested offline; untested in Codex |
+| Claude Code | `hooks/hooks.json` (`PreToolUse`, `Bash`) | plugin install, or `claude --plugin-dir <skill-dir>` | verified live (`claude -p --plugin-dir`: blocked a `killall`, ran the next command) |
+| Cursor | `.cursor-plugin/plugin.json` → `hooks/cursor-hooks.json` (`beforeShellExecution`) | plugin install; or for an `npx skills` install add the hook to `.cursor/hooks.json` (below) | verified live as a plugin (`cursor-agent --plugin-dir <skill-dir>`: `${CURSOR_PLUGIN_ROOT}` expanded, a `killall` was rejected, the next command ran) and as a project hook |
+| Codex | the same script on `PreToolUse` | add to `~/.codex/hooks.json` or `<repo>/.codex/hooks.json` (below), then trust it in `/hooks`: Codex skips an untrusted hook | contract tested offline; untested in Codex |
 | OpenCode | `hooks/opencode-kill-guard.js` (`tool.execute.before`) | symlink it into `.opencode/plugins/` or `~/.config/opencode/plugins/` | plugin tested with node; untested in OpenCode |
 
 Cursor, for a skill installed at `<skill-dir>` (a project hook runs from the project root, a user hook from
@@ -68,20 +74,40 @@ Cursor, for a skill installed at `<skill-dir>` (a project hook runs from the pro
 
 ```json
 { "version": 1, "hooks": { "beforeShellExecution": [
-  { "command": "python3 <skill-dir>/hooks/kill_guard.py", "timeout": 10 } ] } }
+  { "command": "sh <skill-dir>/hooks/kill-guard", "timeout": 10 } ] } }
 ```
 
-Codex:
+On native Windows Cursor runs hook commands through PowerShell (Cursor's forum; untested here): use
+`py -3 <skill-dir>\hooks\kill_guard.py` there.
+
+Codex (`commandWindows` is its Windows override; for a vetted headless run, `codex exec
+--dangerously-bypass-hook-trust` runs enabled hooks without the `/hooks` trust step):
 
 ```json
 { "hooks": { "PreToolUse": [ { "matcher": "Bash", "hooks": [
-  { "type": "command", "command": "python3 <skill-dir>/hooks/kill_guard.py", "timeout": 10 } ] } ] } }
+  { "type": "command", "command": "sh <skill-dir>/hooks/kill-guard",
+    "commandWindows": "py -3 <skill-dir>\\hooks\\kill_guard.py", "timeout": 10 } ] } ] } }
 ```
+
+## Operating systems
+
+The bundled scripts need Python 3.9+ and its standard library, nothing else, on macOS, Linux and Windows. Run
+them as `python3 <script>` on macOS and Linux and `py -3 <script>` on Windows (`python` where that is the
+Python 3 on PATH). `run_owned.py` owns a job through its process group on macOS and Linux and through a Job
+Object on Windows; either way `stop` ends only that job. Windows has no TERM: the job is asked to stop through
+the file named in `$RUN_OWNED_STOP_FILE` (`gate.py` honours it) and ended after the grace period.
+
+On Windows the manual gate runs `work/evaluation/run-case.sh` with Git for Windows' bash
+(`CLAUDE_CODE_GIT_BASH_PATH`, else `bash` on PATH, else the default install; WSL's `bash.exe` is never used),
+so install [Git for Windows](https://git-scm.com/download/win), which Claude Code on Windows already needs, and
+write `run-case.sh` and `evaluate.sh` for that bash. The kill guard's `sh` launcher needs Git Bash's `sh` too;
+Claude Code runs shell-form hooks in Git Bash. Verified: macOS and Linux locally and in CI; Windows by the
+script tests in CI (`windows-latest`), not yet by a live build on a Windows host.
 
 ## What needs Claude Code
 
 - **`claude plugin eval`** (3.6 suite, 5.0 plugin path). Elsewhere the gate runs the manual protocol with no
-  `claude` call; `gate.py` decides by probing `claude plugin eval --help` (absent → manual).
+  `claude` call; `gate.py` picks the path by SKILL.md 3.6's rule.
 - **skill-creator's description optimizer** (4.6) measures triggering through `claude -p`. Elsewhere revise the
   description by hand against the same eval-set queries and log that no trigger rate was measured.
 - **The reserved words `anthropic`/`claude`** in a skill `name` are a Claude platform rule; the 3.3 checklist

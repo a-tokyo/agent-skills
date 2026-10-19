@@ -9,7 +9,9 @@ build's executor, and every workspace is a temp dir. No network, no credentials.
 from __future__ import annotations
 
 import json
+import locale
 import os
+import signal
 import subprocess
 import sys
 import tempfile
@@ -17,11 +19,31 @@ import textwrap
 import time
 import unittest
 from pathlib import Path
+from unittest import mock
 
 sys.dont_write_bytecode = True
 SCRIPTS = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(SCRIPTS))
+import gate  # noqa: E402
 import gate_common  # noqa: E402
+import run_owned  # noqa: E402
+
+WINDOWS = os.name == "nt"
+PY = sys.executable
+
+
+def py(code: str) -> list[str]:
+    return [PY, "-c", code]
+
+
+SLEEP = py("import time; time.sleep(300)")
+TRUE = py("pass")
+# The job and a child it starts; the child's pid goes to the log so a test can check the whole tree ended.
+TREE = py("import subprocess, sys, time\n"
+          "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'])\n"
+          "print('child', child.pid, flush=True)\ntime.sleep(300)")
+IGNORES_TERM = py("import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(300)")
+DETACHED = {} if WINDOWS else {"start_new_session": True}
 
 FAKE_CLAUDE = textwrap.dedent('''\
     #!/usr/bin/env python3
@@ -33,6 +55,7 @@ FAKE_CLAUDE = textwrap.dedent('''\
     and the run skips it. `--max-cost-usd 0` loads the cases and stops before any run (exit 2)."""
     import json, os, sys, time
     from pathlib import Path
+    sys.stdout.reconfigure(encoding="utf-8")
     args = sys.argv[1:]
     log = os.environ.get("FAKE_ARGV_LOG")
     if log:
@@ -122,7 +145,8 @@ def _env(bin_dir: Path, **extra: str) -> dict[str, str]:
 
 
 def _path_without_claude() -> str:
-    dirs = [d for d in os.environ["PATH"].split(os.pathsep) if d and not os.path.exists(os.path.join(d, "claude"))]
+    dirs = [d for d in os.environ["PATH"].split(os.pathsep)
+            if d and not any(os.path.exists(os.path.join(d, "claude" + ext)) for ext in ("", ".cmd", ".exe", ".bat"))]
     return os.pathsep.join(dirs or ["/usr/bin", "/bin"])
 
 
@@ -131,14 +155,13 @@ def _script(name: str) -> list[str]:
 
 
 def _alive(pid: int) -> bool:
-    try:
-        os.kill(pid, 0)
-    except ProcessLookupError:
-        return False
-    return True
+    return run_owned._pid_alive(pid)
 
 
 def _group_alive(pgid: int) -> bool:
+    """macOS/Linux: any member of the group; Windows (no groups): the leader."""
+    if WINDOWS:
+        return run_owned._pid_alive(pgid)
     try:
         os.killpg(pgid, 0)
     except (ProcessLookupError, PermissionError):
@@ -146,7 +169,7 @@ def _group_alive(pgid: int) -> bool:
     return True
 
 
-def _until(predicate, timeout: float = 15) -> bool:
+def _until(predicate, timeout: float = 30) -> bool:
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
         if predicate():
@@ -157,15 +180,18 @@ def _until(predicate, timeout: float = 15) -> bool:
 
 class TempWorkspace(unittest.TestCase):
     def setUp(self) -> None:
-        self._tmp = tempfile.TemporaryDirectory()
+        # Windows cannot delete a file a just-stopped process still holds; a leftover temp dir is harmless.
+        self._tmp = tempfile.TemporaryDirectory(**({"ignore_cleanup_errors": True} if WINDOWS else {}))
         self.root = Path(self._tmp.name)
         self.ws = self.root / "ws"
         self.ws.mkdir()
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        fake = self.bin / "claude"
-        fake.write_text(FAKE_CLAUDE)
+        fake = self.bin / ("claude.py" if WINDOWS else "claude")
+        fake.write_text(FAKE_CLAUDE, encoding="utf-8")
         fake.chmod(0o755)
+        if WINDOWS:
+            (self.bin / "claude.cmd").write_text(f'@"{PY}" "%~dp0claude.py" %*\r\n')
         self.argv_log = self.root / "claude-argv.jsonl"
 
     def tearDown(self) -> None:
@@ -185,13 +211,14 @@ class TempWorkspace(unittest.TestCase):
         listed = "\n".join(f'  - "{c}"' for c in cases)
         gold = f"all_cases:\n{listed}\n" if (not invoked if manual is None else manual) and cases else ""
         (evaluation / "data-split.yaml").write_text(
-            f"{gold}training: {training}\nplugin_eval_available: 0  # probe exit code\nplugin_eval:\n{listed}\n")
+            f"{gold}training: {training}\nplugin_eval_available: 0  # probe exit code\nplugin_eval:\n{listed}\n",
+            encoding="utf-8")
         plugin = evaluation / "plugin"
         (plugin / ".claude-plugin").mkdir(parents=True)
         (plugin / ".claude-plugin" / "plugin.json").write_text('{"name": "demo-eval", "version": "0.0.0"}')
         for case in cases:
             (plugin / "evals" / case).mkdir(parents=True)
-            (plugin / "evals" / case / "prompt.md").write_text(f"Do {case}.\n")
+            (plugin / "evals" / case / "prompt.md").write_text(f"Do {case}.\n", encoding="utf-8")
 
     def write_adapter(self, body: str = SCORING_ADAPTER) -> None:
         adapter = self.ws / "work" / "evaluation" / "run-case.sh"
@@ -205,13 +232,13 @@ class TempWorkspace(unittest.TestCase):
         if no_claude:
             full["PATH"] = _path_without_claude()
         return subprocess.run([*_script(name), "--workspace", str(ws or self.ws), *args], capture_output=True,
-                              text=True, timeout=timeout, env=full)
+                              encoding="utf-8", errors="replace", timeout=timeout, env=full)
 
     def evaluation(self, name: str) -> dict:
-        return json.loads((self.ws / "work" / "evaluation" / name).read_text())
+        return json.loads((self.ws / "work" / "evaluation" / name).read_text(encoding="utf-8"))
 
     def record(self, name: str, ws: Path | None = None) -> dict:
-        return json.loads(((ws or self.ws) / "work" / "pids" / f"{name}.json").read_text())
+        return json.loads(((ws or self.ws) / "work" / "pids" / f"{name}.json").read_text(encoding="utf-8"))
 
 
 class RunOwnedTest(TempWorkspace):
@@ -225,36 +252,43 @@ class RunOwnedTest(TempWorkspace):
         pids.mkdir(parents=True)
         (pids / "forged.json").write_text(json.dumps({
             "name": "forged", "pid": stranger.pid, "pgid": stranger.pid, "lstart": lstart,
-            "cmd": ["sleep", "300"], "cwd": str(self.ws), "log": str(pids / "forged.log"),
+            "cmd": SLEEP, "cwd": str(self.ws), "log": str(pids / "forged.log"),
             "rc_file": str(pids / "forged.rc"), "started": "2001-01-01T00:00:00+00:00", "stopped": None}))
 
     def test_wait_returns_the_job_exit_code(self) -> None:
-        self.start("seven", "sh", "-c", "echo hi; exit 7")
+        self.start("seven", *py("print('hi'); raise SystemExit(7)"))
         out = self.run_script("run_owned.py", "wait", "seven", "--timeout", "10")
         self.assertEqual(out.returncode, 7)
         status = json.loads(self.run_script("run_owned.py", "status", "seven").stdout)
         self.assertEqual((status["state"], status["exit_code"]), ("exited", 7))
-        self.assertIn("hi", Path(status["log"]).read_text())
+        self.assertIn("hi", Path(status["log"]).read_text(encoding="utf-8"))
 
     def test_start_keeps_job_records_out_of_git(self) -> None:
-        self.start("quick", "true")
+        self.start("quick", *TRUE)
         self.assertEqual((self.ws / "work" / "pids" / ".gitignore").read_text(), "*\n")
         self.assertEqual(self.run_script("run_owned.py", "wait", "quick", "--timeout", "10").returncode, 0)
 
     def test_job_sees_its_name_and_group(self) -> None:
-        job = self.start("env", "sh", "-c", 'echo "$RUN_OWNED_JOB $RUN_OWNED_PGID"')
+        job = self.start("env", *py("import os; print(os.environ['RUN_OWNED_JOB'], os.environ['RUN_OWNED_PGID'])"))
         self.run_script("run_owned.py", "wait", "env", "--timeout", "10")
         log = Path(self.record("env")["log"]).read_text().strip()
         self.assertEqual(log, f"env {job['pgid']}")
 
+    def child_pid(self, name: str) -> int:
+        log = Path(self.record(name)["log"])
+        self.assertTrue(_until(lambda: "child " in log.read_text(encoding="utf-8")), "the job started its child")
+        return int(log.read_text(encoding="utf-8").split("child ", 1)[1].split()[0])
+
     def test_stop_kills_only_its_own_group(self) -> None:
-        sibling = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        sibling = subprocess.Popen(SLEEP, **DETACHED)
         try:
-            job = self.start("mine", "sh", "-c", "sleep 300 & sleep 300; wait")
+            job = self.start("mine", *TREE)
+            child = self.child_pid("mine")
             self.assertTrue(_group_alive(job["pgid"]))
             out = self.run_script("run_owned.py", "stop", "mine", "--grace", "5")
             self.assertEqual(out.returncode, 0, out.stderr)
             self.assertFalse(_group_alive(job["pgid"]), "every process in the owned group is gone")
+            self.assertTrue(_until(lambda: not _alive(child)), "and so is the child the job started")
             self.assertIsNone(sibling.poll(), "a sibling with the same command line survives")
             status = json.loads(self.run_script("run_owned.py", "status", "mine").stdout)
             self.assertEqual(status["state"], "stopped")
@@ -263,7 +297,7 @@ class RunOwnedTest(TempWorkspace):
             sibling.wait()
 
     def test_wait_timeout_leaves_the_job_running(self) -> None:
-        job = self.start("slow", "sleep", "30")
+        job = self.start("slow", *SLEEP)
         out = self.run_script("run_owned.py", "wait", "slow", "--timeout", "0.5")
         self.assertEqual(out.returncode, 124)
         self.assertIn("still running", out.stderr)
@@ -272,7 +306,7 @@ class RunOwnedTest(TempWorkspace):
         self.assertFalse(_group_alive(job["pgid"]))
 
     def test_term_ignoring_job_is_killed_after_grace(self) -> None:
-        job = self.start("stubborn", "sh", "-c", "trap '' TERM; sleep 300")
+        job = self.start("stubborn", *IGNORES_TERM)
         time.sleep(0.3)
         out = self.run_script("run_owned.py", "stop", "stubborn", "--grace", "0.5")
         self.assertIn("killed after", out.stdout)
@@ -285,7 +319,7 @@ class RunOwnedTest(TempWorkspace):
         self.assertEqual(self.run_script("run_owned.py", "stop", "../escape").returncode, 3)
 
     def test_refuses_a_reused_pid(self) -> None:
-        stranger = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        stranger = subprocess.Popen(SLEEP, **DETACHED)
         try:
             self.forge(stranger, lstart="Mon Jan  1 00:00:00 2001")
             out = self.run_script("run_owned.py", "stop", "forged")
@@ -297,7 +331,7 @@ class RunOwnedTest(TempWorkspace):
             stranger.wait()
 
     def test_refuses_a_record_without_a_start_time(self) -> None:
-        stranger = subprocess.Popen(["sleep", "300"], start_new_session=True)
+        stranger = subprocess.Popen(SLEEP, **DETACHED)
         try:
             self.forge(stranger, lstart=None)
             out = self.run_script("run_owned.py", "stop", "forged")
@@ -310,6 +344,7 @@ class RunOwnedTest(TempWorkspace):
             stranger.kill()
             stranger.wait()
 
+    @unittest.skipIf(WINDOWS, "`ps` plays no part on Windows (GetProcessTimes)")
     def test_works_end_to_end_with_ps_denied(self) -> None:
         denied = self.root / "denied-ps"
         denied.mkdir()
@@ -342,24 +377,74 @@ class RunOwnedTest(TempWorkspace):
             sibling.kill()
             sibling.wait()
 
+    def test_start_refuses_to_overwrite_a_live_unverifiable_job(self) -> None:
+        stranger = subprocess.Popen(SLEEP, **DETACHED)
+        try:
+            self.forge(stranger, lstart=None)
+            before = self.record("forged")
+            out = self.run_script("run_owned.py", "start", "forged", "--", *TRUE)
+            self.assertEqual(out.returncode, 3, out.stderr)
+            self.assertIn("may still be running", out.stderr)
+            self.assertEqual(self.record("forged"), before, "the only record of the live group is kept")
+            self.assertIsNone(stranger.poll())
+        finally:
+            stranger.kill()
+            stranger.wait()
+
+    def test_start_over_a_reused_pid_proceeds(self) -> None:
+        stranger = subprocess.Popen(SLEEP, **DETACHED)
+        try:
+            self.forge(stranger, lstart="Mon Jan  1 00:00:00 2001")
+            if run_owned._lstart(stranger.pid) is None:
+                self.skipTest("needs `ps` to read the stranger's start time")
+            job = self.start("forged", *SLEEP)
+            self.assertNotEqual(job["pid"], stranger.pid)
+            self.assertEqual(self.run_script("run_owned.py", "stop", "forged").returncode, 0)
+            self.assertIsNone(stranger.poll(), "the process that reused the pid is untouched")
+        finally:
+            stranger.kill()
+            stranger.wait()
+
+    @unittest.skipIf(WINDOWS, "`ps` plays no part on Windows (GetProcessTimes); the forged record covers it")
+    def test_start_refuses_when_the_supervisor_died_and_ps_is_denied(self) -> None:
+        denied = self.root / "denied-ps"
+        denied.mkdir()
+        (denied / "ps").write_text("#!/bin/sh\necho 'ps: operation not permitted' >&2\nexit 1\n")
+        (denied / "ps").chmod(0o755)
+        no_ps = {"PATH": f"{denied}{os.pathsep}{self.bin}{os.pathsep}{os.environ['PATH']}"}
+        out = self.run_script("run_owned.py", "start", "boxed", "--", "sleep", "300", **no_ps)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        job = json.loads(out.stdout)
+        try:
+            supervisor = self.record("boxed")["supervisor"]
+            os.kill(supervisor, 9)
+            self.assertTrue(_until(lambda: not _alive(supervisor)))
+            self.assertTrue(_group_alive(job["pgid"]), "the job outlives its supervisor")
+            again = self.run_script("run_owned.py", "start", "boxed", "--", *TRUE, **no_ps)
+            self.assertEqual(again.returncode, 3, again.stderr)
+            self.assertIn("may still be running", again.stderr)
+            self.assertEqual(self.record("boxed")["pid"], job["pid"], "the live group stays recorded")
+        finally:
+            os.killpg(job["pgid"], 9)
+
     def test_stop_signals_a_verified_group_whose_supervisor_is_gone(self) -> None:
-        job = self.start("orphan", "sleep", "300")
+        job = self.start("orphan", *SLEEP)
         if self.record("orphan")["lstart"] is None:
             self.run_script("run_owned.py", "stop", "orphan")
             self.skipTest("the signal fallback needs `ps` to confirm the leader")
         supervisor = self.record("orphan")["supervisor"]
         os.kill(supervisor, 9)
-        self.assertTrue(_until(lambda: not _alive(supervisor)), "init reaps the killed supervisor")
+        self.assertTrue(_until(lambda: not _alive(supervisor)), "the killed supervisor is gone")
         self.assertTrue(_group_alive(job["pgid"]), "the job outlives its supervisor")
         self.assertEqual(json.loads(self.run_script("run_owned.py", "status", "orphan").stdout)["state"], "running")
-        self.assertEqual(self.run_script("run_owned.py", "start", "orphan", "--", "true").returncode, 3)
+        self.assertEqual(self.run_script("run_owned.py", "start", "orphan", "--", *TRUE).returncode, 3)
         out = self.run_script("run_owned.py", "stop", "orphan", "--grace", "2")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertFalse(_group_alive(job["pgid"]))
 
     def test_concurrent_starts_run_the_job_once(self) -> None:
-        argv = [*_script("run_owned.py"), "--workspace", str(self.ws), "start", "race", "--", "sleep", "30"]
-        racers = [subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True,
+        argv = [*_script("run_owned.py"), "--workspace", str(self.ws), "start", "race", "--", *SLEEP]
+        racers = [subprocess.Popen(argv, stdout=subprocess.PIPE, stderr=subprocess.PIPE, encoding="utf-8",
                                    env=_env(self.bin)) for _ in range(6)]
         results = [(p.wait(timeout=60), *p.communicate()) for p in racers]
         winners = [json.loads(out) for rc, out, _ in results if rc == 0]
@@ -370,8 +455,8 @@ class RunOwnedTest(TempWorkspace):
         self.assertFalse(_group_alive(winners[0]["pgid"]))
 
     def test_refuses_to_start_a_running_name_twice(self) -> None:
-        self.start("once", "sleep", "30")
-        out = self.run_script("run_owned.py", "start", "once", "--", "sleep", "30")
+        self.start("once", *SLEEP)
+        out = self.run_script("run_owned.py", "start", "once", "--", *SLEEP)
         self.assertEqual(out.returncode, 3)
         self.assertIn("already running", out.stderr)
         self.run_script("run_owned.py", "stop", "once")
@@ -574,7 +659,7 @@ class GatePluginTest(TempWorkspace):
         out = self.run_script("gate.py", "--model", "m")
         self.assertEqual(out.returncode, 3)
         self.assertIn("1 case file(s) fail to load", out.stdout)
-        self.assertIn("gold-02/case.yaml: invalid case.yaml", out.stdout)
+        self.assertIn(f"{Path('gold-02', 'case.yaml')}: invalid case.yaml", out.stdout)
         self.assertNotIn("--ablation\", \"with-without", self.argv_log.read_text(), "the eval never ran")
 
 
@@ -618,7 +703,7 @@ class RecordTest(TempWorkspace):
         out = self.run_script("gate.py", "record")
         self.assertEqual(out.returncode, 3)
         self.assertIn("2 case file(s) fail to load", out.stderr)
-        self.assertIn("trigger-1/case.yaml", out.stderr)
+        self.assertIn(str(Path("trigger-1", "case.yaml")), out.stderr)
 
     def test_record_refuses_a_case_named_unlike_its_directory(self) -> None:
         self.make_build(["gold-01"])
@@ -649,6 +734,31 @@ class RecordTest(TempWorkspace):
         self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
         self.assertEqual(self.split().plugin_eval, ["input/a.md", "input/b.md", "input/c.md"],
                          "3-9 band: every gold standard, the held-out one included")
+
+    def manual_files(self, *names: str) -> None:
+        self.make_build([f"input/{n}" for n in ("input-01.md", "input-02.md")], invoked=False)
+        (self.ws / "input").mkdir()
+        for name in names:
+            (self.ws / "input" / name).write_text(name)
+
+    def test_manual_record_reports_a_gold_standard_left_out_of_the_split(self) -> None:
+        self.manual_files("input-01.md", "input-02.md", "input-03.md", "output-01.md", "notes.md")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3, out.stdout)
+        self.assertIn("leaves out gold standards found on disk: input/input-03.md;", out.stderr)
+
+    def test_manual_record_reports_a_manifest_gold_standard_left_out(self) -> None:
+        self.manual_files("input-01.md", "input-02.md", "edge-case.md")
+        (self.ws / "work" / "manifest.yaml").write_text(
+            "pairs:\n  - input: input/input-01.md\n  - {input: input/edge-case.md, reference: input/x.md}\n")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3, out.stdout)
+        self.assertIn("input/edge-case.md", out.stderr)
+
+    def test_manual_record_accepts_a_complete_split(self) -> None:
+        self.manual_files("input-01.md", "input-02.md", "output-01.md", "output-02.md")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 0, out.stderr)
 
     def test_manual_record_needs_gold_standards(self) -> None:
         self.make_build([], invoked=False)
@@ -721,8 +831,8 @@ class GateLifecycleTest(TempWorkspace):
         old = self.detach()
         old_evals = self.record("gate-plugin-eval")
         neighbour = self.detach(ws=other)
-        sibling = subprocess.Popen(old_evals["cmd"], cwd=old_evals["cwd"], start_new_session=True,
-                                   env=_env(self.bin, FAKE_MODE="hang"))
+        sibling = subprocess.Popen(old_evals["cmd"], cwd=old_evals["cwd"], env=_env(self.bin, FAKE_MODE="hang"),
+                                   **DETACHED)
         try:
             out = self.run_script("gate.py", "--restart", "--model", "m", FAKE_MODE="hang")
             self.assertEqual(out.returncode, 0, out.stderr)
@@ -745,7 +855,7 @@ class GateLifecycleTest(TempWorkspace):
                               *_script("gate.py"), "--workspace", str(self.ws), "--model", "m")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertEqual(self.run_script("run_owned.py", "wait", "gate", "--timeout", "30").returncode, 0)
-        self.assertIn("GATE VALID", Path(self.record("gate")["log"]).read_text())
+        self.assertIn("GATE VALID", Path(self.record("gate")["log"]).read_text(encoding="utf-8"))
 
     def assert_refused_before_detaching(self, *args: str, reason: str, **env: str) -> None:
         out = self.run_script("gate.py", "--detach", "--model", "m", *args, **env)
@@ -816,7 +926,8 @@ class GateManualTest(TempWorkspace):
     def test_gate_runs_end_to_end_with_no_claude_on_path(self) -> None:
         self.make_build(["input-01", "input-02"], invoked=True, manual=True)
         self.write_adapter()
-        self.assertIn("claude", os.listdir(self.bin), "the fake exists, and no_claude must keep it off PATH")
+        self.assertTrue(any(n.startswith("claude") for n in os.listdir(self.bin)),
+                        "the fake exists, and no_claude must keep it off PATH")
         record = self.run_script("gate.py", "record", no_claude=True)
         self.assertEqual(record.returncode, 0, record.stderr)
         self.assertIn("mode manual (plugin eval probe exit 127)", record.stdout)
@@ -874,7 +985,9 @@ class GateManualTest(TempWorkspace):
         out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         record = self.evaluation("gate.json")
-        self.assertEqual(sorted(record["inputs_sha256"]), ["input/po-01.json", "work/evaluation/score.py"])
+        self.assertEqual(sorted(record["inputs_sha256"]), [
+            "input/po-01.json", "work/evaluation/plugin/.claude-plugin/plugin.json",
+            "work/evaluation/plugin/evals/input-01/prompt.md", "work/evaluation/score.py"])
         self.assertEqual(record["artifact_sha256"],
                          gate_common.file_sha256(self.ws / "work" / "evaluation" / "uplift.json"))
 
@@ -884,12 +997,27 @@ class GateManualTest(TempWorkspace):
         self.assertTrue(verdict["reason"].startswith("gate inputs changed since the gate; re-run 5.0"))
         self.assertIn(changed, verdict["reason"])
 
-    def test_scratch_files_after_the_gate_are_not_inputs(self) -> None:
+    def test_what_the_gate_writes_is_not_an_input(self) -> None:
         self.manual_gate()
         evaluation = self.ws / "work" / "evaluation"
-        for scratch in (".cases.tmp", "check_gate.out", "notes.log", "uplift.prev.json"):
-            (evaluation / scratch).write_text("x")
+        for generated in (".cases.tmp", "uplift.prev.json", "plugin/skills/demo/SKILL.md",
+                          "plugin/evals/results/run-1/report.html"):
+            (evaluation / generated).parent.mkdir(parents=True, exist_ok=True)
+            (evaluation / generated).write_text("x")
         self.assertEqual(self.run_script("check_gate.py").returncode, 0)
+
+    def test_golden_out_file_after_the_gate_is_stale(self) -> None:
+        self.manual_gate()
+        (self.ws / "work" / "evaluation" / "expected.out").write_text("golden")
+        self.assert_stale("work/evaluation/expected.out")
+
+    def test_plugin_manifest_or_shared_mock_edit_after_the_gate_is_stale(self) -> None:
+        self.manual_gate()
+        (self.ws / "work" / "evaluation" / "plugin" / ".claude-plugin" / "plugin.json").write_text("{}")
+        self.assert_stale("work/evaluation/plugin/.claude-plugin/plugin.json")
+        (self.ws / "work" / "evaluation" / "plugin" / "mocks").mkdir()
+        (self.ws / "work" / "evaluation" / "plugin" / "mocks" / "api.json").write_text("{}")
+        self.assert_stale("work/evaluation/plugin/mocks/api.json")
 
     def test_adapter_edit_after_the_gate_is_stale(self) -> None:
         self.manual_gate()
@@ -917,6 +1045,54 @@ class GateManualTest(TempWorkspace):
         out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
         self.assertEqual(out.returncode, 3)
         self.assertIn("run-case.sh is missing", out.stdout)
+
+
+class GateWindowsTest(TempWorkspace):
+    """The Windows branches gate.py takes that need no Windows to check."""
+
+    def test_adapter_runs_through_git_bash_on_windows(self) -> None:
+        adapter = (self.ws / "work" / "evaluation" / "run-case.sh").resolve()
+        with mock.patch.object(gate.os, "name", "nt"), mock.patch.object(gate, "_git_bash", return_value="C:/Git/bin/bash.exe"):
+            self.assertEqual(gate._adapter_argv(self.ws), ["C:/Git/bin/bash.exe", adapter.as_posix()])
+        with mock.patch.object(gate.os, "name", "nt"), mock.patch.object(gate, "_git_bash", return_value=None):
+            with self.assertRaisesRegex(gate_common.GateError, "Git for Windows"):
+                gate._adapter_argv(self.ws)
+
+    def test_git_bash_skips_the_wsl_launcher(self) -> None:
+        system32 = self.root / "Windows" / "System32"
+        git = self.root / "Program Files" / "Git" / "bin"
+        for folder in (system32, git):
+            folder.mkdir(parents=True)
+            (folder / "bash.exe").write_text("")
+        env = {"SystemRoot": str(self.root / "Windows"), "CLAUDE_CODE_GIT_BASH_PATH": str(system32 / "bash.exe"),
+               "ProgramFiles": str(self.root / "Program Files"), "PATH": str(self.root / "empty")}
+        with mock.patch.dict(os.environ, env):
+            self.assertEqual(gate._git_bash(), str(git / "bash.exe"))
+
+    def test_the_gate_stops_when_its_stop_file_appears(self) -> None:
+        stop_file = self.root / "gate.stop"
+        with mock.patch.dict(os.environ, {"RUN_OWNED_STOP_FILE": str(stop_file)}):
+            gate._STOP.clear()
+            try:
+                gate._watch_stop_file()
+                self.assertFalse(gate._STOP.wait(0.6))
+                stop_file.write_text("{}")
+                self.assertTrue(gate._STOP.wait(5), "the stop file is the request on Windows")
+            finally:
+                gate._STOP.set()
+                time.sleep(gate.POLL_SECONDS * 2)
+                gate._STOP.clear()
+
+    def test_inside_gate_job_needs_the_records_token(self) -> None:
+        pids = self.ws / "work" / "pids"
+        pids.mkdir(parents=True)
+        (pids / "gate.json").write_text(json.dumps({
+            "name": "gate", "pid": 1, "pgid": 1, "lstart": None, "cmd": [], "cwd": "", "log": "", "rc_file": "",
+            "started": "", "token": "abc"}))
+        with mock.patch.dict(os.environ, {"RUN_OWNED_JOB": "gate", "RUN_OWNED_TOKEN": "abc"}):
+            self.assertTrue(gate._inside_gate_job(self.ws))
+        with mock.patch.dict(os.environ, {"RUN_OWNED_JOB": "gate", "RUN_OWNED_TOKEN": "inherited"}):
+            self.assertFalse(gate._inside_gate_job(self.ws))
 
 
 class FinishTest(TempWorkspace):
@@ -958,6 +1134,13 @@ class FinishTest(TempWorkspace):
         self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
         self.assertIn("needs a gate attempt", self.finish()["reason"], "a record alone is not a gate attempt")
 
+    @unittest.skipUnless(WINDOWS, "the fallback is the locale's code page, which is UTF-8 here")
+    def test_benchmark_in_the_windows_code_page_is_read(self) -> None:
+        self.make_build(["gold-01"])
+        encoding = locale.getpreferredencoding(False)
+        (self.ws / "BENCHMARK.md").write_bytes("**Verdict \u2014 ITERATE**\n".encode(encoding))
+        self.assertEqual(self.finish()["verdict"], "ITERATE", "the code page's em dash still separates the label")
+
     def test_unshipped_finishes_after_a_gate_that_failed_to_start(self) -> None:
         self.make_build(["gold-01"])
         (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01" / "INVALID").write_text("")
@@ -978,7 +1161,13 @@ class FinishTest(TempWorkspace):
         self.make_build(["gold-01", "trigger-1"])
         self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
         self.benchmark("**Verdict: SHIP_WITH_CAVEATS**\n")
-        self.assertIn("lacks check_gate.py's GATE VALID line", self.finish()["reason"])
+        self.assertIn("lacks check_gate.py's current GATE VALID line", self.finish()["reason"])
+        stale = self.gate_line().replace("mean gold delta=+0.500", "mean gold delta=+0.900")
+        self.assertNotEqual(stale, self.gate_line())
+        self.benchmark(f"**Verdict: SHIP_WITH_CAVEATS**\n\n{stale}\n")
+        data = self.finish()
+        self.assertFalse(data["finished"], "a GATE VALID line from another gate run is not this gate's")
+        self.assertIn(self.gate_line(), data["reason"], "the reason quotes the line to copy")
         self.benchmark(f"**Verdict: SHIP_WITH_CAVEATS**\n\n{self.gate_line()}\n")
         self.assertEqual(self.finish()["verdict"], "SHIP WITH CAVEATS")
         self.assertTrue(self.finish()["finished"])

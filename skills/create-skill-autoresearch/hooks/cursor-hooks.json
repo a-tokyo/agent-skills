@@ -3,7 +3,7 @@
   "hooks": {
     "beforeShellExecution": [
       {
-        "command": "python3 \"${CURSOR_PLUGIN_ROOT}/hooks/kill_guard.py\"",
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/kill-guard\"",
         "timeout": 10
       }
     ]

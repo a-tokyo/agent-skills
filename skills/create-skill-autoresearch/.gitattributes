@@ -1,0 +1,4 @@
+# A CRLF checkout (core.autocrlf on Windows) breaks the sh launcher and shell adapters.
+hooks/kill-guard text eol=lf
+*.sh text eol=lf
+*.py text eol=lf

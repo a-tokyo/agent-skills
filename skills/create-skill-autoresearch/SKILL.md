@@ -31,7 +31,7 @@ Key constraint: BUILDER and PANEL never share context. Panel receives only the s
 or the stated default without waiting, and record each assumption in `work/experiments/craft-decisions.md`.
 
 **Bundled scripts** run as `python3 <skill-dir>/scripts/<name>.py` (`<skill-dir>`: this skill's base directory;
-each has `--help`). **Background jobs** (eval runs, loops) go through `run_owned.py start|stop <name>`: it signals
+each has `--help`; Python 3.9+ and stdlib on macOS, Linux or Windows, where `py -3` replaces `python3` — [hosts.md](references/hosts.md)). **Background jobs** (eval runs, loops) go through `run_owned.py start|stop <name>`: it signals
 only the group it records in `work/pids/`; a name-pattern kill also hits sibling builds and the user's processes.
 
 ## Companion skills
@@ -49,7 +49,7 @@ The factory composes sibling skills rather than embedding them, so each stays cu
 | `claude plugin eval` (Claude Code CLI) | 3.6 suite, 5.0 gate | The manual with/without protocol (5.0) |
 
 Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>`. The factory runs on any agent that loads SKILL.md; **[references/hosts.md](references/hosts.md)** gives each host's skill dirs, headless command ("the host's headless CLI" below), subagents and kill-guard install.
-The kill guard (`hooks/`) blocks `pkill`, `killall` and pgrep-fed kills on Claude Code, Cursor, Codex and OpenCode once installed per hosts.md; `run_owned.py` is the guard everywhere else.
+The kill guard (`hooks/`) blocks pattern kills (`pkill`, `killall`, pgrep-fed `kill`, `taskkill /IM`, `Stop-Process -Name`) on Claude Code, Cursor, Codex and OpenCode once installed per hosts.md; `run_owned.py` is the guard everywhere else.
 
 ---
 
@@ -153,7 +153,7 @@ them. Without skill-creator, write it directly using [references/standalone-fall
 Either way, read **[references/authoring-rules.md](references/authoring-rules.md)** (the authoring rules neither
 companion states; always, companions or not) and run this **pre-flight checklist** before writing -- the hard
 constraints' single source, Agent Skills platform rules unless labelled otherwise:
-- `name`: <= 64 chars, lowercase/numbers/hyphens only, no leading or trailing hyphen and no `--`, no XML tags, **no reserved words `anthropic`/`claude`** (a Claude platform rule; keep it on every host); descriptive kebab-case, matching the naming of the set it ships with
+- `name`: <= 64 chars, lowercase/numbers/hyphens only, no leading or trailing hyphen and no `--`, no XML tags, **no reserved words `anthropic`/`claude`** (a Claude platform rule; keep it on every host); matches its folder name (Cursor and OpenCode require it); descriptive kebab-case, matching the naming of the set it ships with
 - `description`: non-empty, <= 1024 chars measured on the joined folded block, no `<` or `>`, **third person**, states both WHAT it does and WHEN to use it
 - Registry conventions (not platform rules): `version` (semver) and `license` in frontmatter
 - Body < 500 lines; progressive disclosure (essentials in SKILL.md, detail in `references/`); total upload <= 30 MB
@@ -357,9 +357,8 @@ python3 <skill-dir>/scripts/run_owned.py wait gate --timeout 540    # repeat unt
 
 `gate.py` runs as the owned job `gate`, as `run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py …`
 would (log `work/pids/gate.log`), and refuses a second start while it runs. To restart the gate, run
-`gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the mode (plugin eval when
-`claude plugin eval --help` exits 0 and the skill is model-invoked, else the manual protocol through
-`run-case.sh`, which needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
+`gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the path by the 3.6 rule (the manual
+protocol runs `run-case.sh` and needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
 or `uplift.json` plus `gate.json` (hashes of skill, cases, scorers, fixtures, artifact) under `work/evaluation/`. Grant only the tools
 the skill needs. With 3-9 gold standards pass `--in-sample` (gate cases are training cases; `BENCHMARK.md` and
 the panel label Δ in-sample). A non-zero exit says why: fix the suite or `run-case.sh` and re-run; only
@@ -374,7 +373,7 @@ Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, t
 
 ### 5.1 Premortem
 
-Run the **premortem skill** on the skill artifact with its present-and-ask step replaced: write the whole risk list to `work/experiments/premortem.md` and pick no mitigation — every risk becomes a 5.2 test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. **5.1 ends by running 5.2's `check_gate.py` command in the same reply**, never by presenting the risks or announcing the panel (three unattended builds per run ended exactly there). Continue in the same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run.
+Run the **premortem skill** on the skill artifact with its present-and-ask step replaced: write the whole risk list to `work/experiments/premortem.md` and pick no mitigation — every risk becomes a 5.2 test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. **5.1 ends by running 5.2's `check_gate.py` command in the same reply**, never by presenting the risks or announcing the panel. Continue in the same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run.
 
 ### 5.2 Panel Evaluation
 

@@ -1,7 +1,8 @@
-"""Offline tests for hooks/kill_guard.py (the PreToolUse kill guard) and hooks/hooks.json.
+"""Offline tests for hooks/kill_guard.py (the shell-command kill guard), its launcher hooks/kill-guard,
+the OpenCode plugin and the hook configs.
 
-Each case feeds the hook the JSON Claude Code sends on stdin and checks its exit code: 2 blocks
-the Bash call (reason on stderr), 0 lets it through.
+Each case feeds the hook the JSON a host sends on stdin and checks its answer: Claude Code and Codex
+exit 2 to block the call (reason on stderr) and 0 to let it through; Cursor always gets JSON.
 
     python3 -B -m unittest discover -s <skill>/scripts/tests -v
 """
@@ -13,12 +14,16 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import textwrap
 import unittest
 from pathlib import Path
 
 SKILL = Path(__file__).resolve().parents[2]
 HOOK = SKILL / "hooks" / "kill_guard.py"
+LAUNCHER = SKILL / "hooks" / "kill-guard"
+WINDOWS = os.name == "nt"
+SH = shutil.which("sh") if WINDOWS else "/bin/sh"
 
 ALLOWED = [
     "python3 scripts/run_owned.py stop gate",
@@ -32,6 +37,39 @@ ALLOWED = [
     "ls skills/ && cat SKILL.md",
     "git log --oneline -5",
     "npm test 2>&1 | tail -5",
+]
+
+WINDOWS_ALLOWED = [
+    "taskkill /PID 4242 /F",
+    "taskkill /F /T /PID 4242",
+    "Stop-Process -Id 4242 -Force",
+    "Stop-Process 4242",
+    "Get-Process -Id 4242",
+    'tasklist /FI "IMAGENAME eq python.exe"',
+    "kill -n 9 4242",
+]
+
+WINDOWS_BLOCKED = [
+    "taskkill /IM python.exe /F",
+    'taskkill /F /FI "IMAGENAME eq node.exe"',
+    "taskkill -im node.exe",
+    "TASKKILL /im claude.exe /t",
+    "C:\\Windows\\System32\\taskkill.exe /IM python.exe",
+    "Stop-Process -Name python",
+    "Stop-Process -n node -Force",
+    "spps -Name claude",
+    "kill -Name node",
+    "Get-Process python | Stop-Process",
+    "gps node | spps -Force",
+    "(Get-Process node).Kill()",
+    "Get-Process | Where-Object { $_.Name -like '*py*' } | ForEach-Object { $_.Kill() }",
+    "$p = Get-Process claude; Stop-Process -InputObject $p",
+    "wmic process where \"name='python.exe'\" delete",
+    'wmic process where name="node.exe" call terminate',
+    "Get-CimInstance Win32_Process -Filter \"Name = 'x.exe'\" | Invoke-CimMethod -MethodName Terminate",
+    "pkill.exe -f gate",
+    "Stop-Pro`cess -Name node",
+    "t^askkill /im node.exe",
 ]
 
 BLOCKED = [
@@ -122,10 +160,25 @@ class KillGuardTest(unittest.TestCase):
             with self.subTest(command=command):
                 self.assert_exit(command, 0)
 
+    def test_windows_pid_kills_pass_and_name_kills_are_blocked(self) -> None:
+        for command in WINDOWS_ALLOWED:
+            with self.subTest(command=command):
+                self.assert_exit(command, 0)
+        for command in WINDOWS_BLOCKED:
+            with self.subTest(command=command):
+                self.assertIn("taskkill /PID <pid>", self.assert_exit(command, 2).stderr)
+
     def test_other_tools_and_unreadable_input_pass(self) -> None:
         self.assertEqual(run_hook({"tool_name": "Write", "tool_input": {"content": "pkill -f x"}}).returncode, 0)
-        self.assertEqual(run_hook("not json").returncode, 0)
         self.assertEqual(run_hook({"tool_name": "Bash", "tool_input": {}}).returncode, 0)
+
+    def test_unreadable_input_answers_allow_for_cursor(self) -> None:
+        for payload in ("not json", "", "[1, 2]"):
+            with self.subTest(payload=payload):
+                out = run_hook(payload)
+                self.assertEqual(out.returncode, 0)
+                self.assertEqual(json.loads(out.stdout), {"permission": "allow"},
+                                 "Cursor blocks a permission hook whose stdout is empty or not JSON")
 
 
 def cursor(command: str) -> dict:
@@ -144,12 +197,12 @@ class CursorContractTest(unittest.TestCase):
         return json.loads(out.stdout)
 
     def test_allowed_commands_get_an_explicit_allow(self) -> None:
-        for command in ALLOWED:
+        for command in ALLOWED + WINDOWS_ALLOWED:
             with self.subTest(command=command):
                 self.assertEqual(self.reply(command), {"permission": "allow"})
 
     def test_blocked_and_variant_commands_are_denied_with_the_message_for_both_audiences(self) -> None:
-        for command in BLOCKED + QUOTING_AND_WHITESPACE:
+        for command in BLOCKED + QUOTING_AND_WHITESPACE + WINDOWS_BLOCKED:
             with self.subTest(command=command):
                 reply = self.reply(command)
                 self.assertEqual(reply["permission"], "deny")
@@ -170,29 +223,71 @@ class CodexContractTest(unittest.TestCase):
         self.assertEqual((run_hook(event).returncode, run_hook(event).stdout), (0, ""))
 
 
+def python_only_as(directory: Path, name: str) -> dict[str, str]:
+    """An environment whose PATH holds just `cat` and this test's Python, called `name`, plus a python3
+    that behaves like the Microsoft Store stub (exit 9009) when `name` is not python3."""
+    directory.mkdir(exist_ok=True)
+    (directory / name).symlink_to(sys.executable)
+    (directory / "cat").symlink_to(shutil.which("cat"))
+    if name != "python3":
+        (directory / "python3").write_text("#!/bin/sh\necho 'Python was not found' >&2\nexit 9009\n")
+        (directory / "python3").chmod(0o755)
+    return {**os.environ, "PATH": str(directory), "PYTHONDONTWRITEBYTECODE": "1"}
+
+
 @unittest.skipUnless(shutil.which("node"), "node not installed")
 class OpenCodePluginTest(unittest.TestCase):
     """hooks/opencode-kill-guard.js under node: tool.execute.before throws for a pattern kill on bash."""
 
-    def call(self, tool: str, command: str) -> str:
-        script = textwrap.dedent(f"""
-            import {{ KillGuard }} from {json.dumps((SKILL / 'hooks' / 'opencode-kill-guard.js').as_uri())};
+    PLUGIN = (SKILL / "hooks" / "opencode-kill-guard.js").as_uri()
+
+    def node(self, script: str, env: dict[str, str] | None = None) -> str:
+        out = subprocess.run([shutil.which("node"), "--input-type=module", "-e", textwrap.dedent(script)],
+                             capture_output=True, text=True, timeout=60,
+                             env=env or {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return out.stdout.strip()
+
+    def call(self, tool: str, command: str, env: dict[str, str] | None = None) -> str:
+        return self.node(f"""
+            import {{ KillGuard }} from {json.dumps(self.PLUGIN)};
             const hooks = await KillGuard({{}});
             try {{
               await hooks["tool.execute.before"]({{ tool: {json.dumps(tool)} }}, {{ args: {{ command: {json.dumps(command)} }} }});
               console.log("allowed");
             }} catch (error) {{ console.log("blocked: " + error.message); }}
-        """)
-        out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True,
-                             timeout=60, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
-        self.assertEqual(out.returncode, 0, out.stderr)
-        return out.stdout.strip()
+        """, env)
 
     def test_blocks_pattern_kills_and_lets_the_rest_through(self) -> None:
         self.assertTrue(self.call("bash", "pkill -f gate.py").startswith("blocked: Blocked by create-skill"))
         self.assertTrue(self.call("bash", "kill $(pgrep -f eval)").startswith("blocked:"))
+        self.assertTrue(self.call("bash", "taskkill /IM node.exe /F").startswith("blocked:"))
         self.assertEqual(self.call("bash", "python3 scripts/run_owned.py stop gate"), "allowed")
         self.assertEqual(self.call("read", "pkill -f gate.py"), "allowed", "only bash calls are checked")
+
+    def test_every_export_passes_opencodes_plugin_loader(self) -> None:
+        """OpenCode v1.19 (packages/opencode/src/plugin/index.ts getLegacyPlugins) treats every export
+        of a plugin module as a plugin: a function, or an object with a `server` function, whose call
+        returns the hooks object. Anything else breaks tool dispatch or throws."""
+        verdicts = json.loads(self.node(f"""
+            const mod = await import({json.dumps(self.PLUGIN)});
+            const verdicts = {{}};
+            for (const [name, value] of Object.entries(mod)) {{
+              const factory = typeof value === "function" ? value : value?.server;
+              if (typeof factory !== "function") {{ verdicts[name] = "not a plugin"; continue; }}
+              const hooks = await factory({{}});
+              verdicts[name] = hooks && typeof hooks === "object" && !Array.isArray(hooks) ? "plugin" : "no hooks";
+            }}
+            console.log(JSON.stringify(verdicts));
+        """))
+        self.assertEqual(verdicts, {"KillGuard": "plugin"})
+
+    @unittest.skipIf(WINDOWS, "symlinks need privileges on Windows; the real PATH run covers py -3 there")
+    def test_runs_the_guard_where_python3_is_missing(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = python_only_as(Path(tmp), "python")
+            self.assertTrue(self.call("bash", "pkill -f gate.py", env).startswith("blocked:"))
+            self.assertEqual(self.call("bash", "ls", env), "allowed")
 
 
 class CursorPluginTest(unittest.TestCase):
@@ -205,14 +300,14 @@ class CursorPluginTest(unittest.TestCase):
         config = json.loads((SKILL / manifest["hooks"]).read_text())
         self.assertEqual(config["version"], 1)
         [hook] = config["hooks"]["beforeShellExecution"]
-        self.assertEqual(hook["command"], 'python3 "${CURSOR_PLUGIN_ROOT}/hooks/kill_guard.py"')
+        self.assertEqual(hook["command"], 'sh "${CURSOR_PLUGIN_ROOT}/hooks/kill-guard"')
         self.assertNotEqual(manifest["hooks"], "hooks/hooks.json", "hooks/hooks.json is Claude's format")
 
 
 def run_configured(command: str, variable: str, payload: dict) -> subprocess.CompletedProcess:
     """Run a hook's configured shell-form command the way a host does: the plugin-root placeholder
-    expanded to the skill directory, through `sh -c`, the event on stdin."""
-    return subprocess.run(["/bin/sh", "-c", command.replace("${" + variable + "}", str(SKILL))],
+    expanded to the skill directory, through `sh -c` (Git Bash's on Windows), the event on stdin."""
+    return subprocess.run([SH, "-c", command.replace("${" + variable + "}", str(SKILL))],
                           input=json.dumps(payload), capture_output=True, text=True, timeout=30,
                           env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
 
@@ -224,7 +319,7 @@ class HooksJsonTest(unittest.TestCase):
         self.assertEqual(entry["matcher"], "Bash")
         [hook] = entry["hooks"]
         self.assertEqual(hook["type"], "command")
-        self.assertEqual(hook["command"], 'python3 "${CLAUDE_PLUGIN_ROOT}/hooks/kill_guard.py"',
+        self.assertEqual(hook["command"], 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/kill-guard"',
                          "one shell-form string, no args: portable across CLI versions and hosts")
         self.assertNotIn("args", hook)
 
@@ -242,6 +337,49 @@ class HooksJsonTest(unittest.TestCase):
         self.assertEqual((deny.returncode, json.loads(deny.stdout)["permission"]), (0, "deny"))
         allow = run_configured(hook["command"], "CURSOR_PLUGIN_ROOT", cursor("ls"))
         self.assertEqual(json.loads(allow.stdout), {"permission": "allow"})
+
+
+class LauncherTest(unittest.TestCase):
+    """hooks/kill-guard picks a Python 3 itself, so the hooks run where `python3` is not on PATH."""
+
+    def launch(self, payload: dict, env: dict[str, str]) -> subprocess.CompletedProcess:
+        return subprocess.run([SH, LAUNCHER.as_posix()], input=json.dumps(payload), capture_output=True, text=True,
+                              timeout=30, env=env)
+
+    def test_runs_with_the_python_on_path(self) -> None:
+        env = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+        self.assertEqual(self.launch(bash("taskkill /IM node.exe"), env).returncode, 2)
+        self.assertEqual(json.loads(self.launch(cursor("ls"), env).stdout), {"permission": "allow"})
+
+    def test_runs_with_python3_taken_off_path(self) -> None:
+        dirs = [d for d in os.environ["PATH"].split(os.pathsep)
+                if d and not any(os.path.exists(os.path.join(d, n)) for n in ("python3", "python3.exe"))]
+        path = os.pathsep.join(dirs)
+        if not any(shutil.which(n, path=path) for n in ("python", "py")):
+            self.skipTest("no python or py left once python3 is off PATH")
+        env = {**os.environ, "PATH": path, "PYTHONDONTWRITEBYTECODE": "1"}
+        blocked = self.launch(bash("taskkill /IM node.exe"), env)
+        self.assertEqual(blocked.returncode, 2, blocked.stderr)
+        self.assertEqual(json.loads(self.launch(cursor("ls"), env).stdout), {"permission": "allow"})
+
+    @unittest.skipIf(WINDOWS, "symlinks need privileges on Windows; the python3-off-PATH run covers it there")
+    def test_falls_back_to_python_past_a_store_stub_python3(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            env = python_only_as(Path(tmp), "python")
+            blocked = self.launch(bash("pkill -f gate"), env)
+            self.assertEqual(blocked.returncode, 2, blocked.stderr)
+            self.assertIn("pattern kills hit unrelated processes", blocked.stderr)
+            self.assertEqual(json.loads(self.launch(cursor("killall node"), env).stdout)["permission"], "deny")
+
+    @unittest.skipIf(WINDOWS, "symlinks need privileges on Windows")
+    def test_without_any_python_the_call_is_allowed_and_cursor_gets_json(self) -> None:
+        with tempfile.TemporaryDirectory() as tmp:
+            Path(tmp, "cat").symlink_to(shutil.which("cat"))
+            env = {**os.environ, "PATH": tmp}
+            claude = self.launch(bash("pkill -f gate"), env)
+            self.assertEqual((claude.returncode, claude.stdout), (0, ""))
+            self.assertIn("no Python 3.9+ found", claude.stderr)
+            self.assertEqual(json.loads(self.launch(cursor("pkill -f gate"), env).stdout), {"permission": "allow"})
 
 
 if __name__ == "__main__":

@@ -536,7 +536,7 @@ validation:
 test:
   - "input/input-10.md"
 # The two keys below are written by `gate.py record` (SKILL.md 3.6) from disk, never by hand.
-plugin_eval_available: 0  # exit code of `claude plugin eval --help`; non-zero → manual protocol (SKILL.md 5.0)
+plugin_eval_available: 0  # exit code of `claude plugin eval --help`; the path follows SKILL.md 3.6
 plugin_eval:              # every case 5.0 runs: eval dir names (manual protocol: the gate gold standards)
   - "holdout-03"
   - "trigger-1"

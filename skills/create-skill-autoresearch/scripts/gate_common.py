@@ -25,15 +25,20 @@ Finder creates without changing what ships.
 
 from __future__ import annotations
 
+import glob
 import hashlib
 import json
 import os
 import re
+import sys
+import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
-EVAL_DIR = Path("work") / "evaluation"
+# POSIX-style relative paths, so messages and records read the same on Windows; `workspace / EVAL_DIR`
+# still yields a native path.
+EVAL_DIR = PurePosixPath("work") / "evaluation"
 PLUGIN_ARTIFACT = EVAL_DIR / "plugin-eval.json"
 MANUAL_ARTIFACT = EVAL_DIR / "uplift.json"
 GATE_RECORD = EVAL_DIR / "gate.json"
@@ -42,10 +47,11 @@ RUN_CASE = EVAL_DIR / "run-case.sh"
 PLUGIN_DIR = EVAL_DIR / "plugin"
 GATE_ATTEMPTS = EVAL_DIR / "gate-attempts.jsonl"
 REQUIRED_RUNS = 3
-# Hashed elsewhere (run-case.sh, data-split.yaml) or written by the gate itself.
-_NOT_INPUTS = {p.relative_to(EVAL_DIR)
-               for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_RECORD, DATA_SPLIT, RUN_CASE, GATE_ATTEMPTS)}
-_SCRATCH_SUFFIXES = {".tmp", ".out", ".log"}
+# Hashed elsewhere (run-case.sh, data-split.yaml) or written by the gate itself: its records, the skill
+# copy it refreshes into the wrapper plugin before each run, and what claude plugin eval writes there.
+_NOT_INPUTS = {p.as_posix() for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_RECORD, DATA_SPLIT, RUN_CASE,
+                                      GATE_ATTEMPTS)}
+_GENERATED_DIRS = tuple(f"{d.as_posix()}/" for d in (PLUGIN_DIR / "skills", PLUGIN_DIR / "evals" / "results"))
 
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
 _GATE_KEYS = ("plugin_eval", "plugin_eval_available")
@@ -131,7 +137,7 @@ def _parse_list(value: str, block: list[str], key: str = "plugin_eval") -> tuple
 def read_data_split(path: Path) -> DataSplit:
     if not path.is_file():
         raise GateError(f"{path} not found; 3.6 records the gate cases there under plugin_eval")
-    lines = [_strip_comment(line) for line in path.read_text().splitlines()]
+    lines = [_strip_comment(line) for line in path.read_text(encoding="utf-8").splitlines()]
     found: dict[str, tuple[str, list[str]]] = {}
     for i, line in enumerate(lines):
         match = _TOP_KEY.match(line)
@@ -181,7 +187,7 @@ def _block_end(lines: list[str], start: int) -> int:
 def write_gate_cases(path: Path, cases: list[str], available: int | str, source: str) -> None:
     """Rewrite `plugin_eval` (as a block list) and `plugin_eval_available` in data-split.yaml, keeping
     every other line; append them when absent. Creates the file when it does not exist."""
-    lines = path.read_text().splitlines() if path.is_file() else []
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
     why = ("exit code of `claude plugin eval --help`" if isinstance(available, int)
            else "user-invoked skill: always the manual protocol, claude not probed")
     new = {
@@ -199,6 +205,47 @@ def write_gate_cases(path: Path, cases: list[str], available: int | str, source:
     write_text(path, "\n".join(lines) + "\n")
 
 
+_MANIFEST_INPUT = re.compile(r"""(?:^|[\s{,-])input:\s*["']?([^"',}\s#]+)""")
+
+
+def _case_file(ws: Path, entry: str) -> Path | None:
+    """The file a gold-standard entry names: a path from the workspace root, or the one file under input/
+    called <entry>.<ext>."""
+    if (ws / entry).is_file():
+        return (ws / entry).resolve()
+    found = [p for p in (ws / "input").rglob(f"{glob.escape(entry)}.*") if p.is_file()] if (ws / "input").is_dir() else []
+    return found[0].resolve() if len(found) == 1 else None
+
+
+def omitted_gold(ws: Path, listed: list[str]) -> list[str]:
+    """Gold standards on disk that the split's lists leave out: every `input:` path in work/manifest.yaml,
+    and every file beside a listed case file that differs from it only in its numbers (listing
+    input/input-01.md covers input/input-02.md, input/input-03.md, ...). Only entries that name a file
+    are checked, so case names that are not files never trip it."""
+    ws = ws.resolve()
+    listed_files = {f for entry in listed if (f := _case_file(ws, entry))}
+    if not listed_files:
+        return []
+    on_disk: set[Path] = set()
+    for path in listed_files:
+        pattern = re.compile(re.sub(r"\d+", r"\\d+", re.escape(path.name)))
+        if pattern.pattern != re.escape(path.name):
+            on_disk.update(p for p in path.parent.iterdir() if p.is_file() and pattern.fullmatch(p.name))
+    manifest = ws / "work" / "manifest.yaml"
+    if manifest.is_file():
+        for match in _MANIFEST_INPUT.finditer(manifest.read_text(encoding="utf-8", errors="replace")):
+            if (ws / match.group(1)).is_file():
+                on_disk.add((ws / match.group(1)).resolve())
+    return sorted(p.relative_to(ws).as_posix() for p in on_disk - listed_files)
+
+
+def utf8_stdio() -> None:
+    """Case names and claude's output may be non-ASCII; Windows pipes default to a legacy code page."""
+    for stream in (sys.stdout, sys.stderr):
+        if hasattr(stream, "reconfigure"):
+            stream.reconfigure(encoding="utf-8", errors="replace")
+
+
 def resolve_skill(workspace: Path, skill: str | None) -> str:
     output = workspace / "output"
     if skill:
@@ -213,7 +260,7 @@ def resolve_skill(workspace: Path, skill: str | None) -> str:
 
 def model_invoked(skill_md: Path) -> bool:
     """False when the frontmatter sets `disable-model-invocation: true`."""
-    text = skill_md.read_text()
+    text = skill_md.read_text(encoding="utf-8")
     if not text.startswith("---"):
         return True
     end = text.find("\n---", 3)
@@ -258,20 +305,20 @@ def file_sha256(path: Path) -> str | None:
 
 
 def _gate_input(path: Path, ws: Path) -> bool:
-    rel = path.relative_to(ws)
-    if rel.parts[:2] != EVAL_DIR.parts:
+    rel = path.relative_to(ws).as_posix()
+    if not rel.startswith(f"{EVAL_DIR.as_posix()}/"):
         return True
-    inner = rel.relative_to(EVAL_DIR)
-    return not (inner.parts[0] == PLUGIN_DIR.name or inner in _NOT_INPUTS or path.name.startswith(".")
-                or path.suffix in _SCRATCH_SUFFIXES or path.name.endswith(".prev.json"))
+    return not (rel in _NOT_INPUTS or rel.startswith(_GENERATED_DIRS)
+                or path.name.endswith((".tmp", ".prev.json")))
 
 
 def inputs_sha256(workspace: Path) -> dict[str, str]:
-    """sha256 of every file the gate cases can resolve to outside the suite: the gold standards and
-    fixtures under input/, and the scorers under work/evaluation/ (score scripts, rubrics, fixtures).
-    Skipped there: plugin/ (the skill and case hashes cover it), run-case.sh (hashed on its own), what
-    the gate writes, data-split.yaml (the case hash covers plugin_eval), dotfiles and *.tmp / *.out /
-    *.log scratch."""
+    """sha256 of every file a gate case can resolve to: the gold standards and fixtures under input/, and
+    everything under work/evaluation/ — scorers, rubrics, fixtures, golden files and the wrapper plugin
+    (its manifest, shared mocks and case files). Skipped there: run-case.sh (hashed on its own),
+    data-split.yaml (the case hash covers plugin_eval), what the gate writes (gate.json, the artifacts,
+    gate-attempts.jsonl, *.prev.json, *.tmp), plugin/skills/ (refreshed from output/<skill>/, which the
+    skill hash covers) and plugin/evals/results/ (claude plugin eval's own output)."""
     found = {}
     for root in (workspace / "input", workspace / EVAL_DIR):
         if root.is_dir():
@@ -287,7 +334,7 @@ def log_attempt(workspace: Path, step: str, error: str | None = None) -> None:
     path = workspace / GATE_ATTEMPTS
     path.parent.mkdir(parents=True, exist_ok=True)
     line = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "step": step, "error": error}
-    with open(path, "a") as fh:
+    with open(path, "a", encoding="utf-8") as fh:
         fh.write(json.dumps(line) + "\n")
 
 
@@ -296,7 +343,7 @@ def read_attempts(workspace: Path) -> list[dict]:
     if not path.is_file():
         return []
     attempts = []
-    for line in path.read_text(errors="replace").splitlines():
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
         try:
             entry = json.loads(line)
         except json.JSONDecodeError:
@@ -308,7 +355,16 @@ def read_attempts(workspace: Path) -> list[dict]:
 
 def write_text(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
-    tmp.write_text(text)
+    tmp.write_text(text, encoding="utf-8")
+    for _ in range(50):
+        try:
+            os.replace(tmp, path)
+            return
+        except PermissionError:
+            # Windows: a reader holding path open blocks the replace for a moment.
+            if os.name != "nt":
+                raise
+            time.sleep(0.02)
     os.replace(tmp, path)
 
 
