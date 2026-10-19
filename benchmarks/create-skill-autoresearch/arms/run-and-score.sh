@@ -13,6 +13,12 @@ RUNS_ROOT="${BENCH_RUNS_ROOT:-${TMPDIR:-/tmp}/create-skill-autoresearch-bench}"
 
 if [ "${SCORE_ONLY:-0}" = "1" ]; then
   code="$(sed -n 's/.*"exit_code": \([0-9]*\).*/\1/p' "$RUNS_ROOT/$RUN_ID/meta.json")"
+  # run-arm.sh exits 75 for an env failure and meta.json records it as env_failure: a re-score keeps
+  # the exclusion (never scored) and exits 75 without starting the retry build.
+  if grep -q '"env_failure": 1' "$RUNS_ROOT/$RUN_ID/meta.json"; then
+    echo "# $RUN_ID: env_failure in meta.json, not scored" >&2
+    exit 75
+  fi
 else
   "$HERE/run-arm.sh" "$ARM" "$MODEL" "$RUN_ID" "$TASK_NAME"
   code=$?
