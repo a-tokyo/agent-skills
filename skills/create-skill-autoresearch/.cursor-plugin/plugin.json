@@ -1,0 +1,8 @@
+{
+  "name": "create-skill-autoresearch",
+  "version": "0.3.0",
+  "description": "Factory for building production-grade agent skills, with a kill guard that blocks pattern-based process kills in shell commands.",
+  "license": "MIT",
+  "repository": "https://github.com/a-tokyo/agent-skills",
+  "hooks": "hooks/cursor-hooks.json"
+}

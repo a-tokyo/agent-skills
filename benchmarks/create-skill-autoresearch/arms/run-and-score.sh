@@ -36,7 +36,7 @@ if [ -z "$(metric overall_score)" ]; then
   exit 1
 fi
 wall="$(sed -n 's/.*"wall_seconds": \([0-9]*\).*/\1/p' "$RUN/meta.json")"
-note="exit=$code"
+note="exit=$code"; [ "${HOST:-claude}" = "claude" ] || note="$note host=$HOST"
 echo "$RUN_ID,$ARM,$MODEL,$(metric compliance),$(metric craft),$(metric execution),$(metric overall_score),$wall,claude-cli,$note,$TASK_NAME" \
   >> "$BENCH/results/scores.csv"
 echo "# $RUN_ID: overall=$(metric overall_score) execution=$(metric execution)" >&2

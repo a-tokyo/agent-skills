@@ -9,6 +9,13 @@
 #   FACTORY_DIR / COMPANIONS_DIR override where the factory arms load the skill and its companions;
 #   factory-v021 requires both (the pinned v0.2.1 archive, agent-skills commit 99652ee).
 #
+#   HOST=cursor runs the builder with `cursor-agent -p --force --trust --output-format stream-json`
+#   instead of `claude -p` (model: CURSOR_MODEL, default per alias, Sonnet -> claude-sonnet-5-5-high).
+#   The skills go in the workspace's .agents/skills/ (Cursor's project skills dir) with the kill guard
+#   as a project hook in .cursor/hooks.json, and PATH holds no `claude` (checked before the run, recorded
+#   in meta.json). cursor-agent needs its real login, so HOME stays the maintainer's: the build workspace
+#   and git config are isolated, HOME is not, and the builder can see user-level Cursor skills and rules.
+#
 # Launches ONE fresh `claude -p` build run in runs/<run-id>/ws/ under full containment:
 # isolated HOME + GIT_CONFIG_GLOBAL + XDG dirs so a --dangerously-skip-permissions agent can never
 # read or write the maintainer's real config, credentials, or caches. Pattern proven in the
@@ -41,6 +48,30 @@ case "$MODEL_ALIAS" in
   opus)   MODEL_ID="claude-opus-5-5" ;;
   *) echo "unknown model alias: $MODEL_ALIAS" >&2; exit 2 ;;
 esac
+HOST="${HOST:-claude}"
+case "$HOST" in
+  claude) ;;
+  cursor)
+    case "$MODEL_ALIAS" in
+      haiku)  DEFAULT_CURSOR_MODEL="claude-haiku-5-5-high" ;;
+      sonnet) DEFAULT_CURSOR_MODEL="claude-sonnet-5-5-high" ;;
+      opus)   DEFAULT_CURSOR_MODEL="claude-opus-5-5-high" ;;
+    esac
+    CURSOR_MODEL="${CURSOR_MODEL:-$DEFAULT_CURSOR_MODEL}"
+    CURSOR_BIN="$(command -v cursor-agent)" || { echo "HOST=cursor needs cursor-agent on PATH" >&2; exit 2; }
+    CURSOR_BIN="$(python3 -c 'import os,sys; print(os.path.realpath(sys.argv[1]))' "$CURSOR_BIN")"
+    # PATH for the build: every PATH dir that holds no `claude`, plus cursor-agent's own install dir.
+    NO_CLAUDE_PATH="$(dirname "$CURSOR_BIN")"
+    IFS=: read -r -a PATH_DIRS <<<"$PATH"
+    for d in "${PATH_DIRS[@]}"; do
+      [ -n "$d" ] && [ ! -e "$d/claude" ] && NO_CLAUDE_PATH="$NO_CLAUDE_PATH:$d"
+    done
+    if env -i PATH="$NO_CLAUDE_PATH" /bin/sh -c 'command -v claude' >/dev/null 2>&1; then
+      echo "HOST=cursor: claude is still on the build PATH; aborting" >&2; exit 2
+    fi
+    ;;
+  *) echo "unknown HOST: $HOST (claude | cursor)" >&2; exit 2 ;;
+esac
 case "$ARM" in
   bare)          TIMEOUT=1200;  MAX_TURNS=60  ;;
   skill-creator) TIMEOUT=4800;  MAX_TURNS=250 ;;
@@ -55,11 +86,16 @@ COMPANIONS_DIR="${COMPANIONS_DIR:-$BENCH/companions}"
 
 # auth precheck BEFORE any run-dir creation (containment hides the interactive login;
 # a headless credential is required: CLAUDE_CODE_OAUTH_TOKEN via `claude setup-token`, or ANTHROPIC_API_KEY)
-if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -f "$BENCH/.auth-token" ]; then
-  CLAUDE_CODE_OAUTH_TOKEN="$(cat "$BENCH/.auth-token")"; export CLAUDE_CODE_OAUTH_TOKEN
-fi
-if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
-  echo "run-arm.sh: no CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY (and no .auth-token file); aborting" >&2
+if [ "$HOST" = "claude" ]; then
+  if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ] && [ -f "$BENCH/.auth-token" ]; then
+    CLAUDE_CODE_OAUTH_TOKEN="$(cat "$BENCH/.auth-token")"; export CLAUDE_CODE_OAUTH_TOKEN
+  fi
+  if [ -z "${CLAUDE_CODE_OAUTH_TOKEN:-}" ] && [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+    echo "run-arm.sh: no CLAUDE_CODE_OAUTH_TOKEN / ANTHROPIC_API_KEY (and no .auth-token file); aborting" >&2
+    exit 2
+  fi
+elif ! "$CURSOR_BIN" status 2>&1 | grep -q "Logged in"; then
+  echo "run-arm.sh: cursor-agent is not logged in (cursor-agent login); aborting" >&2
   exit 2
 fi
 
@@ -73,11 +109,14 @@ ln -sfn "$RUN" "$HERE/../runs/$RUN_ID"
 export GIT_CEILING_DIRECTORIES="$RUNS_ROOT"
 
 # ---------- containment: isolated HOME/GIT_CONFIG_GLOBAL/XDG ----------
-export HOME="$RUN/home"
-export XDG_CONFIG_HOME="$RUN/home/.config"
-export XDG_CACHE_HOME="$RUN/home/.cache"
-export XDG_DATA_HOME="$RUN/home/.local/share"
-mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
+# (HOST=cursor keeps the real HOME and XDG dirs for cursor-agent's login; git config is still isolated)
+if [ "$HOST" = "claude" ]; then
+  export HOME="$RUN/home"
+  export XDG_CONFIG_HOME="$RUN/home/.config"
+  export XDG_CACHE_HOME="$RUN/home/.cache"
+  export XDG_DATA_HOME="$RUN/home/.local/share"
+  mkdir -p "$XDG_CONFIG_HOME" "$XDG_CACHE_HOME" "$XDG_DATA_HOME"
+fi
 export GIT_CONFIG_GLOBAL="$RUN/home/.gitconfig"
 cat > "$GIT_CONFIG_GLOBAL" <<'EOF'
 [user]
@@ -88,8 +127,27 @@ cat > "$GIT_CONFIG_GLOBAL" <<'EOF'
 EOF
 
 # ---------- arm setup: skill injection into the fake HOME ----------
-mkdir -p "$HOME/.claude/skills"
 PLUGIN_ARGS=()
+if [ "$HOST" = "cursor" ]; then
+  # Cursor reads project skills from the workspace's .agents/skills/; the kill guard runs as a
+  # project hook (beforeShellExecution), the npx-install path hosts.md documents.
+  SKILLS_DIR="$WORK/.agents/skills"
+  mkdir -p "$SKILLS_DIR" "$WORK/.cursor"
+  case "$ARM" in
+    skill-creator) cp -R "$REPO/.agents/skills/skill-creator" "$SKILLS_DIR/skill-creator" ;;
+    factory|factory-v021)
+      cp -R "$FACTORY_DIR" "$SKILLS_DIR/create-skill-autoresearch"
+      for s in "$COMPANIONS_DIR"/*/; do
+        [ -f "$s/SKILL.md" ] && cp -R "$s" "$SKILLS_DIR/$(basename "$s")"
+      done
+      if [ -f "$SKILLS_DIR/create-skill-autoresearch/hooks/kill_guard.py" ]; then
+        printf '{ "version": 1, "hooks": { "beforeShellExecution": [ { "command": "python3 %s", "timeout": 10 } ] } }\n' \
+          "$SKILLS_DIR/create-skill-autoresearch/hooks/kill_guard.py" > "$WORK/.cursor/hooks.json"
+      fi
+      ;;
+  esac
+else
+mkdir -p "$HOME/.claude/skills"
 case "$ARM" in
   bare) ;;
   skill-creator)
@@ -111,6 +169,7 @@ case "$ARM" in
     done
     ;;
 esac
+fi
 
 # ---------- task setup: brief + materials into the workspace ----------
 cp "$TASK_DIR/brief.md" "$WORK/brief.md"
@@ -128,6 +187,7 @@ case "$ARM" in
     ;;
   factory|factory-v021)
     EXTRA="Use the create-skill-autoresearch skill (the 5-phase factory) to build it. brief.md answers every Phase-1 interview question. You are running UNATTENDED in CI: there is no user, no one will ever reply, and pausing to ask or check in ends the run as a failure. Wherever the factory says to confirm, present, or check in with the user, adopt the brief's answer (or the factory's stated default) and continue immediately. Run ALL 5 phases to completion — including the Phase-4 autoresearch loop (budget max_iterations: 6) and the Phase-5 panel — before stopping. For any LLM-as-judge evaluation the factory builds, use the claude CLI itself (claude -p --model claude-haiku-5-5) rather than an external API."
+    [ "$HOST" = "cursor" ] && EXTRA="${EXTRA%For any LLM-as-judge*}You are running in Cursor's CLI and the claude CLI is not installed. For any LLM call the factory builds (an executor or an LLM-as-judge), use cursor-agent itself (cursor-agent -p --model claude-haiku-5-5-high --force --trust --output-format json, stdin from /dev/null) rather than an external API."
     ;;
 esac
 PROMPT="You are in an empty workspace containing brief.md, input/, and materials/. Build the skill specified by brief.md. $EXTRA When you are done, the finished skill must exist at output/$SKILL_OUT/SKILL.md."
@@ -140,6 +200,16 @@ set +e
 # can read the hiccup as a user interjection and pause mid-pipeline (bit factory-sonnet-2).
 # env MUST be scrubbed (env -i + allowlist): a --dangerously-skip-permissions agent can printenv,
 # so the caller's unrelated secrets (CI tokens, cloud creds) must never reach the session.
+if [ "$HOST" = "cursor" ]; then
+( cd "$WORK" && perl -e 'alarm shift @ARGV; exec @ARGV' -- "$TIMEOUT" env -i \
+    PATH="$NO_CLAUDE_PATH" HOME="$HOME" USER="${USER:-}" LOGNAME="${LOGNAME:-}" TMPDIR="${TMPDIR:-/tmp}" \
+    TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" SHELL="${SHELL:-/bin/bash}" \
+    GIT_CONFIG_GLOBAL="$GIT_CONFIG_GLOBAL" GIT_CEILING_DIRECTORIES="$GIT_CEILING_DIRECTORIES" \
+    "$CURSOR_BIN" -p "$(cat "$RUN/prompt.txt")" \
+    --model "$CURSOR_MODEL" --force --trust --output-format stream-json \
+  ) <"/dev/null" >"$RUN/transcript.txt" 2>&1
+EXIT_CODE=$?
+else
 ( cd "$WORK" && perl -e 'alarm shift @ARGV; exec @ARGV' -- "$TIMEOUT" env -i \
     PATH="$PATH" HOME="$HOME" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" SHELL="${SHELL:-/bin/bash}" \
     XDG_CONFIG_HOME="$XDG_CONFIG_HOME" XDG_CACHE_HOME="$XDG_CACHE_HOME" XDG_DATA_HOME="$XDG_DATA_HOME" \
@@ -153,6 +223,7 @@ set +e
     ${PLUGIN_ARGS[@]+"${PLUGIN_ARGS[@]}"} \
   ) <"/dev/null" >"$RUN/transcript.txt" 2>&1
 EXIT_CODE=$?
+fi
 set -e
 END_TS="$(date +%s)"
 WALL=$((END_TS - START_TS))
@@ -170,15 +241,38 @@ fi
 
 # ---------- token usage (offline, from the fake HOME's transcripts; subagents included) ----------
 # A failed sum leaves tokens null and the CSV cells empty rather than failing a finished build.
+if [ "$HOST" = "cursor" ]; then
+  # cursor-agent's stream-json ends with a result event carrying the session's usage (top-level session
+  # only; subagent usage is not broken out there).
+  TOKENS="$(python3 - "$RUN/transcript.txt" <<'PY' 2>/dev/null
+import json, sys
+usage = None
+for line in open(sys.argv[1], errors="replace"):
+    try:
+        event = json.loads(line)
+    except json.JSONDecodeError:
+        continue
+    if isinstance(event, dict) and event.get("type") == "result" and isinstance(event.get("usage"), dict):
+        usage = event["usage"]
+if usage:
+    total = sum(int(usage.get(k) or 0) for k in ("inputTokens", "cacheReadTokens", "cacheWriteTokens"))
+    print(json.dumps({"input_total": total, "output_tokens": int(usage.get("outputTokens") or 0), "source": "cursor-result"}))
+PY
+)" || TOKENS=""
+  MODEL_ID="cursor:$CURSOR_MODEL"
+else
 TOKENS="$(node "$HERE/sum-tokens.mjs" "$HOME/.claude/projects" 2>/dev/null)" || TOKENS=""
+fi
 [ -n "$TOKENS" ] || TOKENS="null"
 token_field() { printf '%s' "$TOKENS" | sed -n "s/.*\"$1\":\([0-9]*\).*/\1/p"; }
 IN_TOKENS="$(token_field input_total)"
 OUT_TOKENS="$(token_field output_tokens)"
 
 # ---------- meta + results row ----------
-printf '{ "run_id": "%s", "task": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "exit_code": %s, "wall_seconds": %s, "env_failure": %s, "tokens": %s }\n' \
-  "$RUN_ID" "$TASK_NAME" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" "$TOKENS" > "$RUN/meta.json"
+CLAUDE_ON_PATH=true
+[ "$HOST" = "cursor" ] && CLAUDE_ON_PATH=false
+printf '{ "run_id": "%s", "task": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "host": "%s", "claude_on_path": %s, "exit_code": %s, "wall_seconds": %s, "env_failure": %s, "tokens": %s }\n' \
+  "$RUN_ID" "$TASK_NAME" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$HOST" "$CLAUDE_ON_PATH" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" "$TOKENS" > "$RUN/meta.json"
 RESULTS="$BENCH/results/runs.csv"
 mkdir -p "$BENCH/results"
 [ -f "$RESULTS" ] || echo "run_id,arm,model,exit_code,wall_seconds,env_failure,task,input_tokens,output_tokens" > "$RESULTS"

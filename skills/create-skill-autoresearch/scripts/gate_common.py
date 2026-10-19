@@ -30,6 +30,7 @@ import json
 import os
 import re
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from pathlib import Path
 
 EVAL_DIR = Path("work") / "evaluation"
@@ -39,10 +40,11 @@ GATE_RECORD = EVAL_DIR / "gate.json"
 DATA_SPLIT = EVAL_DIR / "data-split.yaml"
 RUN_CASE = EVAL_DIR / "run-case.sh"
 PLUGIN_DIR = EVAL_DIR / "plugin"
+GATE_ATTEMPTS = EVAL_DIR / "gate-attempts.jsonl"
 REQUIRED_RUNS = 3
 # Hashed elsewhere (run-case.sh, data-split.yaml) or written by the gate itself.
 _NOT_INPUTS = {p.relative_to(EVAL_DIR)
-               for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_RECORD, DATA_SPLIT, RUN_CASE)}
+               for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_RECORD, DATA_SPLIT, RUN_CASE, GATE_ATTEMPTS)}
 _SCRATCH_SUFFIXES = {".tmp", ".out", ".log"}
 
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
@@ -168,12 +170,14 @@ def _block_end(lines: list[str], start: int) -> int:
     return end
 
 
-def write_gate_cases(path: Path, cases: list[str], available: int, source: str) -> None:
+def write_gate_cases(path: Path, cases: list[str], available: int | str, source: str) -> None:
     """Rewrite `plugin_eval` (as a block list) and `plugin_eval_available` in data-split.yaml, keeping
     every other line; append them when absent. Creates the file when it does not exist."""
     lines = path.read_text().splitlines() if path.is_file() else []
+    why = ("exit code of `claude plugin eval --help`" if isinstance(available, int)
+           else "user-invoked skill: always the manual protocol, claude not probed")
     new = {
-        "plugin_eval_available": [f"plugin_eval_available: {available}  # exit code of `claude plugin eval --help`"],
+        "plugin_eval_available": [f"plugin_eval_available: {available}  # {why}"],
         "plugin_eval": [f"plugin_eval:  # written by scripts/gate.py record from {source}; re-run it, never edit"]
                        + [f"  - {json.dumps(case)}" for case in cases],
     }
@@ -267,6 +271,31 @@ def inputs_sha256(workspace: Path) -> dict[str, str]:
                 if _hashed(path, root) and _gate_input(path, workspace):
                     found[path.relative_to(workspace).as_posix()] = file_sha256(path)
     return dict(sorted(found.items()))
+
+
+def log_attempt(workspace: Path, step: str, error: str | None = None) -> None:
+    """Append one line to work/evaluation/gate-attempts.jsonl: `record` or `gate`, and the GateError that
+    stopped it, if any. check_gate.py --finish reads it: an UNSHIPPED build must have tried the gate."""
+    path = workspace / GATE_ATTEMPTS
+    path.parent.mkdir(parents=True, exist_ok=True)
+    line = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "step": step, "error": error}
+    with open(path, "a") as fh:
+        fh.write(json.dumps(line) + "\n")
+
+
+def read_attempts(workspace: Path) -> list[dict]:
+    path = workspace / GATE_ATTEMPTS
+    if not path.is_file():
+        return []
+    attempts = []
+    for line in path.read_text(errors="replace").splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            attempts.append(entry)
+    return attempts
 
 
 def write_text(path: Path, text: str) -> None:

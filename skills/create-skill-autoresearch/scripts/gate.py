@@ -80,7 +80,7 @@ import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
     GateError, cases_sha256, file_sha256, inputs_sha256, model_invoked, read_data_split, resolve_skill,
-    skill_sha256, write_gate_cases, write_json,
+    log_attempt, skill_sha256, write_gate_cases, write_json,
 )
 
 EXIT_INVALID = 1
@@ -96,6 +96,7 @@ SCORE_RE = re.compile(r"^SCORE=(\S+)\s*$", re.MULTILINE)
 SCAFFOLD_RE = re.compile(r"^\s*scaffold_script:\s*(\S.*)$")
 NAME_RE = re.compile(r"^name:\s*(\S.*)$")
 LOAD_CHECK_TIMEOUT = 120
+NOT_PROBED = "not-probed"
 ATTEMPTS = 2
 SCRIPTS = Path(__file__).resolve().parent
 
@@ -186,13 +187,14 @@ def load_check(ws: Path) -> None:
         print(f"gate: load check exited {out.returncode} without naming a case; continuing", file=sys.stderr)
 
 
-def record_cases(ws: Path, skill: str) -> tuple[list[str], str, int, bool]:
+def record_cases(ws: Path, skill: str) -> tuple[list[str], str, int | str, bool]:
     """Write the gate's case list into data-split.yaml from what is on disk: (cases, mode, probe exit
     code, model-invoked). Plugin mode lists the suite's case directories after a load check; manual mode
-    lists the gate gold standards from the split (3.6)."""
-    available = probe_plugin_eval()
+    lists the gate gold standards from the split (3.6). A user-invoked skill is always manual, so the
+    probe is skipped and nothing calls `claude`; manual mode never calls it either."""
     invoked = model_invoked(ws / "output" / skill / "SKILL.md")
-    mode = "plugin" if available == 0 and invoked else "manual"
+    available: int | str = probe_plugin_eval() if invoked else NOT_PROBED
+    mode = "plugin" if available == 0 else "manual"
     if mode == "plugin":
         cases, source = suite_cases(ws), str(PLUGIN_DIR / "evals")
         load_check(ws)
@@ -405,11 +407,13 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         _set_aside(ws / artifact)
         print(f"gate: mode={mode} (plugin eval probe exit {available}, model-invoked={invoked}), "
               f"{len(cases)} cases x {args.runs} runs per arm", file=sys.stderr)
+        log_attempt(ws, "gate")
         if mode == "plugin":
             run_plugin(ws, skill, args)
         else:
             run_manual(ws, cases, args)
     except GateError as exc:
+        log_attempt(ws, "gate", str(exc))
         print(f"gate: {exc}", file=sys.stderr)
         return EXIT_PRECONDITION
     except GateStopped:
@@ -475,6 +479,7 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
         if args.detach or args.restart:
             preconditions(ws, args)
     except GateError as exc:
+        log_attempt(ws, "gate", str(exc))
         print(f"gate: {exc}", file=sys.stderr)
         print(f"gate: not started{'; the running gate was left as it is' if live else ''}", file=sys.stderr)
         return EXIT_PRECONDITION
@@ -502,8 +507,10 @@ def record(ws: Path, skill: str | None) -> int:
     try:
         cases, mode, available, _ = record_cases(ws, resolve_skill(ws, skill))
     except GateError as exc:
+        log_attempt(ws, "record", str(exc))
         print(f"gate: {exc}", file=sys.stderr)
         return EXIT_PRECONDITION
+    log_attempt(ws, "record")
     print(f"gate: recorded {len(cases)} gate cases for mode {mode} (plugin eval probe exit {available}) in "
           f"{DATA_SPLIT}: {', '.join(cases)}")
     return 0

@@ -47,6 +47,16 @@ is a one-call check that the guard blocks a dummy `pkill` under that load. Its s
 2026-10-18 (Haiku 5.5, Claude Code 2.1.301) passed: the agent got the guard's message as a tool error,
 the session continued, and `fidelity.py` counted 0 kill commands and 1 blocked attempt.
 
+`HOST=cursor arms/run-and-score.sh factory sonnet <run-id> [task-2]` runs the same build under
+`cursor-agent -p --force --trust --output-format stream-json` (Sonnet 5.5 = `claude-sonnet-5-5-high`;
+`CURSOR_MODEL` overrides). The skills go in the workspace's `.agents/skills/`, the kill guard runs as a
+project `beforeShellExecution` hook in `.cursor/hooks.json`, and the build's PATH holds no `claude`
+(checked before the run; `meta.json` records `host` and `claude_on_path`). cursor-agent needs its real
+login, so this arm keeps the maintainer's HOME: the workspace and git config are isolated, HOME is not,
+and the builder can see user-level Cursor skills and rules. Tokens come from the transcript's final
+`result` event (the top-level session; subagent usage is not broken out). `fidelity.py` reads the
+stream-json transcript's shell calls, counting a hook-rejected one as blocked.
+
 ## Scoring — deterministic, arm-independent, fixed before any run
 
 - **task** — [`scoring/score.mjs`](scoring/score.mjs): a fixed executor (Haiku 5.5, thinking off)

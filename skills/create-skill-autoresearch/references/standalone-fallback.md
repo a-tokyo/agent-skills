@@ -15,11 +15,9 @@ npx skills add mattpocock/skills --skill writing-for-agents
 
 Their single source is the pre-flight checklist in SKILL.md 3.3: the platform rules, plus `version` and
 `license`, which it labels as registry conventions. They apply with or without companions, and the
-self-test and the Phase 5 panel assert them. Two notes the checklist leaves out:
-
-- Measure the description on the **joined** folded block (`>-`), not its first line — a one-line grep
-  reads a folded description as empty and lets an over-limit one through.
-- Have one panel lens try to smuggle an instruction through content the skill fetches.
+self-test and the Phase 5 panel assert them. The authoring rules no companion states are in
+[authoring-rules.md](authoring-rules.md), which 3.3 reads on every build; this file holds only what the
+companions would otherwise supply.
 
 ## Invocation
 

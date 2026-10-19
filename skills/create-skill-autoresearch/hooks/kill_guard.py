@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
-"""Claude Code PreToolUse hook: block pattern-based process kills in Bash tool calls.
+"""Shell-command hook: block pattern-based process kills, on every host whose hooks can block a command.
 
 A name-pattern kill (`pkill -f gate`, `killall python3`, `pgrep -f x | xargs kill`, `kill $(pgrep x)`)
 also hits sibling builds and the user's own processes; the factory's run_owned.py stops only the
-process group it recorded. Loaded by hooks/hooks.json when this skill directory is loaded as a
-plugin (`claude --plugin-dir <skill-dir>`), and by the agent-skills marketplace entry.
+process group it recorded. One script, two input/output contracts (references/hosts.md):
 
-Reads the hook's JSON input on stdin. Exit 2 with the reason on stderr blocks the call; exit 0
-lets it through to the normal permission flow. Input it cannot read is let through: the guard
-must never stop every Bash call. A command that only mentions one of these words (a grep for
-`pkill`) is blocked too; the message says what to run instead.
+  Claude Code, Codex  PreToolUse, stdin {"tool_name": ..., "tool_input": {"command": ...}}.
+                      Block: exit 2, reason on stderr. Allow: exit 0, no output.
+  Cursor              beforeShellExecution, stdin {"hook_event_name": "beforeShellExecution",
+                      "command": ..., "cwd": ..., "sandbox": ...}. Always answers JSON on stdout,
+                      exit 0: {"permission": "deny", "user_message", "agent_message"} or
+                      {"permission": "allow"} (Cursor blocks a permission hook that prints nothing).
+
+OpenCode runs it through hooks/opencode-kill-guard.js. Input it cannot read is let through: the guard
+must never stop every shell call. A command that only mentions one of these words (a grep for `pkill`)
+is blocked too; the message says what to run instead.
 
 Detection runs on the command with quotes and backslashes removed, so `p'k'ill`, `"pkill"`,
 `\\pkill` and line continuations do not hide a kill. Blocked:
@@ -31,6 +36,7 @@ NAMED_KILL = re.compile(r"\b(?:pkill|killall)\b")
 PIPED_KILL = re.compile(rf"\b{_LISTERS}\b[^\n]*\|[^\n]*\bkill\b")
 SUBSTITUTED_LISTING = re.compile(rf"(?:\$\(|`)\s*{_LISTERS}\b")
 KILL = re.compile(r"\bkill\b")
+CURSOR_EVENT = "beforeShellExecution"
 
 
 def normalise(command: str) -> str:
@@ -49,7 +55,14 @@ def main() -> int:
         event = json.load(sys.stdin)
     except (json.JSONDecodeError, UnicodeDecodeError):
         return 0
-    if not isinstance(event, dict) or event.get("tool_name") != "Bash":
+    if not isinstance(event, dict):
+        return 0
+    if event.get("hook_event_name") == CURSOR_EVENT or ("command" in event and "tool_input" not in event):
+        command = event.get("command")
+        blocked = isinstance(command, str) and is_pattern_kill(command)
+        reply = ({"permission": "deny", "user_message": MESSAGE, "agent_message": MESSAGE} if blocked
+                 else {"permission": "allow"})
+        print(json.dumps(reply))
         return 0
     command = (event.get("tool_input") or {}).get("command")
     if isinstance(command, str) and is_pattern_kill(command):

@@ -68,7 +68,8 @@ pairs:
 
 ### Spawning Researchers
 
-For each cluster of study materials, spawn an `explore` subagent with:
+For each cluster of study materials, spawn a read-only researcher subagent (the host's own mechanism,
+[hosts.md](hosts.md); with none, run the same prompt as a fresh headless session per cluster, one after another) with:
 
 ```
 Prompt: "Study the following materials thoroughly and produce a research note.

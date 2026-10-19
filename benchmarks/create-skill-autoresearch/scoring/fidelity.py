@@ -135,7 +135,28 @@ def issued_commands(run: Path) -> list[tuple[str, bool]]:
                             calls.append((item.get("id"), command))
                     elif item.get("type") == "tool_result" and GUARD_MARK in _text(item.get("content")):
                         blocked.add(item.get("tool_use_id"))
-    return [(command, call_id is not None and call_id in blocked) for call_id, command in calls]
+    found = [(command, call_id is not None and call_id in blocked) for call_id, command in calls]
+    return found + cursor_commands(run / "transcript.txt")
+
+
+def cursor_commands(transcript: Path) -> list[tuple[str, bool]]:
+    """(command, blocked) per shell call in a cursor-agent stream-json transcript (HOST=cursor runs):
+    `tool_call` events with subtype `completed` carry `shellToolCall.args.command`, and a hook denial
+    sits in `shellToolCall.result.rejected.reason`. A claude transcript holds no such events."""
+    found = []
+    for line in open(transcript, errors="replace") if transcript.is_file() else []:
+        try:
+            event = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if not isinstance(event, dict) or event.get("type") != "tool_call" or event.get("subtype") != "completed":
+            continue
+        shell = (event.get("tool_call") or {}).get("shellToolCall") or {}
+        command = (shell.get("args") or {}).get("command")
+        if isinstance(command, str):
+            rejected = ((shell.get("result") or {}).get("rejected") or {}).get("reason") or ""
+            found.append((command, GUARD_MARK in rejected))
+    return found
 
 
 def kill_commands(run: Path) -> tuple[list[str], int]:

@@ -10,8 +10,10 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
+import textwrap
 import unittest
 from pathlib import Path
 
@@ -101,6 +103,87 @@ class KillGuardTest(unittest.TestCase):
         self.assertEqual(run_hook({"tool_name": "Write", "tool_input": {"content": "pkill -f x"}}).returncode, 0)
         self.assertEqual(run_hook("not json").returncode, 0)
         self.assertEqual(run_hook({"tool_name": "Bash", "tool_input": {}}).returncode, 0)
+
+
+def cursor(command: str) -> dict:
+    return {"conversation_id": "c", "generation_id": "g", "hook_event_name": "beforeShellExecution",
+            "cursor_version": "2026.10.16", "workspace_roots": ["/tmp/ws"], "command": command,
+            "cwd": "/tmp/ws", "sandbox": False}
+
+
+class CursorContractTest(unittest.TestCase):
+    """Cursor's beforeShellExecution: always a JSON permission on stdout, exit 0 (a permission hook that
+    prints nothing blocks the command)."""
+
+    def reply(self, command: str) -> dict:
+        out = run_hook(cursor(command))
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return json.loads(out.stdout)
+
+    def test_allowed_commands_get_an_explicit_allow(self) -> None:
+        for command in ALLOWED:
+            with self.subTest(command=command):
+                self.assertEqual(self.reply(command), {"permission": "allow"})
+
+    def test_blocked_and_variant_commands_are_denied_with_the_message_for_both_audiences(self) -> None:
+        for command in BLOCKED + QUOTING_AND_WHITESPACE:
+            with self.subTest(command=command):
+                reply = self.reply(command)
+                self.assertEqual(reply["permission"], "deny")
+                self.assertIn("run_owned.py stop <name>", reply["agent_message"])
+                self.assertEqual(reply["user_message"], reply["agent_message"])
+
+
+class CodexContractTest(unittest.TestCase):
+    """Codex PreToolUse sends the Claude shape (tool_input.command) and honours exit 2 + stderr."""
+
+    def test_codex_shell_call(self) -> None:
+        event = {"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": "/tmp/ws",
+                 "tool_input": {"command": "pkill -f eval"}}
+        out = run_hook(event)
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("pattern kills hit unrelated processes", out.stderr)
+        event["tool_input"]["command"] = "ls"
+        self.assertEqual((run_hook(event).returncode, run_hook(event).stdout), (0, ""))
+
+
+@unittest.skipUnless(shutil.which("node"), "node not installed")
+class OpenCodePluginTest(unittest.TestCase):
+    """hooks/opencode-kill-guard.js under node: tool.execute.before throws for a pattern kill on bash."""
+
+    def call(self, tool: str, command: str) -> str:
+        script = textwrap.dedent(f"""
+            import {{ KillGuard }} from {json.dumps((SKILL / 'hooks' / 'opencode-kill-guard.js').as_uri())};
+            const hooks = await KillGuard({{}});
+            try {{
+              await hooks["tool.execute.before"]({{ tool: {json.dumps(tool)} }}, {{ args: {{ command: {json.dumps(command)} }} }});
+              console.log("allowed");
+            }} catch (error) {{ console.log("blocked: " + error.message); }}
+        """)
+        out = subprocess.run(["node", "--input-type=module", "-e", script], capture_output=True, text=True,
+                             timeout=60, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+        self.assertEqual(out.returncode, 0, out.stderr)
+        return out.stdout.strip()
+
+    def test_blocks_pattern_kills_and_lets_the_rest_through(self) -> None:
+        self.assertTrue(self.call("bash", "pkill -f gate.py").startswith("blocked: Blocked by create-skill"))
+        self.assertTrue(self.call("bash", "kill $(pgrep -f eval)").startswith("blocked:"))
+        self.assertEqual(self.call("bash", "python3 scripts/run_owned.py stop gate"), "allowed")
+        self.assertEqual(self.call("read", "pkill -f gate.py"), "allowed", "only bash calls are checked")
+
+
+class CursorPluginTest(unittest.TestCase):
+    def test_manifest_points_at_a_cursor_hooks_file_that_runs_the_guard(self) -> None:
+        manifest = json.loads((SKILL / ".cursor-plugin" / "plugin.json").read_text())
+        self.assertEqual(manifest["name"], "create-skill-autoresearch")
+        frontmatter_version = next(line.split(":", 1)[1].strip() for line in (SKILL / "SKILL.md").read_text().splitlines()
+                                   if line.startswith("version:"))
+        self.assertEqual(manifest["version"], frontmatter_version)
+        config = json.loads((SKILL / manifest["hooks"]).read_text())
+        self.assertEqual(config["version"], 1)
+        [hook] = config["hooks"]["beforeShellExecution"]
+        self.assertEqual(hook["command"], 'python3 "${CURSOR_PLUGIN_ROOT}/hooks/kill_guard.py"')
+        self.assertNotEqual(manifest["hooks"], "hooks/hooks.json", "hooks/hooks.json is Claude's format")
 
 
 class HooksJsonTest(unittest.TestCase):

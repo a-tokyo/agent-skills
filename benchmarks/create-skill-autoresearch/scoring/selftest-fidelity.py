@@ -14,6 +14,8 @@ Fixtures (scoring/fixtures/fidelity/):
   guard-blocked     session shaped like the kill-guard smoke run: a pkill and a pgrep|xargs kill the guard
                     blocked (one result as a string, one as text blocks; an api-request-blob copy of a
                     call), a killall that ran, and an owned stop
+  cursor-blocked    a cursor-agent stream-json transcript (HOST=cursor): a hook-rejected pkill, a killall
+                    that ran, an ls
 """
 
 from __future__ import annotations
@@ -38,7 +40,8 @@ def expect(name: str, condition: bool) -> None:
 builds = {b.run: b for b in (fidelity.score(FIXTURES / name, fidelity.DEFAULT_CHECK_GATE)
                              for name in ("plugin-ok", "manual-kill", "legacy-unshipped", "unshipped-draft",
                                           "unshipped-incidental", "iterate-terminal",
-                                          "iterate-shipped-artifact", "stale-ship", "guard-blocked"))}
+                                          "iterate-shipped-artifact", "stale-ship", "guard-blocked",
+                                          "cursor-blocked"))}
 
 ok = builds["plugin-ok"]
 expect("plugin-ok: artifact at canonical path", ok.artifact)
@@ -91,10 +94,14 @@ expect("guard-blocked: only the killall that ran is a kill command", guard.kill_
        and guard.kill_examples == ["killall python3"])
 expect("manual-kill: calls without ids are never blocked", kill.kill_blocked == 0)
 
+cursor = builds["cursor-blocked"]
+expect("cursor-blocked: a hook-rejected pkill in a cursor-agent transcript is blocked", cursor.kill_blocked == 1)
+expect("cursor-blocked: the killall that ran is a kill command", cursor.kill_examples == ["killall python3"])
+
 totals = fidelity.summary(list(builds.values()))
-expect("summary counts", totals == {"builds": 9, "artifact_at_canonical_path": 3, "gate_valid": 1,
-                                    "builds_with_kill_commands": 2, "kill_commands": 3,
-                                    "builds_with_blocked_kills": 1, "kill_blocked": 2,
+expect("summary counts", totals == {"builds": 10, "artifact_at_canonical_path": 3, "gate_valid": 1,
+                                    "builds_with_kill_commands": 3, "kill_commands": 4,
+                                    "builds_with_blocked_kills": 2, "kill_blocked": 3,
                                     "below_target_labelled_shipped": 2, "stale_gate": 1,
                                     "shipped_with_gate_invalid": 1})
 expect("verdict: SHIP_WITH_CAVEATS spelling normalised", fidelity.verdict_of("Verdict: SHIP_WITH_CAVEATS") == "SHIP WITH CAVEATS")

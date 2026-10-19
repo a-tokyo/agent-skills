@@ -121,6 +121,11 @@ def _env(bin_dir: Path, **extra: str) -> dict[str, str]:
             "PYTHONDONTWRITEBYTECODE": "1", **extra}
 
 
+def _path_without_claude() -> str:
+    dirs = [d for d in os.environ["PATH"].split(os.pathsep) if d and not os.path.exists(os.path.join(d, "claude"))]
+    return os.pathsep.join(dirs or ["/usr/bin", "/bin"])
+
+
 def _script(name: str) -> list[str]:
     return [sys.executable, "-B", str(SCRIPTS / name)]
 
@@ -194,9 +199,13 @@ class TempWorkspace(unittest.TestCase):
         adapter.chmod(0o755)
 
     def run_script(self, name: str, *args: str, timeout: float = 60, ws: Path | None = None,
-                   **env: str) -> subprocess.CompletedProcess:
+                   no_claude: bool = False, **env: str) -> subprocess.CompletedProcess:
+        """no_claude: PATH holds no `claude` at all (neither the fake nor a real install)."""
+        full = _env(self.bin, FAKE_ARGV_LOG=str(self.argv_log), **env)
+        if no_claude:
+            full["PATH"] = _path_without_claude()
         return subprocess.run([*_script(name), "--workspace", str(ws or self.ws), *args], capture_output=True,
-                              text=True, timeout=timeout, env=_env(self.bin, FAKE_ARGV_LOG=str(self.argv_log), **env))
+                              text=True, timeout=timeout, env=full)
 
     def evaluation(self, name: str) -> dict:
         return json.loads((self.ws / "work" / "evaluation" / name).read_text())
@@ -781,8 +790,31 @@ class GateManualTest(TempWorkspace):
         self.assertEqual(data["cases"][0]["delta"], 0.5)
         self.assertEqual((data["summary"]["in_sample"], data["summary"]["mean_delta"]), (True, 0.5))
         self.assertEqual(self.evaluation("gate.json")["mode"], "manual")
-        self.assertFalse((self.argv_log.read_text().count("--json")), "plugin eval never ran")
+        self.assertFalse(self.argv_log.exists(), "no claude call at all, plugin eval included")
         self.assertIn("gold=2 mean gold delta=+0.500", out.stdout)
+
+    def test_gate_runs_end_to_end_with_no_claude_on_path(self) -> None:
+        self.make_build(["input-01", "input-02"], invoked=True, manual=True)
+        self.write_adapter()
+        self.assertIn("claude", os.listdir(self.bin), "the fake exists, and no_claude must keep it off PATH")
+        record = self.run_script("gate.py", "record", no_claude=True)
+        self.assertEqual(record.returncode, 0, record.stderr)
+        self.assertIn("mode manual (plugin eval probe exit 127)", record.stdout)
+        out = self.run_script("gate.py", "--model", "m", "--executor", "agentic", no_claude=True)
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(self.evaluation("gate.json")["plugin_eval_available"], 127)
+        self.assertFalse(self.argv_log.exists(), "nothing reached a claude binary")
+        self.assertEqual(self.run_script("check_gate.py", no_claude=True).returncode, 0)
+
+    def test_user_invoked_skill_never_calls_claude(self) -> None:
+        self.make_build(["input-01"], invoked=False)
+        self.write_adapter()
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
+        out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertFalse(self.argv_log.exists(), "the probe is skipped for a user-invoked skill")
+        split = gate_common.read_data_split(self.ws / "work" / "evaluation" / "data-split.yaml")
+        self.assertEqual(split.plugin_eval_available, "not-probed")
 
     def test_unavailable_plugin_eval_routes_to_manual(self) -> None:
         self.make_build(["gold-01"], invoked=True, manual=True)
@@ -897,10 +929,30 @@ class FinishTest(TempWorkspace):
         self.assertEqual((data["finished"], data["verdict"]), (False, "ITERATE"))
         self.assertIn("write UNSHIPPED", data["reason"])
 
-    def test_unshipped_finishes_without_a_valid_gate(self) -> None:
+    def test_unshipped_without_a_gate_attempt_is_unfinished(self) -> None:
         self.make_build(["gold-01"])
         self.benchmark("# Benchmark\n\n**Verdict — UNSHIPPED** (budget exhausted; a draft, not published)\n")
+        data = self.finish()
+        self.assertFalse(data["finished"], "the cycle-3 task-2 Haiku 3 shape: UNSHIPPED, gate never run")
+        self.assertIn("UNSHIPPED needs a gate attempt", data["reason"])
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
+        self.assertIn("needs a gate attempt", self.finish()["reason"], "a record alone is not a gate attempt")
+
+    def test_unshipped_finishes_after_a_gate_that_failed_to_start(self) -> None:
+        self.make_build(["gold-01"])
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01" / "INVALID").write_text("")
+        self.assertEqual(self.run_script("gate.py", "--detach", "--model", "m").returncode, 3)
+        self.benchmark("Verdict: UNSHIPPED\n")
         self.assertEqual(self.finish(), {"finished": True, "verdict": "UNSHIPPED", "reason": "ok"})
+        attempts = gate_common.read_attempts(self.ws)
+        self.assertEqual([a["step"] for a in attempts], ["gate"])
+        self.assertIn("fail to load", attempts[0]["error"])
+
+    def test_unshipped_finishes_after_a_gate_run_with_an_invalid_artifact(self) -> None:
+        self.make_build(["gold-01"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m", FAKE_MODE="partial").returncode, 1)
+        self.benchmark("Verdict: UNSHIPPED\n")
+        self.assertTrue(self.finish()["finished"])
 
     def test_ship_needs_a_valid_gate_and_its_line(self) -> None:
         self.make_build(["gold-01", "trigger-1"])

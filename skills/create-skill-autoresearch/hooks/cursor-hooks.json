@@ -1,0 +1,11 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "python3 \"${CURSOR_PLUGIN_ROOT}/hooks/kill_guard.py\"",
+        "timeout": 10
+      }
+    ]
+  }
+}

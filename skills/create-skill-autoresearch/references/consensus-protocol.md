@@ -186,11 +186,12 @@ Escalation surfaces the concern to the user for human judgment. The DA cannot bl
 
 ```
 For each panel member (Verifier-A, Verifier-B, Devil's Advocate):
-  1. Spawn a generalPurpose subagent
+  1. Spawn a general-purpose subagent (the host's mechanism, hosts.md; with none, a fresh
+     headless session of the host's CLI)
   2. Provide: skill content + gold standards + rubric + premortem risks
   3. Provide: role-specific system prompt (from pipeline-phases.md)
   4. Request: JSON output with per-dimension scores, confidence, evidence
-  5. Run all 3 in parallel (no cross-talk)
+  5. Run all 3 in parallel (no cross-talk); headless sessions run one after another, each context-walled
 ```
 
 ### Processing Results

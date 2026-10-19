@@ -79,21 +79,26 @@ Limits: one task, six skills, two repeats, one model family as executor and judg
 
 ## Manual with/without protocol
 
-`scripts/gate.py` (SKILL.md 5.0) runs this instead of `claude plugin eval` when `claude plugin eval --help`
-exits non-zero, or when the skill is user-invoked (it never fires through the Skill tool, so plugin eval's
-with-arm measures nothing). It runs the 3.6 gate cases on the pinned model:
+`scripts/gate.py` (SKILL.md 5.0) runs this instead of `claude plugin eval` whenever `claude plugin eval --help`
+does not exit 0 — another host, or Claude Code not installed — or the skill is user-invoked (it never fires
+through the Skill tool, so plugin eval's with-arm measures nothing). It calls no `claude` command. It runs the
+gate gold standards on the pinned model:
 
 - **Arms**: *with* gets the shipped `SKILL.md` as its system prompt; *without* gets no system prompt.
 - **Runs**: 3 per case per arm.
-- **Executor**: single-call (system prompt plus the case prompt, one completion) when the skill only
-  produces text; **agentic** (a fresh tool-using agent in a scratch copy of the case's fixtures, the
-  skill directory beside them) when the skill bundles `scripts/` or acts on files — one call cannot run
-  a script or write a file. Pass the choice to `gate.py --executor`.
-- **Score**: each run is the fraction of the case's 3.6 graders that pass (0-1), skill-fired
-  indicators excluded. Mechanical graders (`regex`, file checks) are applied directly. An `llm` grader
-  is judged by `claude -p --model <judge>` with the grader's body as the rubric and the run's output as
-  the input, asking for PASS or FAIL; it passes on a majority of 3 calls. `<judge>` is a model from a
-  different family than the builder when one is available, else plugin eval's default judge (`haiku`).
+- **Executor**: single-call (system prompt plus the case prompt, one completion: an API call, an SDK, or the
+  host's headless CLI) when the skill only produces text; **agentic** (a fresh tool-using agent in a scratch
+  copy of the case's fixtures, the skill directory beside them: the host's headless CLI from
+  [hosts.md](hosts.md), e.g. `cursor-agent -p --force --trust`, `codex exec`, `opencode run`, `claude -p`)
+  when the skill bundles `scripts/` or acts on files — one call cannot run a script or write a file. Pass the
+  choice to `gate.py --executor`.
+- **Score**: each run is the fraction of the case's graders that pass (0-1), skill-fired indicators excluded:
+  the 3.6 suite's graders where one exists, else the checks `run-case.sh` applies to the gold standard
+  (deterministic first). Mechanical graders (`regex`, file checks) are applied directly. An `llm` grader is
+  judged by the host's headless CLI with the judge model (`claude -p --model <judge>`, `cursor-agent -p
+  --model <judge>`, `codex exec -m <judge>`, `opencode run -m <judge>`), the grader's body as the rubric and the
+  run's output as the input, asking for PASS or FAIL; it passes on a majority of 3 calls. `<judge>` is a model
+  from a different family than the builder when the host offers one, else a small model of the builder's family.
 
 The build implements one run in `work/evaluation/run-case.sh <case> <with|without>` (executable, run from
 the workspace root, `GATE_MODEL` and `GATE_RUN` in its environment; `<case>` is a gate gold standard's

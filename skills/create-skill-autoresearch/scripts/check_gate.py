@@ -26,9 +26,10 @@ only, then every Skill indicator, whatever its case's class: how often the skill
 --json prints the same verdict as JSON, with a stable `code`.
 
 --finish checks the build's end state instead (SKILL.md 5.1): BENCHMARK.md at the build root has a
-`Verdict: <label>` line naming SHIP, SHIP WITH CAVEATS or UNSHIPPED, no `gate` job is running, and a
+`Verdict: <label>` line naming SHIP, SHIP WITH CAVEATS or UNSHIPPED, no `gate` job is running, a
 SHIP or SHIP WITH CAVEATS verdict stands on a gate that validates now and whose `GATE VALID:` line
-BENCHMARK.md carries. It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
+BENCHMARK.md carries, and an UNSHIPPED verdict follows a gate attempt: gate.py logged a record or gate
+step in work/evaluation/gate-attempts.jsonl, and a gate run started (gate.json) or a logged error stopped it. It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
 
     check_gate.py [--workspace DIR] [--skill NAME] [--min-runs N] [--json] [--finish]
 
@@ -47,8 +48,8 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 import run_owned  # noqa: E402  (sibling imports after disabling bytecode)
 from gate_common import (  # noqa: E402
-    DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE, GateError,
-    cases_sha256, file_sha256, inputs_sha256, read_data_split, skill_sha256,
+    DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE, GateError,
+    cases_sha256, file_sha256, inputs_sha256, read_attempts, read_data_split, skill_sha256,
 )
 
 BENCHMARK = Path("BENCHMARK.md")
@@ -277,6 +278,13 @@ def validate(workspace: Path, skill: str | None = None, min_runs: int = REQUIRED
     )
 
 
+def _gate_attempted(workspace: Path) -> bool:
+    """gate.py logged a record or gate step, and either a gate run started (gate.json) or a logged
+    GateError stopped it."""
+    attempts = read_attempts(workspace)
+    return bool(attempts) and ((workspace / GATE_RECORD).is_file() or any(a.get("error") for a in attempts))
+
+
 def finish(workspace: Path, skill: str | None = None, min_runs: int = REQUIRED_RUNS) -> tuple[bool, str | None, str]:
     """(finished, verdict, reason) for the build's end state: BENCHMARK.md at the build root states a
     terminal verdict on a `Verdict: <label>` line, no `gate` job is live, and a SHIP or SHIP WITH CAVEATS
@@ -297,6 +305,9 @@ def finish(workspace: Path, skill: str | None = None, min_runs: int = REQUIRED_R
         live = False
     if live:
         return False, verdict, "the `gate` job is still running; wait for it or run gate.py --stop"
+    if verdict == "UNSHIPPED" and not _gate_attempted(workspace):
+        return False, verdict, ("UNSHIPPED needs a gate attempt: no gate.py record or gate run is logged in "
+                                f"{GATE_ATTEMPTS}; run 3.6 and 5.0 (a build that does not ship still runs the gate)")
     if verdict != "UNSHIPPED":
         gate = validate(workspace, skill, min_runs)
         if not gate.valid:

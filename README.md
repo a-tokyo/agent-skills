@@ -79,6 +79,13 @@ a `PreToolUse` hook ([`hooks/kill_guard.py`](skills/create-skill-autoresearch/ho
 pgrep-fed `kill` in every session, because a name-pattern kill also stops sibling builds and your own
 processes; `kill <pid>` still works. An `npx skills` install copies the hook file but never runs it.
 
+`create-skill-autoresearch` runs on any agent that loads `SKILL.md` — Claude Code, Cursor, Codex,
+OpenCode (`npx skills add a-tokyo/agent-skills --skill create-skill-autoresearch -a <host>`). Its
+[`references/hosts.md`](skills/create-skill-autoresearch/references/hosts.md) gives each host's headless
+command, subagents and kill-guard install: the skill directory is also a Cursor plugin
+(`.cursor-plugin/plugin.json`), and it ships an OpenCode plugin and a Codex hook snippet. Without Claude
+Code, the eval gate runs its manual with/without protocol and calls no `claude` command.
+
 ## License
 
 MIT [Ahmed Tokyo](https://www.ahmedtokyo.com)
