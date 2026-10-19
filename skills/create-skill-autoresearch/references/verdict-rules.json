@@ -1,0 +1,33 @@
+{
+  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py reads this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1.",
+  "default_target_score": 0.85,
+  "caveat_margin": 0.10,
+  "block_below": 3,
+  "block_majority": 2,
+  "agree_within": 1,
+  "synthesis_triggers": {
+    "spread_at_least": 2,
+    "devils_advocate_at": 1,
+    "pass_fail_margin": 0.15,
+    "low_confidence_below": 0.5,
+    "high_confidence_above": 0.8
+  },
+  "evidence_required": {
+    "score_at_least": 8,
+    "score_at_most": 3
+  },
+  "labels": {
+    "ESCALATE": "a deadlocked dimension after synthesis, or the Devil's Advocate's ESCALATE: the user decides; terminal label UNSHIPPED",
+    "BLOCK": "block_majority or more members score a dimension below block_below: terminal label UNSHIPPED unless Phase 4 fixes it",
+    "SHIP": "overall_score >= target_score and no dimension blocked",
+    "SHIP WITH CAVEATS": "overall_score >= target_score - caveat_margin",
+    "ITERATE": "overall_score < target_score - caveat_margin: back to Phase 4, or UNSHIPPED with no budget left"
+  },
+  "allowed_terminal": {
+    "SHIP": "SHIP",
+    "SHIP WITH CAVEATS": "SHIP WITH CAVEATS",
+    "ITERATE": "UNSHIPPED",
+    "BLOCK": "UNSHIPPED",
+    "ESCALATE": "UNSHIPPED"
+  }
+}

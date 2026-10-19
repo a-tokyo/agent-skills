@@ -6,6 +6,13 @@
         "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/kill-guard\"",
         "timeout": 10
       }
+    ],
+    "stop": [
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/finish-guard\"",
+        "timeout": 30,
+        "loop_limit": 1
+      }
     ]
   }
 }

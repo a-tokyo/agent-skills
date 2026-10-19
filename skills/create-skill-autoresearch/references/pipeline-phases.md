@@ -7,8 +7,8 @@ Detailed instructions for each phase of the create-skill-autoresearch factory.
 - Phase 1: Interview -- Detailed Question Flow
 - Phase 2: Research -- Subagent Orchestration
 - Phase 3: Draft -- Design-First Approach (DESIGN.md template, `evaluate.sh` contract, judge templates, plugin-eval worked case, gate runner)
-- Phase 4: Autoresearch -- Integration Details (invocation, loop conventions, data split, overfitting detection)
-- Phase 5: Verify -- Panel Prompt Templates (Verifier-A/B, Devil's Advocate, synthesis)
+- Phase 4: Autoresearch -- Integration Details (invocation, loop conventions, data split, overfitting detection, description pass)
+- Phase 5: Verify -- Panel Prompt Templates (Verifier-A/B, Devil's Advocate, synthesis, role receipts)
 
 ---
 
@@ -424,12 +424,14 @@ In manual mode it calls `work/evaluation/run-case.sh <case> <with|without>` 3 ti
 (`--jobs` at once, default 4), each run in its own process group with a per-run timeout (default 20
 minutes), retries a failed run once, and writes `uplift.json`; a second failure leaves it `"partial": true`
 with an `errors` list. Both modes record `work/evaluation/gate.json` (mode, probe exit code, cases, and
-sha256 hashes of `output/<skill-name>/` and of the case set — names plus each case's `evals/` directory;
-interpreter caches excluded — and, when the run finishes, of `run-case.sh`, every file under `input/`,
-every other file under `work/evaluation/` — scorers, fixtures, golden `*.out` files, dotfiles, logs and the
-wrapper plugin's manifest and mocks; not the gate's own outputs, `*.tmp`, `*.prev.json`, `plugin/skills/` or
-`plugin/evals/results/` — and the artifact itself), so keep scratch and logs (a saved `check_gate.py`
-output, say) under `work/experiments/`: one written under `work/evaluation/` after the gate makes it stale.
+sha256 hashes, taken when the run starts and checked again when it ends, of `output/<skill-name>/`, the case
+set — names plus each case's `evals/` directory; interpreter caches excluded —, data-split.yaml's splits as
+parsed (comments and layout aside), `run-case.sh`, every file under `input/` and every other file under
+`work/evaluation/` — scorers, fixtures, golden `*.out` files, dotfiles, logs and the wrapper plugin's manifest
+and mocks; not the gate's own outputs, `*.tmp`, `*.prev.json`, `plugin/skills/` or `plugin/evals/results/` —
+and, once it finishes, of the artifact itself), so keep scratch and logs (a saved `check_gate.py` output, say)
+under `work/experiments/`: one written under `work/evaluation/` during the gate leaves no finished run, and after
+it makes the gate stale.
 It moves a previous artifact to `<name>.prev.json`
 first so a stale file can never pass, and ends by running `check_gate.py`. It exits 0 only when `gate.json`
 records a finished run whose hashes still match, and the artifact says `"partial": false`, covers exactly
@@ -440,8 +442,10 @@ adapter, a scorer, a fixture or the artifact. A case is gold when any of its gra
 `data-split.yaml` records gold standards a gate with no gold case fails (`no_gold`). Its `GATE VALID:`
 line gives the mean Δ and the Δ <= 0 list over gold cases only, then every Skill indicator whatever its
 case's class: a should-trigger grader reports how many with-arm runs fired the skill, a near-miss grader
-(`max: 0`) how many runs in both arms left it quiet. A should-trigger prompt that also grades output is
-therefore gold: its Δ counts (Δ <= 0 caps the verdict, 5.4) and its indicator is still reported. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
+(`max: 0`) how many runs in both arms left it quiet. Indicators gate: one with-arm run where a should-trigger
+grader fails, or one run where a near miss fires, makes the gate invalid (`trigger_failed`, `near_miss_fired`:
+a description defect, back to 4.6). A should-trigger prompt that also grades output is therefore gold: its Δ
+counts (Δ <= 0 caps the verdict, 5.4) and its indicator gates too. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
 of 0 while `skill-fired` passes means the skill fired but could not act — check the tool grants and the
 fixtures first. The 1-run artifact never passes `check_gate.py`; the full run replaces it.
 
@@ -589,6 +593,13 @@ data-split.yaml on its own so a later experiment revert cannot roll the rotation
 - Flag when any single case drops by > 1.0 point while others improve
 - Log per-case scores in `autoresearch.jsonl`: `"per_case_scores": {"input-01": 8.2, "input-02": 7.1, ...}`
 
+### Description Pass (SKILL.md 4.6)
+
+skill-creator's `--eval-set` is a JSON list `[{"query": "...", "should_trigger": true}]` of about 20 queries: the
+3.6 trigger and near-miss prompts plus realistic near misses. Pass `--holdout 0` when the set is too small to split,
+and `--report <path>` under `work/` in headless runs; the rest: `python3 -m scripts.run_loop --help` from the
+skill-creator dir.
+
 ### Handoff State Schema
 
 `work/handoffs/state.yaml` — the structured resume state written on handoff (SKILL.md Phase 4.4):
@@ -617,6 +628,14 @@ real target is recorded in `autoresearch.ideas.md` so the gap is not forgotten.
 ---
 
 ## Phase 5: Verify -- Panel Prompt Templates
+
+**Role receipts (SKILL.md 5.2).** Append this to every template below, with the paths filled in: "Write your
+JSON to `<workspace>/work/experiments/panel/<role>.scores.json`, then run `python3 <skill-dir>/scripts/check_gate.py
+--workspace <workspace> --panel-receipt <role> <that file>` (synthesis round: the synthesis JSON, with `--synthesis`).
+A non-zero exit names what to fix in your JSON; fix it and re-run." `<role>` is `verifier-a`, `verifier-b` or
+`devils-advocate`. A member that cannot run commands returns its JSON and the orchestrator runs that command on it
+verbatim, unedited. The receipt checks the scores against rubric.yaml (every dimension, on its scale, evidence for
+8+ and 3-) and binds them to the skill and rubric hashes; `--consensus` reads only receipts for the current hashes.
 
 ### Verifier-A: Quality Assessor
 

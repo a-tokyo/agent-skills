@@ -10,7 +10,8 @@ reader for a few top-level keys of work/evaluation/data-split.yaml:
       - case-a
       - "case-b"
 
-Case names are strings (quotes optional, `#` comments stripped). Any other shape for
+Case names are strings (quotes optional, `#` comments stripped; a flow list splits on commas outside
+quotes, so `["a, b.md"]` is one name). Any other shape for
 `plugin_eval` (a mapping, a multi-line flow list, a scalar) is reported as an error rather
 than guessed at. The split keys (`all_cases`, `training`, `validation`, `test`) are read the same
 way: whether any holds a value tells check_gate.py the build has gold standards, and their entries
@@ -124,11 +125,35 @@ def _unquote(token: str) -> str:
     return token
 
 
+def _flow_items(inner: str) -> list[str] | None:
+    """The comma-separated items of a one-line flow list, splitting only outside quotes (a backslash escapes
+    inside double quotes, as in JSON); None when a quote is left open."""
+    items, buf, quote, escaped = [], [], None, False
+    for ch in inner:
+        if escaped:
+            escaped = False
+        elif quote == '"' and ch == "\\":
+            escaped = True
+        elif quote:
+            quote = None if ch == quote else quote
+        elif ch in "\"'":
+            quote = ch
+        elif ch == ",":
+            items.append("".join(buf))
+            buf = []
+            continue
+        buf.append(ch)
+    items.append("".join(buf))
+    return None if quote else [_unquote(t) for t in items]
+
+
 def _parse_list(value: str, block: list[str], key: str = "plugin_eval") -> tuple[list[str] | None, str | None]:
     if value.startswith("["):
         if not value.endswith("]"):
             return None, f"{key} flow list must open and close on one line"
-        items = [_unquote(t) for t in value[1:-1].split(",")] if value[1:-1].strip() else []
+        items = _flow_items(value[1:-1]) if value[1:-1].strip() else []
+        if items is None:
+            return None, f"{key} flow list has an unclosed quote"
     elif value.startswith("{"):
         return None, f"{key} is a mapping ({value!r}), not a list of case names"
     elif value:
@@ -321,6 +346,13 @@ def cases_sha256(workspace: Path, cases: list[str]) -> str:
     return digest.hexdigest()
 
 
+def split_sha256(split: DataSplit) -> str:
+    """The splits as parsed (all_cases, training, validation, test, or the error reading them): a change to
+    which gold standard sits in which split after the gate is stale, while comments and layout are not."""
+    canonical = {"gold": {key: split.gold.get(key) for key in GOLD_KEYS}, "error": split.gold_error}
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
+
+
 def file_sha256(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 
@@ -337,7 +369,7 @@ def inputs_sha256(workspace: Path) -> dict[str, str]:
     """sha256 of every file a gate case can resolve to: the gold standards and fixtures under input/, and
     everything under work/evaluation/ — scorers, rubrics, fixtures, golden files and the wrapper plugin
     (its manifest, shared mocks and case files). Skipped there: run-case.sh (hashed on its own),
-    data-split.yaml (the case hash covers plugin_eval), what the gate writes (gate.json, the artifacts,
+    data-split.yaml (cases_sha256 covers plugin_eval, split_sha256 the splits), what the gate writes (gate.json, the artifacts,
     gate-attempts.jsonl, *.prev.json, *.tmp), plugin/skills/ (refreshed from output/<skill>/, which the
     skill hash covers) and plugin/evals/results/ (claude plugin eval's own output)."""
     found = {}

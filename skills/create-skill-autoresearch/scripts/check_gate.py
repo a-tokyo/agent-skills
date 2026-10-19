@@ -2,9 +2,9 @@
 """Validate the Phase 5.0 gate artifact before the panel (SKILL.md 5.2) starts.
 
 Exit 0 only if work/evaluation/gate.json records a finished gate.py run whose hashes still match
-output/<skill>/, the recorded cases, run-case.sh, the scorer and fixture files under input/ and
-work/evaluation/ (gate_common.inputs_sha256) and the artifact itself — any edit after the gate is
-"gate inputs changed since the gate; re-run 5.0" — and the canonical artifact for its mode exists
+output/<skill>/, the recorded cases, the data-split.yaml splits, run-case.sh, the scorer and fixture files
+under input/ and work/evaluation/ (gate_common.inputs_sha256) and the artifact itself — any edit after the gate
+is "gate inputs changed since the gate; re-run 5.0" — and the canonical artifact for its mode exists
 at its path, covers exactly the gate cases recorded under `plugin_eval` in
 work/evaluation/data-split.yaml, has at least 3 completed runs per arm per case (criterion 7; no flag lowers it), and
 records `"partial": false`:
@@ -20,23 +20,29 @@ Only a case whose sole graders are `tool_used` on `Skill` is a should-trigger in
 near miss). Every gold case needs a numeric delta, and when data-split.yaml records gold standards
 (`all_cases`, `training`, `validation` or `test`) at least one case must be gold.
 
-On success it prints `GATE VALID: ...` with the mean delta and the delta<=0 list over gold cases
-only, then every Skill indicator, whatever its case's class: how often the skill fired in the with-arm
-(should-trigger) or stayed quiet in both arms (near miss). On failure it prints `GATE INVALID: <reason>`.
+Every Skill indicator gates too (SKILL.md 5.0): a should-trigger grader must pass in every with-arm run
+and a near miss (`max: 0`) in every run of both arms; otherwise the gate is invalid (a description defect,
+back to 4.6). On success it prints `GATE VALID: ...` with the mean delta and the delta<=0 list over gold
+cases only, then every Skill indicator's pass count. On failure it prints `GATE INVALID: <reason>`.
 --json prints the same verdict as JSON, with a stable `code`.
 
+The panel (SKILL.md 5.2-5.3, scripts/panel.py) runs on a valid gate only: --panel checks it before the
+verifiers start; each verifier, after scoring, writes its role receipt with --panel-receipt ROLE SCORES_JSON
+(--synthesis for the synthesis round); --consensus computes the verdict the three receipts allow, by the
+thresholds in references/verdict-rules.json, and prints `PANEL CONSENSUS: ...`.
+
 --finish checks the build's end state instead (SKILL.md 5.1): BENCHMARK.md at the build root has a
-`Verdict: <label>` line naming SHIP, SHIP WITH CAVEATS or UNSHIPPED, no `gate` job is running, a
-SHIP or SHIP WITH CAVEATS verdict stands on a gate that validates now and whose current `GATE VALID:` line
-BENCHMARK.md carries (whitespace aside) and on a panel that scored the skill as it is now (the receipt
---panel wrote holds this output/<skill>/ hash), a plain SHIP has no gold delta<=0 case (SKILL.md 5.4: it
-caps the verdict at SHIP WITH CAVEATS), and an UNSHIPPED verdict follows a gate attempt: gate.py logged a record or gate
-step in work/evaluation/gate-attempts.jsonl, and a gate run started (gate.json) or a logged error stopped it. It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
+`Verdict: <label>` line naming SHIP, SHIP WITH CAVEATS or UNSHIPPED, and no `gate` job is running. A SHIP or
+SHIP WITH CAVEATS verdict stands on a gate that validates now, on a consensus of three role receipts for the
+skill and rubric as they are now that allows that label, and BENCHMARK.md carries the current `GATE VALID:`
+and `PANEL CONSENSUS:` lines (whitespace aside); a plain SHIP has no gold delta<=0 case (SKILL.md 5.4 caps it
+at SHIP WITH CAVEATS). An UNSHIPPED verdict follows a gate attempt (a `gate` step in
+work/evaluation/gate-attempts.jsonl: a run that started, or a GateError the gate step raised), and carries
+those two lines too whenever the gate validates and a current consensus exists, so the reason stands beside
+the label. It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
 
---panel validates the gate like the default and, when it is valid, writes the panel receipt
-work/experiments/panel.json: the sha256 of output/<skill>/ the panel is about to score (SKILL.md 5.2).
-
-    check_gate.py [--workspace DIR] [--skill NAME] [--json] [--panel | --finish]
+    check_gate.py [--workspace DIR] [--skill NAME] [--json]
+                  [--panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish]
 
 Tested on macOS, Linux and Windows. Exit codes: 0 valid (--finish: finished), 1 invalid (unfinished), 2 usage error.
 """
@@ -49,19 +55,18 @@ import locale
 import re
 import sys
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-import run_owned  # noqa: E402  (sibling imports after disabling bytecode)
+import panel  # noqa: E402  (sibling imports after disabling bytecode)
+import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE, GateError,
-    cases_sha256, check_skill_name, file_sha256, inputs_sha256, read_attempts, read_data_split, skill_sha256, utf8_stdio,
-    write_json,
+    cases_sha256, check_skill_name, file_sha256, inputs_sha256, read_attempts, read_data_split, skill_sha256, split_sha256,
+    utf8_stdio,
 )
 
 BENCHMARK = Path("BENCHMARK.md")
-PANEL_RECEIPT = Path("work") / "experiments" / "panel.json"
 TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
 VERDICT_LINE = re.compile(r"(?im)^[#>*_\s-]*verdict[*_\s]*[:—–-][*_\s`]*"
                           r"(UNSHIPPED|SHIP[ _]+WITH[ _]+CAVEATS|ITERATE|BLOCK|ESCALATE|SHIP)\b")
@@ -115,7 +120,8 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def _gate_record(workspace: Path, skill: str | None, recorded: list[str]) -> dict:
+def _gate_record(workspace: Path, skill: str | None, split) -> dict:
+    recorded = split.plugin_eval
     path = workspace / GATE_RECORD
     if not path.is_file():
         raise Invalid("no_gate_record", f"no {GATE_RECORD}: the artifact was not written by a gate run; "
@@ -146,11 +152,13 @@ def _gate_record(workspace: Path, skill: str | None, recorded: list[str]) -> dic
     if cases_sha256(workspace, recorded) != record["cases_sha256"]:
         raise Invalid("stale_cases", "gate cases changed since the gate; re-run 5.0 (data-split.yaml "
                                      "plugin_eval or the suite under plugin/evals/)")
-    if not all(key in record for key in ("run_case_sha256", "inputs_sha256", "artifact_sha256")):
-        raise Invalid("gate_unhashed", f"{GATE_RECORD} has no scorer, input or artifact hash (an older "
+    if not all(key in record for key in ("run_case_sha256", "inputs_sha256", "artifact_sha256", "split_sha256")):
+        raise Invalid("gate_unhashed", f"{GATE_RECORD} has no scorer, input, split or artifact hash (an older "
                                        "gate.py); re-run 5.0")
     then, now = record["inputs_sha256"] or {}, inputs_sha256(workspace)
     changed = sorted(p for p in then.keys() | now.keys() if then.get(p) != now.get(p))
+    if split_sha256(split) != record["split_sha256"]:
+        changed.insert(0, f"{DATA_SPLIT.as_posix()} (its splits)")
     if file_sha256(workspace / RUN_CASE) != record["run_case_sha256"]:
         changed.insert(0, RUN_CASE.as_posix())
     if changed:
@@ -213,11 +221,18 @@ def _plugin(data: dict, recorded: list[str], min_runs: int) -> list[CaseResult]:
             raise Invalid("no_delta", f"gold case {name!r} has no numeric with/without delta ({delta!r}); "
                                       "re-run the gate")
         for grader in skill:
+            runs = done["with"] + done["without"] if _is_near_miss(grader) else done["with"]
+            passed = _passed(runs, grader.get("name"))
             if _is_near_miss(grader):
-                runs = done["with"] + done["without"]
-                result.near_miss = f"{_passed(runs, grader.get('name'))}/{len(runs)}"
+                result.near_miss = f"{passed}/{len(runs)}"
             else:
-                result.trigger = f"{_passed(done['with'], grader.get('name'))}/{len(done['with'])}"
+                result.trigger = f"{passed}/{len(runs)}"
+            if passed < len(runs):
+                code, what = (("near_miss_fired", f"near miss {name!r} fired the skill in {len(runs) - passed}/"
+                               f"{len(runs)} runs (either arm)") if _is_near_miss(grader) else
+                              ("trigger_failed", f"case {name!r}: the skill did not fire in {len(runs) - passed}/"
+                               f"{len(runs)} with-arm runs"))
+                raise Invalid(code, f"{what}; a description defect: return to 4.6, then re-run 5.0")
         results.append(result)
     _coverage(recorded, [r.name for r in results])
     return results
@@ -264,7 +279,7 @@ def validate(workspace: Path, skill: str | None = None) -> Verdict:
             raise Invalid("no_split", f"{DATA_SPLIT}: {split.plugin_eval_error}")
         if not split.plugin_eval:
             raise Invalid("no_split", f"{DATA_SPLIT}: plugin_eval records no gate cases")
-        record = _gate_record(workspace, skill, split.plugin_eval)
+        record = _gate_record(workspace, skill, split)
         mode = record["mode"]
         rel = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         path = workspace / rel
@@ -312,10 +327,9 @@ def _spaced(text: str) -> str:
 
 
 def _gate_attempted(workspace: Path) -> bool:
-    """gate.py logged a record or gate step, and either a gate run started (gate.json) or a logged
-    GateError stopped it."""
-    attempts = read_attempts(workspace)
-    return bool(attempts) and ((workspace / GATE_RECORD).is_file() or any(a.get("error") for a in attempts))
+    """gate.py logged a `gate` step: a gate run started, or a GateError stopped the gate step. A failed
+    `gate.py record` (3.6) is not a gate attempt."""
+    return any(a.get("step") == "gate" for a in read_attempts(workspace))
 
 
 def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None, str]:
@@ -340,44 +354,31 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
     if live:
         return False, verdict, "the `gate` job is still running; wait for it or run gate.py --stop"
     if verdict == "UNSHIPPED" and not _gate_attempted(workspace):
-        return False, verdict, ("UNSHIPPED needs a gate attempt: no gate.py record or gate run is logged in "
+        return False, verdict, (f"UNSHIPPED needs a gate attempt: no gate run or gate-step error is logged in "
                                 f"{GATE_ATTEMPTS}; run 3.6 and 5.0 (a build that does not ship still runs the gate)")
-    if verdict != "UNSHIPPED":
-        gate = validate(workspace, skill)
-        if not gate.valid:
-            return False, verdict, f"{verdict} needs a valid gate: {gate.line()}; return to 5.0"
-        if _spaced(gate.line()) not in _spaced(text):
-            return False, verdict, (f"{BENCHMARK} lacks check_gate.py's current GATE VALID line beside the {verdict} "
-                                    f"verdict; copy it in verbatim: {gate.line()}")
-        if verdict == "SHIP" and gate.non_positive:
-            return False, verdict, (f"gold delta<=0 on {', '.join(gate.non_positive)} caps the verdict at SHIP WITH "
-                                    "CAVEATS (5.4); write that, with why the case cannot benefit")
-        scored = _panel_scored(workspace)
-        if scored is None:
-            return False, verdict, (f"{verdict} needs the panel receipt {PANEL_RECEIPT.as_posix()}: run 5.2 "
-                                    "(check_gate.py --panel, then the panel)")
-        if scored != skill_sha256(workspace, gate.skill):
-            return False, verdict, (f"the panel scored an earlier output/{gate.skill}/ than the one gated now "
-                                    f"({PANEL_RECEIPT.as_posix()}); re-run 5.2 on this skill, then 5.3 and 5.4")
+    gate = validate(workspace, skill)
+    if not gate.valid:
+        if verdict == "UNSHIPPED":
+            return True, verdict, "ok"
+        return False, verdict, f"{verdict} needs a valid gate: {gate.line()}; return to 5.0"
+    if _spaced(gate.line()) not in _spaced(text):
+        return False, verdict, (f"{BENCHMARK} lacks check_gate.py's current GATE VALID line beside the {verdict} "
+                                f"verdict; copy it in verbatim: {gate.line()}")
+    if verdict == "SHIP" and gate.non_positive:
+        return False, verdict, (f"gold delta<=0 on {', '.join(gate.non_positive)} caps the verdict at SHIP WITH "
+                                "CAVEATS (5.4); write that, with why the case cannot benefit")
+    consensus, why = panel.recorded(workspace, skill_sha256(workspace, gate.skill))
+    if consensus is None:
+        if verdict == "UNSHIPPED":
+            return True, verdict, "ok"
+        return False, verdict, f"{verdict} needs the panel's consensus on this skill: {why}"
+    if panel.RANK[verdict] > panel.RANK[consensus.allowed]:
+        return False, verdict, (f"the panel's consensus allows at most {consensus.allowed} ({consensus.line()}); "
+                                f"write that verdict, or return to Phase 4 and re-run 5.0-5.3")
+    if _spaced(consensus.line()) not in _spaced(text):
+        return False, verdict, (f"{BENCHMARK} lacks the panel's current PANEL CONSENSUS line beside the {verdict} "
+                                f"verdict; copy it in verbatim: {consensus.line()}")
     return True, verdict, "ok"
-
-
-def _panel_scored(workspace: Path) -> str | None:
-    """The output/<skill>/ hash the panel receipt records, or None when there is no readable receipt."""
-    try:
-        receipt = json.loads((workspace / PANEL_RECEIPT).read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    scored = receipt.get("skill_sha256") if isinstance(receipt, dict) else None
-    return scored if isinstance(scored, str) else None
-
-
-def write_panel_receipt(workspace: Path, verdict: Verdict) -> Path:
-    path = workspace / PANEL_RECEIPT
-    path.parent.mkdir(parents=True, exist_ok=True)
-    write_json(path, {"skill": verdict.skill, "skill_sha256": skill_sha256(workspace, verdict.skill),
-                      "gate_line": verdict.line(), "written": datetime.now(timezone.utc).isoformat(timespec="seconds")})
-    return path
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -386,26 +387,47 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--workspace", type=Path, default=Path("."), help="build workspace root (default: .)")
     parser.add_argument("--skill", help="skill name under output/ (default: the one gate.json records)")
     parser.add_argument("--json", action="store_true", help="print the verdict as JSON instead of a line")
-    parser.add_argument("--panel", action="store_true",
-                        help="5.2: validate, then record the skill hash the panel scores in work/experiments/panel.json")
-    parser.add_argument("--finish", action="store_true",
-                        help="check the build's end state (BENCHMARK.md verdict, no live gate) instead of the gate")
+    step = parser.add_mutually_exclusive_group()
+    step.add_argument("--panel", action="store_true", help="5.2: validate the gate before the panel starts")
+    step.add_argument("--panel-receipt", nargs=2, metavar=("ROLE", "SCORES_JSON"),
+                      help=f"5.2: a verifier's role receipt after it scores ({', '.join(panel.ROLES)})")
+    step.add_argument("--consensus", action="store_true",
+                      help="5.3: compute the panel's verdict from the three role receipts")
+    step.add_argument("--finish", action="store_true",
+                      help="check the build's end state (BENCHMARK.md verdict, no live gate) instead of the gate")
+    parser.add_argument("--synthesis", action="store_true",
+                        help="with --panel-receipt: the synthesis round's revised_scores (5.3)")
     args = parser.parse_args(argv)
-    if args.panel and args.finish:
-        parser.error("--panel and --finish are separate steps (5.2 and 5.4)")
+    if args.synthesis and not args.panel_receipt:
+        parser.error("--synthesis goes with --panel-receipt")
+    workspace = args.workspace.resolve()
     if args.finish:
-        done, label, reason = finish(args.workspace.resolve(), args.skill)
+        done, label, reason = finish(workspace, args.skill)
         line = f"BUILD FINISHED: verdict {label}" if done else f"BUILD UNFINISHED: {reason}"
         print(json.dumps({"finished": done, "verdict": label, "reason": reason}) if args.json else line)
         return 0 if done else 1
-    workspace = args.workspace.resolve()
     verdict = validate(workspace, args.skill)
-    print(json.dumps(asdict(verdict)) if args.json else verdict.line())
-    if args.panel and verdict.valid:
-        path = write_panel_receipt(workspace, verdict)
-        print(f"PANEL RECEIPT: {path.relative_to(workspace).as_posix()} records output/{verdict.skill}/ for the "
-              "panel; any change to the skill after this means re-running 5.2", file=sys.stderr)
-    return 0 if verdict.valid else 1
+    if not (args.panel_receipt or args.consensus) or not verdict.valid:
+        print(json.dumps(asdict(verdict)) if args.json else verdict.line())
+    if not verdict.valid:
+        return 1
+    skill_sha = skill_sha256(workspace, verdict.skill)
+    try:
+        if args.panel_receipt:
+            role, source = args.panel_receipt
+            path = panel.write_receipt(workspace, role, Path(source), verdict.skill, skill_sha, args.synthesis)
+            print(f"PANEL RECEIPT: {path.relative_to(workspace).as_posix()} ({role}, round "
+                  f"{2 if args.synthesis else 1}) binds these scores to output/{verdict.skill}/ as it is now")
+        elif args.consensus:
+            path, result = panel.write_consensus(workspace, verdict.skill, skill_sha)
+            print(result.line())
+        elif args.panel:
+            print(f"panel: after scoring, each verifier runs `check_gate.py --panel-receipt <role> <scores.json>` "
+                  f"({', '.join(panel.ROLES)}); then `check_gate.py --consensus` (5.3)", file=sys.stderr)
+    except GateError as exc:
+        print(f"PANEL INCOMPLETE: {exc}")
+        return 1
+    return 0
 
 
 if __name__ == "__main__":

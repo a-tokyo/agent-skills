@@ -43,6 +43,13 @@ ALLOWED = [
     "pid=$(cat work/pids/gate.pid); kill $pid",
     "kill 4242 &\nps -p 4242",
     "echo a & echo b",
+    # A listing and a kill by a variable no listing filled; this hook's own file names.
+    "ps aux | head; kill $PID",
+    "ps aux | grep gate; pid=$(cat work/pids/gate.pid); kill $pid",
+    "ps aux | grep kill-guard",
+    "ps aux | grep kill_guard",
+    "pgrep -f gate > /tmp/p; cat /tmp/p",
+    "ps aux > /tmp/ps.txt; kill 4242",
 ]
 
 WINDOWS_ALLOWED = [
@@ -53,6 +60,7 @@ WINDOWS_ALLOWED = [
     "Get-Process -Id 4242",
     'tasklist /FI "IMAGENAME eq python.exe"',
     "kill -n 9 4242",
+    "$p = Get-Process claude; Stop-Process -Id $pid",
 ]
 
 WINDOWS_BLOCKED = [
@@ -79,6 +87,8 @@ WINDOWS_BLOCKED = [
     "Get-Process node | kill",
     "$p = Get-Process claude; $p.Kill()",
     "kill (Get-Process node).Id",
+    "$procs = Get-Process node; foreach ($x in $procs) { Stop-Process -Id $x.Id }",
+    "$P = gps claude; $p | Stop-Process",
 ]
 
 BLOCKED = [
@@ -106,6 +116,13 @@ BLOCKED = [
     "xargs kill < <(pgrep -f gate)",
     "while read p; do kill $p; done < <(pgrep -f eval)",
     "pgrep -f eval | while read p; do kill $p; done",
+    "pids=`pgrep -f gate`; kill -9 ${pids}",
+    "mapfile -t pids < <(pgrep -f gate); kill \"${pids[@]}\"",
+    # A listing passed through a file.
+    "pgrep -f gate > /tmp/p; kill $(cat /tmp/p)",
+    "ps aux | grep eval | awk '{print $2}' >> pids.txt\nxargs kill < pids.txt",
+    "pgrep -f gate | tee /tmp/p; cat /tmp/p | xargs kill",
+    "pgrep -f gate > /tmp/p; pids=$(cat /tmp/p); kill $pids",
 ]
 
 QUOTING_AND_WHITESPACE = [

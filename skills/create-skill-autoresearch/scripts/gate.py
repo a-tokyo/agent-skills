@@ -37,12 +37,15 @@ Each eval run goes in its own owned process group, stopped on timeout.
   plugin  refresh work/evaluation/plugin/skills/<skill>/ from output/<skill>/, then run
           `claude plugin eval .` with and without the skill -> work/evaluation/plugin-eval.json
   manual  call work/evaluation/run-case.sh <case> <with|without> --runs times per arm per case;
-          it prints SCORE=<0..1> as its last SCORE line -> work/evaluation/uplift.json
+          it prints EXECUTOR=$GATE_EXECUTOR and SCORE=<0..1> (the last of each counts; a run without the
+          --executor it was given fails) -> work/evaluation/uplift.json
           (a failed run is retried once; a second failure leaves the artifact partial)
 
-It records the mode, the probe's exit code and sha256 hashes of output/<skill>/, of the case set and,
-when the run finishes, of run-case.sh, the scorer and fixture files (gate_common.inputs_sha256) and
-the artifact in work/evaluation/gate.json (check_gate.py fails once any changes), moves a previous artifact
+At the start it records the mode, the probe's exit code and sha256 hashes of output/<skill>/, the case set,
+the data-split.yaml splits, run-case.sh and the scorer and fixture files (gate_common.inputs_sha256) in
+work/evaluation/gate.json; at the end it hashes them again, and a change while the gate ran leaves no
+finished run (exit 1). The finished record adds the artifact's hash; check_gate.py fails once any of them
+changes. It moves a previous artifact
 aside to <name>.prev.json before running so a stale file can never pass, ends by running
 check_gate.py, and writes nothing outside work/evaluation/ and work/pids/.
 
@@ -51,7 +54,7 @@ check_gate.py, and writes nothing outside work/evaluation/ and work/pids/.
             [--timeout 5400] [--case-timeout 1200] [--detach] [--restart]
     gate.py --stop [--workspace DIR]
 
-run-case.sh receives GATE_MODEL and GATE_RUN in its environment and runs from the workspace root; on
+run-case.sh receives GATE_MODEL, GATE_RUN and GATE_EXECUTOR in its environment and runs from the workspace root; on
 Windows the gate runs it with Git for Windows' bash (CLAUDE_CODE_GIT_BASH_PATH, else bash on PATH or the
 default Git install; WSL's bash.exe is skipped). Tested on macOS, Linux and Windows.
 
@@ -85,7 +88,7 @@ from gate_common import (  # noqa: E402
     DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
     GateError, cases_sha256, check_skill_name, file_sha256, inputs_sha256, model_invoked, omitted_gold,
     read_data_split, resolve_skill,
-    log_attempt, skill_sha256, utf8_stdio, write_gate_cases, write_json,
+    log_attempt, skill_sha256, split_sha256, utf8_stdio, write_gate_cases, write_json,
 )
 
 EXIT_INVALID = 1
@@ -104,6 +107,9 @@ CHILD_GRACE = 10
 # returns (exit 124) before the host cuts the call off.
 WAIT_HINT_SECONDS = 540
 SCORE_RE = re.compile(r"^SCORE=(\S+)\s*$", re.MULTILINE)
+EXECUTOR_RE = re.compile(r"^EXECUTOR=(\S+)\s*$", re.MULTILINE)
+# Plugin eval runs Claude models only; a model id naming none of these is likely another host's.
+CLAUDE_MODEL_RE = re.compile(r"claude|anthropic|sonnet|opus|haiku", re.IGNORECASE)
 SCAFFOLD_RE = re.compile(r"^\s*scaffold_script:\s*(\S.*)$")
 NAME_RE = re.compile(r"^name:\s*(\S.*)$")
 # The zero-cost load check parses every case file and stops before any run; two minutes covers a large
@@ -365,6 +371,10 @@ def preconditions(ws: Path, args: argparse.Namespace) -> tuple[str, list[str], s
     check_scaffolds(ws, cases)
     if mode == "manual":
         check_adapter(ws, args)
+    elif not CLAUDE_MODEL_RE.search(args.model or ""):
+        print(f"gate: warning: plugin mode runs Claude models, and --model {args.model!r} names none; a build on "
+              "another host (launched from Claude Code, which exports $CLAUDECODE) passes --backend manual",
+              file=sys.stderr)
     return skill, cases, mode, available, invoked
 
 
@@ -413,7 +423,7 @@ class RunResult:
 
 def _one_run(ws: Path, idx: int, case: str, arm: str, run: int, args: argparse.Namespace) -> RunResult:
     sdir = run_owned.state_dir(ws)
-    env = {**os.environ, "GATE_MODEL": args.model, "GATE_RUN": str(run)}
+    env = {**os.environ, "GATE_MODEL": args.model, "GATE_RUN": str(run), "GATE_EXECUTOR": args.executor}
     error, log = "not run", ""
     for attempt in range(1, ATTEMPTS + 1):
         name = f"gate-c{idx:02d}-{arm}-r{run}-a{attempt}"
@@ -421,11 +431,15 @@ def _one_run(ws: Path, idx: int, case: str, arm: str, run: int, args: argparse.N
         if rc is None:
             error = f"timed out after {args.case_timeout:g}s"
             continue
-        found = SCORE_RE.findall(Path(log).read_text(encoding="utf-8", errors="replace"))
+        text = Path(log).read_text(encoding="utf-8", errors="replace")
+        found, executor = SCORE_RE.findall(text), EXECUTOR_RE.findall(text)
         if rc != 0:
             error = f"exit {rc}"
         elif not found:
             error = "no SCORE= line"
+        elif executor[-1:] != [args.executor]:
+            error = (f"no EXECUTOR={args.executor} line (run-case.sh echoes the $GATE_EXECUTOR it ran; "
+                     f"got {executor[-1] if executor else 'none'})")
         else:
             try:
                 score = float(found[-1])
@@ -506,9 +520,8 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         artifact = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         record = {"mode": mode, "backend": args.backend or default_backend(), "plugin_eval_available": available,
                   "model_invoked": invoked, "skill": skill,
-                  "model": args.model, "runs": args.runs, "in_sample": args.in_sample,
-                  "cases": cases, "artifact": artifact.as_posix(),
-                  "skill_sha256": skill_sha256(ws, skill), "cases_sha256": cases_sha256(ws, cases),
+                  "model": args.model, "runs": args.runs, "in_sample": args.in_sample, "executor": args.executor,
+                  "cases": cases, "artifact": artifact.as_posix(), **_input_hashes(ws, skill, cases),
                   "started": _now(), "finished": None}
         write_json(ws / GATE_RECORD, record)
         _set_aside(ws / artifact)
@@ -528,12 +541,26 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         print("gate: stopped before it finished; gate.json records no finished run", file=sys.stderr)
         return EXIT_STOPPED
 
-    record |= {"run_case_sha256": file_sha256(ws / RUN_CASE), "inputs_sha256": inputs_sha256(ws),
-               "artifact_sha256": file_sha256(ws / artifact), "finished": _now()}
+    now = _input_hashes(ws, skill, cases)
+    changed = sorted(key for key in now if now[key] != record[key])
+    if changed:
+        record["changed_during_run"] = changed
+        write_json(ws / GATE_RECORD, record)
+        print(f"gate: GATE INVALID: gate inputs changed while the gate ran ({', '.join(changed)}); gate.json records "
+              "no finished run; re-run 5.0 without editing the workspace meanwhile", file=sys.stderr)
+        return EXIT_INVALID
+    record |= {"artifact_sha256": file_sha256(ws / artifact), "finished": _now()}
     write_json(ws / GATE_RECORD, record)
     verdict = check_gate.validate(ws, skill)
     print(verdict.line())
     return 0 if verdict.valid else EXIT_INVALID
+
+
+def _input_hashes(ws: Path, skill: str, cases: list[str]) -> dict:
+    """What the gate binds its run to, taken at the start and compared again at the end."""
+    return {"skill_sha256": skill_sha256(ws, skill), "cases_sha256": cases_sha256(ws, cases),
+            "split_sha256": split_sha256(read_data_split(ws / DATA_SPLIT)),
+            "run_case_sha256": file_sha256(ws / RUN_CASE), "inputs_sha256": inputs_sha256(ws)}
 
 
 def _inside_gate_job(ws: Path) -> bool:

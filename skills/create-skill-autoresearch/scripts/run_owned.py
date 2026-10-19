@@ -510,7 +510,11 @@ def _wrap(argv: list[str]) -> int:
     else:
         rc = child.wait()
         rc = rc if rc >= 0 else 128 - rc
-    _write_text(rc_file, f"{rc}\n")
+    # `stop` writes the stop file before any TERM, so its presence here means the command ended because it
+    # was stopped. The group TERM can reach the command before this wrapper, which would otherwise record an
+    # exit status in that window and report a stopped job as exited.
+    if not os.path.exists(stop_file):
+        _write_text(rc_file, f"{rc}\n")
     return rc
 
 

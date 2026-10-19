@@ -48,7 +48,8 @@ DETACHED = {} if WINDOWS else {"start_new_session": True}
 FAKE_CLAUDE = textwrap.dedent('''\
     #!/usr/bin/env python3
     """Fake `claude plugin eval`; behaviour from FAKE_MODE: complete | partial | hang | fewruns | silent |
-    nodelta (gold cases report a null delta). Cases named trigout-* get skill-fired plus an output regex
+    nodelta (gold cases report a null delta); FAKE_TRIGGER_MISSES / FAKE_NEAR_MISS_FIRES fail that many
+    trigger-* with-arm runs / near-miss* bare-arm runs. Cases named trigout-* get skill-fired plus an output regex
     that passes in both arms (delta 0, the k-* task-2 Sonnet 5 trigger-2 shape); trigger-* only skill-fired,
     near-miss* only a not-fired one (max 0), holdout-* the worked case's approval regex plus skill-fired.
     A case directory holding a file named INVALID fails to load: like the real CLI, a `✗` line names it
@@ -89,15 +90,19 @@ FAKE_CLAUDE = textwrap.dedent('''\
             bare = {"score": 1, "error": None, "graders": [{"name": "valid", "passed": True}]}
             return {"name": name, "graders": graders, "arms": {"with": [fired] * runs, "without": [bare] * runs},
                     "aggregates": {"delta": 0}}
+        def indicator(grader_name, misses):
+            runs_ = [{"score": 1, "error": None, "graders": [{"name": grader_name, "passed": i >= misses}]}
+                     for i in range(runs)]
+            return runs_
         if name.startswith("trigger"):
             grader = {"name": "skill-fired", "type": "tool_used", "config": {"tool": "Skill"}}
-            run = {"score": 1, "error": None, "graders": [{"name": "skill-fired", "passed": True}]}
-            return {"name": name, "graders": [grader], "arms": {"with": [run] * runs, "without": [run] * runs},
+            with_runs = indicator("skill-fired", int(os.environ.get("FAKE_TRIGGER_MISSES", "0")))
+            return {"name": name, "graders": [grader], "arms": {"with": with_runs, "without": indicator("skill-fired", 0)},
                     "aggregates": {"delta": 0}}
         if name.startswith("near-miss"):
             grader = {"name": "not-fired", "type": "tool_used", "config": {"tool": "Skill", "min": 0, "max": 0}}
-            run = {"score": 1, "error": None, "graders": [{"name": "not-fired", "passed": True}]}
-            return {"name": name, "graders": [grader], "arms": {"with": [run] * runs, "without": [run] * runs},
+            bare = indicator("not-fired", int(os.environ.get("FAKE_NEAR_MISS_FIRES", "0")))
+            return {"name": name, "graders": [grader], "arms": {"with": indicator("not-fired", 0), "without": bare},
                     "aggregates": {"delta": 0}}
         delta = None if mode == "nodelta" else 0.5
         if name.startswith("holdout"):
@@ -129,12 +134,13 @@ SCORING_ADAPTER = textwrap.dedent('''\
     #!/bin/sh
     # with -> 0.9, without -> 0.4; case "flaky" fails its first attempt of run 2; "slow" hangs
     case="$1"; arm="$2"
-    marker="$(dirname "$0")/.flaky-$arm"
+    marker="work/pids/.flaky-$arm"  # scratch outside work/evaluation/, whose files are gate inputs
     if [ "$case" = "flaky" ] && [ "$GATE_RUN" = "2" ] && [ ! -f "$marker" ]; then
       : > "$marker"; echo "transient failure" >&2; exit 1
     fi
     if [ "$case" = "slow" ]; then sleep 300; fi
     echo "running $case $arm on $GATE_MODEL"
+    echo "EXECUTOR=$GATE_EXECUTOR"
     if [ "$arm" = "with" ]; then echo "SCORE=0.9"; else echo "SCORE=0.4"; fi
 ''')
 
@@ -242,6 +248,43 @@ class TempWorkspace(unittest.TestCase):
     def record(self, name: str, ws: Path | None = None) -> dict:
         return json.loads(((ws or self.ws) / "work" / "pids" / f"{name}.json").read_text(encoding="utf-8"))
 
+    def write_rubric(self, target: float = 0.85) -> None:
+        (self.ws / "work" / "evaluation" / "rubric.yaml").write_text(textwrap.dedent(f"""\
+            name: demo-rubric
+            dimensions:
+              - name: correctness  # the first dimension
+                weight: 0.6
+                scale: "1-10"
+                criteria: "Accurate."
+              - name: clarity
+                weight: 0.4
+                criteria: "Clear."
+            target_score: {target}
+            max_iterations: 20
+            """))
+
+    def receipt(self, role: str, correctness: float, clarity: float, escalation: str | None = None,
+                synthesis: dict | None = None) -> subprocess.CompletedProcess:
+        """Write `role`'s scoring JSON (the panel template's output) and run --panel-receipt on it."""
+        def dim(score: float) -> dict:
+            return {"score": score, "confidence": 0.9, "evidence": "verbatim quote"}
+        body = ({"revised_scores": synthesis, "final_recommendation": "SHIP"} if synthesis is not None else
+                {"scores": {"correctness": dim(correctness), "clarity": dim(clarity)},
+                 "pass_recommendation": "SHIP_WITH_CAVEATS", "escalation": escalation})
+        path = self.root / f"{role}{'-synthesis' if synthesis is not None else ''}.json"
+        path.write_text(json.dumps(body))
+        return self.run_script("check_gate.py", "--panel-receipt", role, str(path),
+                               *(["--synthesis"] if synthesis is not None else []))
+
+    def run_panel(self, scores: dict[str, tuple[float, float]], escalation: str | None = None) -> str:
+        """Every role's receipt, then --consensus; returns the PANEL CONSENSUS line."""
+        for role, (correctness, clarity) in scores.items():
+            out = self.receipt(role, correctness, clarity, escalation if role == "devils-advocate" else None)
+            self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        out = self.run_script("check_gate.py", "--consensus")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        return out.stdout.strip()
+
 
 class RunOwnedTest(TempWorkspace):
     def start(self, name: str, *cmd: str) -> dict:
@@ -345,6 +388,32 @@ class RunOwnedTest(TempWorkspace):
         finally:
             stranger.kill()
             stranger.wait()
+
+    def test_a_command_that_ends_after_a_stop_request_records_no_exit_status(self) -> None:
+        """The race behind the flaky ps-denied test: the group TERM can end the command before it reaches the
+        wrapper, which then recorded an exit status and turned "stopped" into "exited"."""
+        rc_file, go, stop = (self.root / n for n in ("job.rc", "job.go", "job.stop"))
+        go.write_text("")
+        stop.write_text('{"grace": 5}')
+        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(143)")]),
+                         143)
+        self.assertFalse(rc_file.exists(), "a stopped job's status is the stop, not an exit code")
+        stop.unlink()
+        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(7)")]), 7)
+        self.assertEqual(rc_file.read_text().strip(), "7", "without a stop request the exit status is recorded")
+
+    def test_a_command_that_ends_after_a_stop_request_records_no_exit_status(self) -> None:
+        """The race behind the flaky ps-denied test: the group TERM can end the command before it reaches the
+        wrapper, which then recorded an exit status and turned "stopped" into "exited"."""
+        rc_file, go, stop = (self.root / n for n in ("job.rc", "job.go", "job.stop"))
+        go.write_text("")
+        stop.write_text('{"grace": 5}')
+        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(143)")]),
+                         143)
+        self.assertFalse(rc_file.exists(), "a stopped job's status is the stop, not an exit code")
+        stop.unlink()
+        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(7)")]), 7)
+        self.assertEqual(rc_file.read_text().strip(), "7", "without a stop request the exit status is recorded")
 
     @unittest.skipIf(WINDOWS, "`ps` plays no part on Windows (GetProcessTimes)")
     def test_works_end_to_end_with_ps_denied(self) -> None:
@@ -508,6 +577,11 @@ class DataSplitReaderTest(TempWorkspace):
                          ["gold-é", 'a"b', "plain"])
         self.assertEqual(self.read("plugin_eval:\n  - 'it''s'\n  - \"x\\\\y\"\n").plugin_eval, ["it''s", "x\\y"])
 
+    def test_flow_lists_split_only_outside_quotes(self) -> None:
+        split = self.read('training: ["input/request, urgent.md", \'b, c\', d]\nplugin_eval: [a]\n')
+        self.assertEqual(split.gold["training"], ["input/request, urgent.md", "b, c", "d"])
+        self.assertIn("unclosed quote", self.read('training: ["a, b]\nplugin_eval: [a]\n').gold_error)
+
     def test_non_ascii_case_names_round_trip_through_write_and_read(self) -> None:
         path = self.ws / "data-split.yaml"
         cases = ["gold-é", "naïve-02", "日本-03", "plain-04"]
@@ -572,6 +646,29 @@ class GatePluginTest(TempWorkspace):
         line = self.run_script("check_gate.py").stdout
         self.assertIn("gold=2 mean gold delta=+0.500; gold delta<=0: none; "
                       "trigger fired (with arm): trigger-1 3/3; near-miss quiet: near-miss 6/6", line)
+
+    def test_a_trigger_that_misses_one_with_arm_run_invalidates_the_gate(self) -> None:
+        self.make_build(self.CASES)
+        out = self.run_script("gate.py", "--model", "m", FAKE_TRIGGER_MISSES="1")
+        self.assertEqual(out.returncode, 1, out.stdout)
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual(verdict["code"], "trigger_failed")
+        self.assertIn("case 'trigger-1': the skill did not fire in 1/3 with-arm runs", verdict["reason"])
+        self.assertIn("return to 4.6", verdict["reason"])
+
+    def test_a_near_miss_that_fires_in_the_bare_arm_invalidates_the_gate(self) -> None:
+        self.make_build(self.CASES)
+        self.assertEqual(self.run_script("gate.py", "--model", "m", FAKE_NEAR_MISS_FIRES="1").returncode, 1)
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual(verdict["code"], "near_miss_fired")
+        self.assertIn("near miss 'near-miss' fired the skill in 1/6 runs (either arm)", verdict["reason"])
+
+    def test_plugin_mode_warns_on_a_model_that_is_not_claude(self) -> None:
+        self.make_build(self.CASES)
+        out = self.run_script("gate.py", "--model", "gpt-5.6")
+        self.assertIn("--model 'gpt-5.6' names none; a build on another host", out.stdout + out.stderr)
+        out = self.run_script("gate.py", "--model", "claude-haiku-5-5")
+        self.assertNotIn("names none", out.stdout + out.stderr)
 
     def test_worked_case_with_a_skill_indicator_stays_gold(self) -> None:
         cases = ["holdout-03", "near-miss", "trigger-1"]
@@ -1137,6 +1234,42 @@ class GateManualTest(TempWorkspace):
         path.write_text(path.read_text().replace("0.4", "0.1"))
         self.assert_stale("uplift.json is not the artifact the gate wrote")
 
+    def test_an_input_changed_while_the_gate_runs_leaves_no_finished_run(self) -> None:
+        self.make_build(["input-01"], invoked=False)
+        self.write_adapter(SCORING_ADAPTER.replace(
+            'echo "EXECUTOR=$GATE_EXECUTOR"', 'echo "EXECUTOR=$GATE_EXECUTOR"; echo x >> work/evaluation/fixture.txt'))
+        (self.ws / "work" / "evaluation" / "fixture.txt").write_text("start\n")
+        out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("gate inputs changed while the gate ran (inputs_sha256)", out.stdout + out.stderr)
+        record = self.evaluation("gate.json")
+        self.assertIsNone(record["finished"])
+        self.assertEqual(record["changed_during_run"], ["inputs_sha256"])
+        self.assertEqual(json.loads(self.run_script("check_gate.py", "--json").stdout)["code"], "gate_unfinished")
+
+    def test_a_run_without_the_executor_receipt_fails(self) -> None:
+        self.make_build(["input-01"], invoked=False)
+        self.write_adapter(SCORING_ADAPTER.replace('echo "EXECUTOR=$GATE_EXECUTOR"', 'echo "EXECUTOR=single-call"'))
+        out = self.run_script("gate.py", "--model", "m", "--executor", "agentic", "--runs", "1")
+        self.assertEqual(out.returncode, 1)
+        data = self.evaluation("uplift.json")
+        self.assertTrue(data["partial"])
+        self.assertIn("no EXECUTOR=agentic line", data["errors"][0]["error"])
+        self.assertIn("got single-call", data["errors"][0]["error"])
+        self.write_adapter(SCORING_ADAPTER.replace('echo "EXECUTOR=$GATE_EXECUTOR"', ""))
+        self.run_script("gate.py", "--model", "m", "--executor", "agentic", "--runs", "1")
+        self.assertIn("got none", self.evaluation("uplift.json")["errors"][0]["error"])
+
+    def test_a_split_change_after_the_gate_is_stale_but_a_comment_is_not(self) -> None:
+        self.make_build(["input-01", "input-02"], invoked=False)
+        self.write_adapter()
+        self.assertEqual(self.run_script("gate.py", "--model", "m", "--executor", "single-call").returncode, 0)
+        split = self.ws / "work" / "evaluation" / "data-split.yaml"
+        split.write_text("# reviewed\n" + split.read_text())
+        self.assertEqual(self.run_script("check_gate.py").returncode, 0, "comments and layout are not the splits")
+        split.write_text(split.read_text().replace("training: []", 'training: ["input-02"]'))
+        self.assert_stale("work/evaluation/data-split.yaml (its splits)")
+
     def test_missing_adapter_is_a_precondition_error(self) -> None:
         self.make_build(["input-01"], invoked=False)
         out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
@@ -1231,6 +1364,15 @@ class FinishTest(TempWorkspace):
         self.assertEqual(self.run_script("gate.py", "record").returncode, 0)
         self.assertIn("needs a gate attempt", self.finish()["reason"], "a record alone is not a gate attempt")
 
+    def test_unshipped_after_a_failed_record_alone_is_unfinished(self) -> None:
+        self.make_build(["gold-01"])
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "gold-01" / "INVALID").write_text("")
+        self.assertEqual(self.run_script("gate.py", "record").returncode, 3)
+        self.assertEqual([a["step"] for a in gate_common.read_attempts(self.ws)], ["record"])
+        self.benchmark("Verdict: UNSHIPPED\n")
+        self.assertIn("needs a gate attempt", self.finish()["reason"],
+                      "a failed 3.6 record is not a 5.0 gate attempt (round-3 adversary finding 7)")
+
     @unittest.skipUnless(WINDOWS, "the fallback is the locale's code page, which is UTF-8 here")
     def test_benchmark_in_the_windows_code_page_is_read(self) -> None:
         self.make_build(["gold-01"])
@@ -1254,9 +1396,15 @@ class FinishTest(TempWorkspace):
         self.benchmark("Verdict: UNSHIPPED\n")
         self.assertTrue(self.finish()["finished"])
 
-    def test_ship_needs_a_valid_gate_and_its_line(self) -> None:
-        self.make_build(["gold-01", "trigger-1"])
+    def gated(self, cases: list[str]) -> None:
+        self.make_build(cases)
+        self.write_rubric()
         self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+
+    SHIP_PANEL = {"verifier-a": (9, 9), "verifier-b": (9, 8), "devils-advocate": (8, 8)}
+
+    def test_ship_needs_a_valid_gate_and_its_line(self) -> None:
+        self.gated(["gold-01", "trigger-1"])
         self.benchmark("**Verdict: SHIP_WITH_CAVEATS**\n")
         self.assertIn("lacks check_gate.py's current GATE VALID line", self.finish()["reason"])
         stale = self.gate_line().replace("mean gold delta=+0.500", "mean gold delta=+0.900")
@@ -1267,36 +1415,85 @@ class FinishTest(TempWorkspace):
         self.assertIn(self.gate_line(), data["reason"], "the reason quotes the line to copy")
         self.benchmark(f"**Verdict: SHIP_WITH_CAVEATS**\n\n{self.gate_line()}\n")
         self.assertEqual(self.finish()["verdict"], "SHIP WITH CAVEATS")
-        self.assertIn("needs the panel receipt work/experiments/panel.json", self.finish()["reason"])
-        self.assertEqual(self.run_script("check_gate.py", "--panel").returncode, 0)
+        self.assertIn("no current role receipt from verifier-a, verifier-b, devils-advocate", self.finish()["reason"])
+        line = self.run_panel(self.SHIP_PANEL)
+        self.assertIn("lacks the panel's current PANEL CONSENSUS line", self.finish()["reason"])
+        self.benchmark(f"**Verdict: SHIP_WITH_CAVEATS**\n\n{self.gate_line()}\n{line}\n")
         self.assertTrue(self.finish()["finished"])
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Edited.\n---\n")
         data = self.finish()
         self.assertFalse(data["finished"])
         self.assertIn("skill changed since the gate", data["reason"])
 
-    def test_ship_on_a_panel_that_scored_an_earlier_skill_is_unfinished(self) -> None:
-        self.make_build(["gold-01", "trigger-1"])
-        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
-        panel = self.run_script("check_gate.py", "--panel")
-        self.assertEqual(panel.returncode, 0, panel.stdout + panel.stderr)
-        self.assertIn("PANEL RECEIPT: work/experiments/panel.json", panel.stderr)
+    def test_receipts_from_before_a_skill_change_never_finish_a_ship(self) -> None:
+        self.gated(["gold-01", "trigger-1"])
+        self.run_panel(self.SHIP_PANEL)
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Fixed after the panel.\n---\n")
         self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0, "the re-run gate validates")
-        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n")
+        self.assertEqual(self.run_script("check_gate.py", "--panel").returncode, 0, "and --panel passes it")
+        self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n")
         data = self.finish()
-        self.assertFalse(data["finished"], "the r-t2-factory-v030-haiku-5 shape: fixed after the panel, re-gated")
-        self.assertIn("the panel scored an earlier output/demo/", data["reason"])
-        self.assertEqual(self.run_script("check_gate.py", "--panel").returncode, 0)
+        self.assertFalse(data["finished"], "the s-t2-factory-v030-haiku-2 shape: no verifier re-scored the fix")
+        self.assertIn("no current role receipt from verifier-a, verifier-b, devils-advocate", data["reason"])
+        consensus = self.run_script("check_gate.py", "--consensus")
+        self.assertEqual(consensus.returncode, 1)
+        self.assertIn("PANEL INCOMPLETE", consensus.stdout)
+        line = self.run_panel(self.SHIP_PANEL)
+        self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n{line}\n")
         self.assertTrue(self.finish()["finished"])
 
+    def test_a_verdict_above_the_consensus_is_unfinished(self) -> None:
+        self.gated(["gold-01", "trigger-1"])
+        line = self.run_panel({"verifier-a": (8, 8), "verifier-b": (8, 8), "devils-advocate": (8, 8)})
+        self.assertIn("PANEL CONSENSUS: SHIP WITH CAVEATS (allows SHIP WITH CAVEATS); overall=0.800", line)
+        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n{line}\n")
+        self.assertIn("the panel's consensus allows at most SHIP WITH CAVEATS", self.finish()["reason"])
+        self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n{line}\n")
+        self.assertTrue(self.finish()["finished"])
+
+    def test_iterate_block_and_escalate_allow_only_unshipped(self) -> None:
+        self.gated(["gold-01", "trigger-1"])
+        for scores, escalation, label in (
+                ({"verifier-a": (5, 5), "verifier-b": (5, 6), "devils-advocate": (5, 5)}, None, "ITERATE"),
+                ({"verifier-a": (2, 9), "verifier-b": (2, 9), "devils-advocate": (2, 8)}, None, "BLOCK"),
+                (self.SHIP_PANEL, "ESCALATE: the guard misses X", "ESCALATE")):
+            line = self.run_panel(scores, escalation)
+            self.assertIn(f"PANEL CONSENSUS: {label} (allows UNSHIPPED)", line)
+            self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n{line}\n")
+            self.assertIn("allows at most UNSHIPPED", self.finish()["reason"], label)
+            self.benchmark(f"Verdict: UNSHIPPED\n\n{self.gate_line()}\n")
+            self.assertIn("lacks the panel's current PANEL CONSENSUS line", self.finish()["reason"],
+                          "UNSHIPPED states why beside the label")
+            self.benchmark(f"Verdict: UNSHIPPED\n\n{self.gate_line()}\n{line}\n")
+            self.assertTrue(self.finish()["finished"], label)
+
+    def test_unshipped_on_a_valid_gate_carries_its_line(self) -> None:
+        self.gated(["gold-01", "trigger-1"])
+        self.benchmark("Verdict: UNSHIPPED\n")
+        self.assertIn("lacks check_gate.py's current GATE VALID line beside the UNSHIPPED", self.finish()["reason"])
+        self.benchmark(f"Verdict: UNSHIPPED\n\n{self.gate_line()}\n")
+        self.assertTrue(self.finish()["finished"], "no panel yet: the gate line is the reason on record")
+
+    def test_a_hand_edited_consensus_is_stale(self) -> None:
+        self.gated(["gold-01", "trigger-1"])
+        line = self.run_panel({"verifier-a": (8, 8), "verifier-b": (8, 8), "devils-advocate": (8, 8)})
+        path = self.ws / "work" / "experiments" / "panel" / "consensus.json"
+        data = json.loads(path.read_text())
+        data["allowed"] = "SHIP"
+        data["line"] = line.replace("allows SHIP WITH CAVEATS", "allows SHIP")
+        path.write_text(json.dumps(data))
+        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n{data['line']}\n")
+        self.assertIn("consensus.json is stale", self.finish()["reason"])
+        self.receipt("verifier-a", 9, 9)
+        self.assertIn("is stale", self.finish()["reason"], "a re-scored receipt needs a fresh --consensus")
+
     def test_plain_ship_with_a_gold_delta_at_or_below_zero_is_unfinished(self) -> None:
-        self.make_build(["gold-01", "trigout-2"])
-        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
-        self.assertEqual(self.run_script("check_gate.py", "--panel").returncode, 0)
-        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n")
+        self.gated(["gold-01", "trigout-2"])
+        line = self.run_panel(self.SHIP_PANEL)
+        self.assertIn("PANEL CONSENSUS: SHIP (allows SHIP)", line)
+        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n{line}\n")
         self.assertIn("gold delta<=0 on trigout-2 caps the verdict at SHIP WITH CAVEATS", self.finish()["reason"])
-        self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n")
+        self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n{line}\n")
         self.assertTrue(self.finish()["finished"])
         self.assertEqual(self.run_script("check_gate.py", "--panel", "--finish").returncode, 2)
 
@@ -1322,6 +1519,84 @@ class FinishTest(TempWorkspace):
         self.assertTrue(self.finish()["finished"])
 
 
+class PanelTest(TempWorkspace):
+    def setUp(self) -> None:
+        super().setUp()
+        self.make_build(["gold-01", "trigger-1"])
+        self.write_rubric()
+
+    def gate(self) -> None:
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+
+    def consensus(self) -> subprocess.CompletedProcess:
+        return self.run_script("check_gate.py", "--consensus")
+
+    def test_no_receipt_before_a_valid_gate(self) -> None:
+        out = self.receipt("verifier-a", 9, 9)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("GATE INVALID", out.stdout)
+        self.assertFalse((self.ws / "work" / "experiments" / "panel").exists())
+
+    def test_receipts_are_checked_against_the_rubric(self) -> None:
+        self.gate()
+        self.assertIn("is not one of verifier-a", self.receipt("verifier-c", 9, 9).stdout)
+        self.assertIn("not on the rubric scale 1-10", self.receipt("verifier-a", 11, 9).stdout)
+        bad = self.root / "bad.json"
+        bad.write_text(json.dumps({"scores": {"correctness": {"score": 9, "confidence": 0.9, "evidence": "q"}}}))
+        out = self.run_script("check_gate.py", "--panel-receipt", "verifier-a", str(bad))
+        self.assertIn("cover exactly the rubric's dimensions ['clarity', 'correctness']", out.stdout)
+        bad.write_text(json.dumps({"scores": {"correctness": {"score": 9, "confidence": 0.9},
+                                              "clarity": {"score": 5, "confidence": 0.9}}}))
+        out = self.run_script("check_gate.py", "--panel-receipt", "verifier-a", str(bad))
+        self.assertIn("correctness: a score of 9 needs evidence", out.stdout)
+        out = self.receipt("verifier-a", 9, 9)
+        self.assertEqual(out.returncode, 0, out.stdout)
+        receipt = json.loads((self.ws / "work" / "experiments" / "panel" / "verifier-a.json").read_text())
+        self.assertEqual(receipt["skill_sha256"], gate_common.skill_sha256(self.ws, "demo"))
+        self.assertEqual(receipt["rubric_sha256"],
+                         gate_common.file_sha256(self.ws / "work" / "evaluation" / "rubric.yaml"))
+        self.assertEqual((receipt["round"], receipt["recommendation"]), (1, "SHIP WITH CAVEATS"))
+        self.assertIn("no current role receipt from verifier-b, devils-advocate", self.consensus().stdout)
+
+    def test_a_dispute_needs_a_synthesis_round_then_resolves_by_majority(self) -> None:
+        self.gate()
+        for role, scores in (("verifier-a", (9, 9)), ("verifier-b", (9, 9)), ("devils-advocate", (6, 9))):
+            self.assertEqual(self.receipt(role, *scores).returncode, 0)
+        out = self.consensus()
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("SYNTHESIS NEEDED on correctness", out.stdout)
+        self.assertIn("may change only the disputed dimensions ['correctness']; got ['clarity']",
+                      self.receipt("verifier-a", 0, 0, synthesis={"clarity": {"revised": 7}}).stdout)
+        for role, revised in (("verifier-a", 9), ("verifier-b", 8), ("devils-advocate", 6)):
+            out = self.receipt(role, 0, 0, synthesis={"correctness": {"original": 0, "revised": revised}})
+            self.assertEqual(out.returncode, 0, out.stdout)
+        line = self.consensus().stdout
+        self.assertIn("PANEL CONSENSUS: SHIP (allows SHIP); overall=0.870", line,
+                      "correctness: 9 and 8 agree (8.5), the 6 is logged dissent; clarity 9")
+        data = json.loads((self.ws / "work" / "experiments" / "panel" / "consensus.json").read_text())
+        self.assertEqual((data["rounds"], data["disputed"]), (2, ["correctness"]))
+        self.assertIn("devils-advocate 6", data["dissent"]["correctness"])
+
+    def test_a_deadlock_after_synthesis_escalates(self) -> None:
+        self.gate()
+        for role, scores in (("verifier-a", (9, 9)), ("verifier-b", (6, 9)), ("devils-advocate", (3, 9))):
+            self.receipt(role, *scores)
+        for role, revised in (("verifier-a", 9), ("verifier-b", 6), ("devils-advocate", 3)):
+            self.receipt(role, 0, 0, synthesis={"correctness": {"revised": revised}})
+        line = self.consensus().stdout
+        self.assertIn("PANEL CONSENSUS: ESCALATE (allows UNSHIPPED); overall=n/a", line)
+        self.assertIn("deadlocked: correctness", line)
+
+    def test_the_thresholds_come_from_verdict_rules(self) -> None:
+        rules = json.loads((SCRIPTS.parent / "references" / "verdict-rules.json").read_text())
+        self.assertEqual((rules["caveat_margin"], rules["block_below"]), (0.10, 3))
+        self.write_rubric(target=0.95)
+        self.gate()
+        line = self.run_panel({"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (8, 8)})
+        self.assertIn("PANEL CONSENSUS: SHIP WITH CAVEATS (allows SHIP WITH CAVEATS); overall=0.867 target=0.95",
+                      line, "rubric.yaml's target_score, minus caveat_margin, sets the band")
+
+
 class CheckGateTest(TempWorkspace):
     def record_gate(self, cases: list[str], finished: bool = True, hashed: bool = True) -> None:
         record = {"mode": "manual", "skill": "demo", "cases": cases, "artifact": "work/evaluation/uplift.json",
@@ -1330,6 +1605,7 @@ class CheckGateTest(TempWorkspace):
             evaluation = self.ws / "work" / "evaluation"
             record |= {"skill_sha256": gate_common.skill_sha256(self.ws, "demo"),
                        "cases_sha256": gate_common.cases_sha256(self.ws, cases),
+                       "split_sha256": gate_common.split_sha256(gate_common.read_data_split(evaluation / "data-split.yaml")),
                        "run_case_sha256": gate_common.file_sha256(evaluation / "run-case.sh"),
                        "inputs_sha256": gate_common.inputs_sha256(self.ws),
                        "artifact_sha256": gate_common.file_sha256(evaluation / "uplift.json")}

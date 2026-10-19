@@ -96,8 +96,8 @@ hand *will* drift.
 
 ## Checklist
 
-- [ ] `BENCHMARK.md` holds `check_gate.py`'s `GATE VALID:` line, verbatim, from after the last skill change
-- [ ] `check_gate.py --finish` exits 0: the panel receipt (`work/experiments/panel.json`) matches the skill shipped
+- [ ] `BENCHMARK.md` holds `check_gate.py`'s `GATE VALID:` and `PANEL CONSENSUS:` lines, verbatim, from after the last skill change
+- [ ] `check_gate.py --finish` exits 0: three role receipts and the consensus (`work/experiments/panel/`) match the skill shipped
 - [ ] `version` bumped in frontmatter; `license` present
 - [ ] Body under 500 lines; references one level deep; TOC on any reference over ~100 lines
 - [ ] Benchmark exists at `benchmarks/<skill-name>/`, outside the skill directory

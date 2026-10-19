@@ -1,0 +1,14 @@
+#!/bin/sh
+# Runs finish_guard.py (beside this file) with the first Python 3.9+ it finds: python3, python, then the
+# Windows launcher `py -3`, as hooks/kill-guard does. With none, the turn is allowed to end: an end-of-turn
+# hook must never hold a session, and every host reads `{}` as "nothing to add".
+guard="${0%finish-guard}finish_guard.py"
+for py in python3 python "py -3"; do
+  if $py -c 'import sys; sys.exit(sys.version_info < (3, 9))' </dev/null >/dev/null 2>&1; then
+    exec $py "$guard"
+  fi
+done
+echo "finish guard: no Python 3.9+ found (python3, python, py -3); turn allowed to end" >&2
+cat >/dev/null
+echo '{}'
+exit 0

@@ -12,6 +12,7 @@ marks what the factory's own tests or benchmark ran.
 - Headless runs, judges and executors
 - Subagents
 - Kill guard
+- Finish guard
 - Operating systems
 - What needs Claude Code
 
@@ -84,13 +85,34 @@ action), so the guard would silently not run. Add the project hook above instead
 `py -3 <skill-dir>\hooks\kill_guard.py` as its command.
 
 Codex (`commandWindows` is its Windows override; for a vetted headless run, `codex exec
---dangerously-bypass-hook-trust` runs enabled hooks without the `/hooks` trust step):
+--dangerously-bypass-hook-trust` runs enabled hooks without the `/hooks` trust step), with the finish guard:
 
 ```json
 { "hooks": { "PreToolUse": [ { "matcher": "Bash", "hooks": [
   { "type": "command", "command": "sh <skill-dir>/hooks/kill-guard",
-    "commandWindows": "py -3 <skill-dir>\\hooks\\kill_guard.py", "timeout": 10 } ] } ] } }
+    "commandWindows": "py -3 <skill-dir>\\hooks\\kill_guard.py", "timeout": 10 } ] } ],
+  "Stop": [ { "hooks": [ { "type": "command", "command": "sh <skill-dir>/hooks/finish-guard",
+    "commandWindows": "py -3 <skill-dir>\\hooks\\finish_guard.py", "timeout": 30 } ] } ] } }
 ```
+
+For an `npx skills` install on Cursor, the project hook above gains
+`"stop": [ { "command": "sh <skill-dir>/hooks/finish-guard", "timeout": 30, "loop_limit": 1 } ]`.
+
+## Finish guard
+
+`hooks/finish_guard.py` runs at the end of each turn, through `hooks/finish-guard` (the same Python pick as the kill
+guard; with none, the turn ends). Only in a factory build — the session's directory, or a `builds/<name>/` under it,
+holding `work/evaluation/` and `output/<skill>/SKILL.md` — it runs `check_gate.py --finish`, and when that fails it
+sends the agent back once with the reason, logged to `work/experiments/finish-guard.jsonl`. It never sends it back twice
+in a row, and ends the turn on any error of its own. An interactive build costs one extra reply per stop from Phase 3 on:
+the agent re-ends the turn on its question.
+
+| Host | Ships as | Loop guard | Status |
+|---|---|---|---|
+| Claude Code | `hooks/hooks.json` `Stop` (plugin install, or `claude --plugin-dir <skill-dir>`) | `stop_hook_active`; Claude Code also caps a turn at 8 continuations | verified live (`claude -p --plugin-dir`: sent back once, the next stop ended the turn) |
+| Cursor | `hooks/cursor-hooks.json` `stop` (`followup_message`) | `loop_count`, and `loop_limit: 1` | contract tested offline; `cursor-agent -p` (2026.10.18) runs no `stop` hook, so a headless Cursor build is not covered |
+| Codex | the same script on `Stop` (`{"decision": "block"}`), installed like the kill guard below | `stop_hook_active` | contract tested offline; untested in Codex |
+| OpenCode | `hooks/opencode-finish-guard.js` on `session.idle`, which prompts the session once (`client.session.prompt`) | once per idle | plugin tested with node; untested in OpenCode |
 
 ## Operating systems
 
@@ -112,7 +134,10 @@ script tests in CI (`windows-latest`), not yet by a live build on a Windows host
 - **`claude plugin eval`** (3.6 suite, 5.0 plugin path). Elsewhere the gate runs the manual protocol with no
   `claude` call; `gate.py` picks the path by SKILL.md 3.6's rule: plugin eval only inside Claude Code
   (which sets `$CLAUDECODE`), else manual, even where `claude` is installed, since the build targets its own
-  host's model. `--backend plugin|manual` forces one.
+  host's model. `--backend plugin|manual` forces one. **On every host but Claude Code pass `--backend manual`**:
+  a host CLI launched from a Claude Code shell (a benchmark, a nested session) inherits `$CLAUDECODE`, and plugin
+  mode would then run the gate on Claude, not the host's model; `gate.py` warns when plugin mode gets a model id that
+  names no Claude model.
 - **skill-creator's description optimizer** (4.6) measures triggering through `claude -p`. Elsewhere revise the
   description by hand against the same eval-set queries and log that no trigger rate was measured.
 - **The reserved words `anthropic`/`claude`** in a skill `name` are a Claude platform rule; the 3.3 checklist

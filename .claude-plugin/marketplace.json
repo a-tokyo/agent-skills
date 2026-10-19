@@ -36,6 +36,17 @@
               }
             ]
           }
+        ],
+        "Stop": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/finish-guard\"",
+                "timeout": 30
+              }
+            ]
+          }
         ]
       },
       "version": "0.3.0",
@@ -79,6 +90,17 @@
                 "type": "command",
                 "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/kill-guard\"",
                 "timeout": 10
+              }
+            ]
+          }
+        ],
+        "Stop": [
+          {
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/finish-guard\"",
+                "timeout": 30
               }
             ]
           }

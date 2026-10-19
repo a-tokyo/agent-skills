@@ -95,7 +95,7 @@ Confidence is used in aggregation: low-confidence scores are weighted down durin
 Synthesis round is triggered when ANY of these conditions are met:
 
 1. **Score spread >= 2 points** on any single dimension across panel members
-2. **Pass/fail split**: One member's weighted overall >= target_score while another's is < (target_score - 0.15)
+2. **Pass/fail split**: One member's weighted overall >= target_score while another's is < (target_score - `pass_fail_margin`)
 3. **DA veto**: Devil's Advocate scores any dimension at 1 (automatic trigger)
 4. **Confidence divergence**: Any member marks confidence < 0.5 on a dimension where others mark > 0.8
 
@@ -128,12 +128,21 @@ overall_score = sum(dimension_consensus / scale_max * weight) for each dimension
 
 ### Pass/Fail Thresholds
 
+`scripts/check_gate.py --consensus` (scripts/panel.py) computes all of this from the three role receipts, by the
+numbers in [verdict-rules.json](verdict-rules.json), their one home: `caveat_margin`, `block_below`, `block_majority`,
+`agree_within`, the synthesis triggers and the evidence rule. The labels, checked in this order:
+
 | Condition | Action |
 |-----------|--------|
-| overall_score >= target_score AND no dimension blocked | **SHIP** -- skill is production ready |
-| overall_score >= target_score - 0.10 | **SHIP WITH CAVEATS** -- log concerns, proceed |
-| overall_score < target_score - 0.10 | **ITERATE** -- feed panel feedback back to autoresearch |
-| Any dimension score < 3 (on 1-10) by majority | **BLOCK** -- address blocking concern before shipping |
+| A dimension deadlocked after synthesis, or the DA's `ESCALATE:` | **ESCALATE** -- the user decides |
+| `block_majority` members score a dimension < `block_below` | **BLOCK** -- address blocking concern before shipping |
+| overall_score >= target_score | **SHIP** -- skill is production ready |
+| overall_score >= target_score - caveat_margin | **SHIP WITH CAVEATS** -- log concerns, proceed |
+| otherwise | **ITERATE** -- feed panel feedback back to autoresearch |
+
+ESCALATE, BLOCK and ITERATE allow only `UNSHIPPED` as the build's terminal verdict; `check_gate.py --finish`
+rejects a BENCHMARK.md verdict above the label the consensus allows. A majority with two equally close pairs takes
+the lower pair (the conservative reading).
 
 ### ITERATE Feedback
 
@@ -176,7 +185,7 @@ The DA may write `ESCALATE: <reason>` when:
 - DA identifies a safety/correctness concern the majority dismisses
 - DA describes a specific failure scenario the others cannot rebut
 
-Escalation surfaces the concern to the user for human judgment. The DA cannot block consensus alone, but ensures critical risks are not silently overruled.
+Escalation surfaces the concern to the user for human judgment, and caps the factory's verdict at `UNSHIPPED` until a re-run panel no longer escalates (a fix, or the DA's rebutted concern withdrawn in its synthesis receipt). The DA cannot move the score alone, but ensures critical risks are not silently overruled.
 
 ---
 
@@ -191,26 +200,26 @@ For each panel member (Verifier-A, Verifier-B, Devil's Advocate):
   2. Provide: skill content + gold standards + rubric + premortem risks
   3. Provide: role-specific system prompt (from pipeline-phases.md)
   4. Request: JSON output with per-dimension scores, confidence, evidence
-  5. Run all 3 in parallel (no cross-talk); headless sessions run one after another, each context-walled
+  5. Last step of each member: check_gate.py --panel-receipt <role> <its JSON> (its role receipt)
+  6. Run all 3 in parallel (no cross-talk); headless sessions run one after another, each context-walled
 ```
 
 ### Processing Results
 
 ```
-1. Collect all 3 JSON scoring outputs
-2. Run disagreement detection
-3. If no disagreement → compute final score → done
-4. If disagreement → run synthesis round:
+1. check_gate.py --consensus: reads the 3 current-hash receipts, runs disagreement detection
+2. If no disagreement → it computes the final score and label → done
+3. If disagreement → it prints SYNTHESIS NEEDED on <dimensions>; run the synthesis round:
    a. Extract disputed dimensions
    b. Anonymize rationales
    c. Share with all members
-   d. Collect revised scores
-   e. Run convergence test
-5. Compute final score based on convergence outcome
-6. If SHIP → output final skill
-7. If ITERATE → structure feedback → return to autoresearch
-8. If BLOCK → highlight blocking dimension → user review
-9. If DA escalation → surface to user
+   d. Each member re-submits: check_gate.py --panel-receipt <role> <its synthesis JSON> --synthesis
+   e. check_gate.py --consensus again: the convergence test
+4. The PANEL CONSENSUS line names the label and the verdict it allows
+5. If SHIP → output final skill
+6. If ITERATE → structure feedback → return to autoresearch
+7. If BLOCK → highlight blocking dimension → user review
+8. If DA escalation or deadlock → surface to user
 ```
 
 ### Minority Reports
