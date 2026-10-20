@@ -78,6 +78,11 @@ Score each rubric dimension in an independent evaluation pass. This prevents hal
 - Score of 3- (on 1-10 scale): must cite the specific section/line where the failure occurs
 - Mid-range scores (4-7): evidence recommended but not required
 
+`--panel-receipt` enforces only that an extreme score (first round or revised in synthesis) carries non-empty
+evidence; it does not grep the quote, because evidence is often a `file:line "quote"` citation or a command's
+failing output rather than a bare substring of the skill. The ORCHESTRATOR's grep (SKILL.md 5.2: "Grep every
+verdict-driving citation") is the verbatim check, and an invented quote it does not find discards the finding.
+
 ### Confidence Signals
 
 Each score includes a confidence value (0.0-1.0):

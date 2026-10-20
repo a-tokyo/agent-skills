@@ -1577,6 +1577,30 @@ class PanelTest(TempWorkspace):
         self.assertEqual((data["rounds"], data["disputed"]), (2, ["correctness"]))
         self.assertIn("devils-advocate 6", data["dissent"]["correctness"])
 
+    def test_revised_scores_meet_the_first_rounds_scale_and_evidence_rules(self) -> None:
+        self.gate()
+        for role in ("verifier-a", "verifier-b"):
+            self.assertEqual(self.receipt(role, 9, 9).returncode, 0)
+        da, first = "devils-advocate", self.root / "da.json"
+        first.write_text(json.dumps({"scores": {"correctness": {"score": 6, "confidence": 0.9, "evidence": ""},
+                                                "clarity": {"score": 9, "confidence": 0.9, "evidence": "q"}}}))
+        self.assertEqual(self.run_script("check_gate.py", "--panel-receipt", da, str(first)).returncode, 0)
+        for revised in (0.5, 11, 100, "9", None, True):
+            with self.subTest(revised=revised):
+                out = self.receipt(da, 0, 0, synthesis={"correctness": {"revised": revised, "justification": "j"}})
+                self.assertEqual(out.returncode, 1, out.stdout)
+                self.assertIn(f"correctness: revised score {revised!r} is not on the rubric scale 1-10", out.stdout)
+        for revised in (1, 10):
+            with self.subTest(empty_evidence_at=revised):
+                out = self.receipt(da, 0, 0, synthesis={"correctness": {"revised": revised, "justification": " "}})
+                self.assertIn(f"correctness: a revised score of {revised} needs evidence", out.stdout)
+        for revised, body in ((1, {"evidence": "the failing line"}), (10, {"justification": "quote"}), (5, {})):
+            with self.subTest(accepted=revised):
+                out = self.receipt(da, 0, 0, synthesis={"correctness": {"revised": revised, **body}})
+                self.assertEqual(out.returncode, 0, out.stdout)
+        out = self.receipt("verifier-a", 0, 0, synthesis={"correctness": {"revised": 10}})
+        self.assertEqual(out.returncode, 0, "the first round's evidence backs a revised extreme score")
+
     def test_a_deadlock_after_synthesis_escalates(self) -> None:
         self.gate()
         for role, scores in (("verifier-a", (9, 9)), ("verifier-b", (6, 9)), ("devils-advocate", (3, 9))):

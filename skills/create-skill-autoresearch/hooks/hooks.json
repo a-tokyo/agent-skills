@@ -8,7 +8,8 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/kill-guard\"",
-            "timeout": 10
+            "timeout": 10,
+            "onFailure": "continue"
           }
         ]
       }
@@ -19,7 +20,8 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/finish-guard\"",
-            "timeout": 30
+            "timeout": 30,
+            "onFailure": "continue"
           }
         ]
       }

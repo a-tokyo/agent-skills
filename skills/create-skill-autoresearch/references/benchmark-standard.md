@@ -106,10 +106,10 @@ The build implements one run in `work/evaluation/run-case.sh <case> <with|withou
 the workspace root, `GATE_MODEL`, `GATE_RUN` and `GATE_EXECUTOR` in its environment; `<case>` is a gate gold
 standard's entry as data-split.yaml lists it, which `gate.py record` copies into `plugin_eval`): it executes the case on
 that arm the way `$GATE_EXECUTOR` names (`single-call` or `agentic`), applies the graders, and prints
-`EXECUTOR=<the executor it ran>` and `SCORE=<0..1>` — `gate.py` reads the last of each. The executor line is the
-adapter's receipt for `--executor`: a run that prints none, or another executor, fails, so the label `uplift.json`
-records is one the adapter acknowledged (an adapter that ignores `$GATE_EXECUTOR` and echoes a constant still
-passes; the panel reads `run-case.sh`). A non-zero exit, a timeout or a missing `SCORE` or `EXECUTOR` line is a
+`EXECUTOR=<the executor it ran>` and `SCORE=<0..1>` — `gate.py` reads the last of each. The executor line is a
+format check, self-attested by the adapter, not proof of what ran: a run that prints none, or another executor,
+fails, so the label `uplift.json` records is one the adapter acknowledged, but an adapter that ignores
+`$GATE_EXECUTOR` and echoes a constant still passes; the panel reads `run-case.sh` to check it. A non-zero exit, a timeout or a missing `SCORE` or `EXECUTOR` line is a
 failed run, not a score of 0: `gate.py` retries it once, then records it under `errors` and marks the artifact
 partial. Keep the adapter's scratch files outside `work/evaluation/`: a gate input that changes while the gate runs
 leaves no finished run.

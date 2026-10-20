@@ -57,11 +57,16 @@ another, giving it only that role's inputs; that keeps the context walls the pan
 
 ## Kill guard
 
-`hooks/kill_guard.py` reads either contract and blocks pattern kills: `pkill`, `killall`, a `pgrep`/`pidof`/`ps`
-listing fed to `kill`, and on Windows `taskkill /IM` or `/FI`, `Stop-Process -Name` and a `Get-Process` listing fed to a
-kill (`taskkill /PID <n>` and `Stop-Process -Id <n>` pass). The hook configs run it through `hooks/kill-guard`, which
-picks `python3`, `python` or `py -3`; with none it lets the call through. `run_owned.py` is the guard where no hook
-is installed.
+`hooks/kill_guard.py` reads either contract and blocks pattern kills: `pkill`, `killall`, `taskkill /IM` or `/FI`,
+`Stop-Process -Name`, and any call holding both a process lister (`pgrep`, `pidof`, `ps`, `Get-Process`, `tasklist`,
+`wmic process`) and a kill, however the PIDs travel (pipe, variable, renamed file). The one exception: every kill
+names literal PIDs and nothing keeps the listing (`ps aux | head; kill 1234` passes; `ps aux > f; kill 4242` and
+`ps aux | head; kill $PID` do not: kill in a call of its own). `taskkill /PID <n>` and `Stop-Process -Id <n>`
+pass. It is a best-effort tripwire for honest mistakes, not a sandbox: it sees one call at a time, so a listing
+saved in one call and killed in the next passes. `run_owned.py` and the rule (stop only what you started, by its
+recorded PID) are the contract. The hook configs run it through `hooks/kill-guard`, which picks `python3`,
+`python` or `py -3`; with none, or when the hook fails (`"onFailure": "continue"` on Claude Code), it lets the
+call through.
 
 | Host | Ships as | Install | Status |
 |---|---|---|---|
@@ -124,9 +129,11 @@ the file named in `$RUN_OWNED_STOP_FILE` (`gate.py` honours it) and ended after 
 
 On Windows the manual gate runs `work/evaluation/run-case.sh` with Git for Windows' bash
 (`CLAUDE_CODE_GIT_BASH_PATH`, else `bash` on PATH, else the default install; WSL's `bash.exe` is never used),
-so install [Git for Windows](https://git-scm.com/download/win), which Claude Code on Windows already needs, and
-write `run-case.sh` and `evaluate.sh` for that bash. The kill guard's `sh` launcher needs Git Bash's `sh` too;
-Claude Code runs shell-form hooks in Git Bash. Verified: macOS and Linux locally and in CI; Windows by the
+so install [Git for Windows](https://git-scm.com/download/win) and write `run-case.sh` and `evaluate.sh` for that
+bash. Claude Code itself does not need it (without Git Bash it runs shell commands and shell-form hooks in
+PowerShell), so check: without it `gate.py` stops with "manual mode on Windows runs work/evaluation/run-case.sh
+with Git for Windows' bash, and none was found", and the hooks' `sh` launchers cannot start, so both guards fail
+open (`"onFailure": "continue"`) with a `hook error` notice in the transcript. Verified: macOS and Linux locally and in CI; Windows by the
 script tests in CI (`windows-latest`), not yet by a live build on a Windows host.
 
 ## What needs Claude Code

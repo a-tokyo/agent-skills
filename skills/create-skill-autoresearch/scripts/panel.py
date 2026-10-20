@@ -126,8 +126,17 @@ def _number(value: object) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool)
 
 
-def _scores(raw: dict, rubric: Rubric) -> dict[str, dict]:
+def _check_score(name: str, score: object, quote: object, d: Dimension, what: str = "score") -> None:
+    """The rubric scale, and evidence for a score at either extreme (verdict-rules.json)."""
     evidence = rules()["evidence_required"]
+    if not _number(score) or not d.low <= score <= d.high:
+        raise GateError(f"{name}: {what} {score!r} is not on the rubric scale {d.low:g}-{d.high:g}")
+    needs = score >= evidence["score_at_least"] or score <= evidence["score_at_most"]
+    if needs and not (isinstance(quote, str) and quote.strip()):
+        raise GateError(f"{name}: a {what} of {score:g} needs evidence (a verbatim quote or the failing line)")
+
+
+def _scores(raw: dict, rubric: Rubric) -> dict[str, dict]:
     dims = {d.name: d for d in rubric.dimensions}
     if not isinstance(raw, dict) or set(raw) != set(dims):
         got = sorted(raw) if isinstance(raw, dict) else raw
@@ -137,19 +146,17 @@ def _scores(raw: dict, rubric: Rubric) -> dict[str, dict]:
         score = entry.get("score") if isinstance(entry, dict) else None
         conf = entry.get("confidence") if isinstance(entry, dict) else None
         quote = entry.get("evidence") if isinstance(entry, dict) else None
-        d = dims[name]
-        if not _number(score) or not d.low <= score <= d.high:
-            raise GateError(f"{name}: score {score!r} is not on the rubric scale {d.low:g}-{d.high:g}")
+        _check_score(name, score, quote, dims[name])
         if not _number(conf) or not 0 <= conf <= 1:
             raise GateError(f"{name}: confidence {conf!r} is not in 0..1")
-        needs = score >= evidence["score_at_least"] or score <= evidence["score_at_most"]
-        if needs and not (isinstance(quote, str) and quote.strip()):
-            raise GateError(f"{name}: a score of {score:g} needs evidence (a verbatim quote or the failing line)")
         out[name] = {"score": score, "confidence": conf, "evidence": quote if isinstance(quote, str) else ""}
     return out
 
 
-def _synthesis_scores(raw: dict, first: dict, disputed: list[str]) -> dict[str, dict]:
+def _synthesis_scores(raw: dict, first: dict, disputed: list[str], rubric: Rubric) -> dict[str, dict]:
+    """A revised score meets the first round's rules: on the scale, and at an extreme backed by evidence,
+    its own `evidence`, else the first round's, else its `justification`."""
+    dims = {d.name: d for d in rubric.dimensions}
     revised = raw.get("revised_scores")
     if not isinstance(revised, dict):
         raise GateError("a synthesis receipt needs `revised_scores` (the synthesis prompt's output)")
@@ -158,11 +165,13 @@ def _synthesis_scores(raw: dict, first: dict, disputed: list[str]) -> dict[str, 
         raise GateError(f"synthesis may change only the disputed dimensions {disputed}; got {outside}")
     out = json.loads(json.dumps(first["scores"]))
     for name, entry in revised.items():
-        score = entry.get("revised") if isinstance(entry, dict) else None
-        if not _number(score):
-            raise GateError(f"{name}: revised score {score!r} is not a number")
-        out[name] = {**out[name], "score": score,
-                     "justification": entry.get("justification", "") if isinstance(entry, dict) else ""}
+        entry = entry if isinstance(entry, dict) else {}
+        score, why = entry.get("revised"), entry.get("justification")
+        quote = next((q for q in (entry.get("evidence"), out[name].get("evidence"), why)
+                      if isinstance(q, str) and q.strip()), "")
+        _check_score(name, score, quote, dims[name], "revised score")
+        out[name] = {**out[name], "score": score, "evidence": quote,
+                     "justification": why if isinstance(why, str) else ""}
     return out
 
 
@@ -185,7 +194,7 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
         disputed = disputes(current, rubric)
         if not disputed:
             raise GateError("the first round disputed nothing; there is no synthesis round")
-        receipt["scores"] = _synthesis_scores(raw, current[role], disputed)
+        receipt["scores"] = _synthesis_scores(raw, current[role], disputed, rubric)
         recommendation = raw.get("final_recommendation") or current[role]["recommendation"]
         escalate = current[role].get("escalate") if "escalation" not in raw else raw.get("escalation")
     else:

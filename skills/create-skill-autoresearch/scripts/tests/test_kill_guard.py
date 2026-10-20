@@ -43,13 +43,34 @@ ALLOWED = [
     "pid=$(cat work/pids/gate.pid); kill $pid",
     "kill 4242 &\nps -p 4242",
     "echo a & echo b",
-    # A listing and a kill by a variable no listing filled; this hook's own file names.
-    "ps aux | head; kill $PID",
-    "ps aux | grep gate; pid=$(cat work/pids/gate.pid); kill $pid",
+    # A listing and a kill of literal PIDs, nothing kept; this hook's own file names.
+    "ps aux | head; kill 1234",
+    "ps -o pgid= -p 4242; kill -TERM -- -4242",
+    "pgrep -f gate.py\nkill -s KILL 4242 %1",
+    "ps aux | grep gate && sudo kill -9 4242",
     "ps aux | grep kill-guard",
     "ps aux | grep kill_guard",
     "pgrep -f gate > /tmp/p; cat /tmp/p",
+    "pgrep -f gate 2>/dev/null; ps -p 4242 2>&1; kill 4242",
+]
+
+# Round 5: taint lost across renames, copies and redirects. A lister and a kill in one call are blocked unless
+# every kill names literal PIDs and nothing keeps the listing; these were allowed in rounds 2-4.
+LISTING_AND_KILL = [
+    "pgrep -f gate.py > /tmp/a; mv /tmp/a /tmp/b; xargs kill < /tmp/b",
+    "pgrep -f x > f; cp f g; kill $(cat g)",
+    "pgrep -f x > f; kill $(cat f)",
+    "pgrep -f x &> f\nmv f g\nkill `cat g`",
+    "ps aux | awk '{print $2}' > f; sed -n 1p f > g; xargs -a g kill",
+    "pgrep -f x | sort > f; while read p; do kill $p; done < f",
+    "ps aux | head; kill $PID",
+    "ps aux | grep gate; pid=$(cat work/pids/gate.pid); kill $pid",
     "ps aux > /tmp/ps.txt; kill 4242",
+    "pgrep x; cat f | kill 4242",
+    "ps aux; eval kill $(cat f)",
+    "Get-Process node | Out-File p.txt; Get-Content p.txt | Stop-Process",
+    "tasklist > t.txt; taskkill /PID 4242",
+    "$p = Get-Process claude; Stop-Process -Id $pid",
 ]
 
 WINDOWS_ALLOWED = [
@@ -60,7 +81,8 @@ WINDOWS_ALLOWED = [
     "Get-Process -Id 4242",
     'tasklist /FI "IMAGENAME eq python.exe"',
     "kill -n 9 4242",
-    "$p = Get-Process claude; Stop-Process -Id $pid",
+    "Get-Process -Id 4242; Stop-Process -Id 4242 -Force",
+    "tasklist /FI \"PID eq 4242\"; taskkill /PID 4242 /F",
 ]
 
 WINDOWS_BLOCKED = [
@@ -179,6 +201,11 @@ class KillGuardTest(unittest.TestCase):
                 stderr = self.assert_exit(command, 2).stderr
                 self.assertIn("Use scripts/run_owned.py stop <name>; pattern kills hit unrelated processes.", stderr)
 
+    def test_a_listing_and_a_kill_in_one_call_are_blocked_however_the_pids_travel(self) -> None:
+        for command in LISTING_AND_KILL:
+            with self.subTest(command=command):
+                self.assertIn("in a call that lists no processes", self.assert_exit(command, 2).stderr)
+
     def test_quoting_and_whitespace_variants_are_blocked(self) -> None:
         for command in QUOTING_AND_WHITESPACE:
             with self.subTest(command=command):
@@ -244,7 +271,7 @@ class CursorContractTest(unittest.TestCase):
                 self.assertEqual(self.reply(command), {"permission": "allow"})
 
     def test_blocked_and_variant_commands_are_denied_with_the_message_for_both_audiences(self) -> None:
-        for command in BLOCKED + QUOTING_AND_WHITESPACE + WINDOWS_BLOCKED:
+        for command in BLOCKED + QUOTING_AND_WHITESPACE + WINDOWS_BLOCKED + LISTING_AND_KILL:
             with self.subTest(command=command):
                 reply = self.reply(command)
                 self.assertEqual(reply["permission"], "deny")
@@ -370,6 +397,15 @@ class HooksJsonTest(unittest.TestCase):
         self.assertEqual(hook["command"], 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/kill-guard"',
                          "one shell-form string, no args: portable across CLI versions and hosts")
         self.assertNotIn("args", hook)
+
+    def test_both_claude_hooks_fail_open(self) -> None:
+        """Claude Code hooks doc: on Windows without Git Bash, a failing shell-form PreToolUse hook with
+        `onFailure` unset can block the tool call; "continue" lets it through (v2.1.295+)."""
+        config = json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]
+        for event in ("PreToolUse", "Stop"):
+            with self.subTest(event=event):
+                [entry] = config[event]
+                self.assertEqual([h.get("onFailure") for h in entry["hooks"]], ["continue"])
 
     def test_configured_claude_command_executes_and_blocks(self) -> None:
         [hook] = json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"]
