@@ -16,7 +16,9 @@ contracts (references/hosts.md):
 hooks/kill-guard runs it with whichever Python 3 the machine has; OpenCode runs it through
 hooks/opencode-kill-guard.js. Input it cannot read is let through, with {"permission": "allow"} on
 stdout for Cursor's sake: the guard must never stop every shell call. A command that only mentions one
-of these words (a grep for `pkill`) is blocked too; the message says what to run instead.
+of these words (a grep for `pkill`) is blocked too, and so is one call that mentions a lister and a
+`kill` beside any redirect, a heredoc body included: write such files with the editor tool or in a
+separate call. The message says what to run instead.
 
 It is a best-effort tripwire for honest mistakes, not a sandbox: it sees one tool call at a time, so a
 listing written to a file in one call and killed from it in the next passes. run_owned.py and the rule
@@ -27,6 +29,7 @@ separators, for a Windows path such as C:\\Windows\\System32\\taskkill.exe), so 
 `\\pkill` do not hide a kill; the Windows forms also ignore case, PowerShell's backtick and cmd's caret.
 `kill` counts only as a word of its own, never inside `kill-guard`/`kill_guard`. Blocked:
   pkill, killall                              anywhere as a word (any path: /usr/bin/pkill, pkill.exe)
+  fuser -k                                    kills whatever holds a file or port
   taskkill /IM, taskkill /FI                  taskkill by image name or filter (taskkill /PID <n> is allowed)
   Stop-Process -Name, spps -Name, kill -Name  PowerShell kill by name (Stop-Process -Id <n> is allowed)
   wmic process ... delete | call terminate    wmic kill by query
@@ -50,13 +53,13 @@ import sys
 MESSAGE = ("Blocked by create-skill-autoresearch's kill guard. Use scripts/run_owned.py stop <name>; "
            "pattern kills hit unrelated processes. To stop one known process, kill its PID "
            "(kill <pid>, taskkill /PID <pid>, Stop-Process -Id <pid>) in a call that lists no processes.")
-NAME_KILLS = [re.compile(r"\b(?:pkill|killall)\b")] + [re.compile(p, re.IGNORECASE) for p in (
+NAME_KILLS = [re.compile(r"\b(?:pkill|killall)\b"), re.compile(r"\bfuser\b.*\s-\w*k")] + [re.compile(p, re.IGNORECASE) for p in (
     r"taskkill(?:\.exe)?\b.*\s[/-](?:im|fi)\b",
     r"\b(?:stop-process|spps)\b.*\s-(?:n\w*|processname)\b",
     r"\bkill\b.*\s-(?:name|processname)\b",
     r"\bwmic(?:\.exe)?\b.*\bprocess\b.*\b(?:delete|terminate)\b",
 )]
-LISTER = re.compile(r"\b(?:pgrep|pidof|ps|get-process|gps|tasklist|get-ciminstance|gcim|get-wmiobject|gwmi)\b"
+LISTER = re.compile(r"\b(?:pgrep|pidof|lsof|ps|get-process|gps|tasklist|get-ciminstance|gcim|get-wmiobject|gwmi)\b"
                     r"|\bwmic(?:\.exe)?\b.*\bprocess\b", re.IGNORECASE)
 # `kill` as a command word: not `kill-guard` or `kill_guard` (this hook's own files).
 KILLER = re.compile(r"(?<![\w-])kill(?![\w-])"

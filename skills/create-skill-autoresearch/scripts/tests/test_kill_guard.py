@@ -114,6 +114,8 @@ WINDOWS_BLOCKED = [
 ]
 
 BLOCKED = [
+    "lsof -ti :8080 | xargs kill",
+    "fuser -k 8080/tcp",
     "pkill -f gate.py",
     "pkill -9 -f 'claude plugin eval'",
     "killall python3",

@@ -61,8 +61,9 @@ another, giving it only that role's inputs; that keeps the context walls the pan
 `Stop-Process -Name`, and any call holding both a process lister (`pgrep`, `pidof`, `ps`, `Get-Process`, `tasklist`,
 `wmic process`) and a kill, however the PIDs travel (pipe, variable, renamed file). The one exception: every kill
 names literal PIDs and nothing keeps the listing (`ps aux | head; kill 1234` passes; `ps aux > f; kill 4242` and
-`ps aux | head; kill $PID` do not: kill in a call of its own). `taskkill /PID <n>` and `Stop-Process -Id <n>`
-pass. It is a best-effort tripwire for honest mistakes, not a sandbox: it sees one call at a time, so a listing
+`ps aux | head; kill $PID` do not: kill in a call of its own). A redirect counts wherever it is, a heredoc body
+included, so write a file that mentions both words with the editor tool. `fuser -k` and `lsof … | xargs kill` are
+blocked too. `taskkill /PID <n>` and `Stop-Process -Id <n>` pass. It is a best-effort tripwire for honest mistakes, not a sandbox: it sees one call at a time, so a listing
 saved in one call and killed in the next passes. `run_owned.py` and the rule (stop only what you started, by its
 recorded PID) are the contract. The hook configs run it through `hooks/kill-guard`, which picks `python3`,
 `python` or `py -3`; with none, or when the hook fails (`"onFailure": "continue"` on Claude Code), it lets the
