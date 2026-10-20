@@ -305,7 +305,7 @@ factory has not changed since.
 
 The changes from `p-*` to `s-*` are listed under the `s-*` run below.
 
-### After `u-*` (harness `f684797`..`e8df77d`, not re-benchmarked)
+### After `u-*` (harness `f684797`..`8c7f7e2`, not re-benchmarked)
 
 The final review's fixes change how invalid input is rejected, not how a valid build runs, so `u-*` was
 not rerun (user decision). Offline tests, CI on Windows and macOS, and a live kill-guard smoke cover them:
@@ -318,8 +318,15 @@ not rerun (user decision). Offline tests, CI on Windows and macOS, and a live ki
   Windows without Git Bash no longer blocks every tool call.
 - **Docs** (`e8df77d`): the version goes in `metadata.version` across SKILL.md and the references, the
   Windows note says the factory (not Claude Code) needs Git Bash, and the executor echo is labelled a
-  format check.
+  format check. consensus-protocol.md states that `--panel-receipt` checks extreme-score evidence is present,
+  not that it is verbatim; the orchestrator's grep stays the verbatim check.
 - **Benchmark** (`af8cfcb`): the task-2 executor's whole process group is killed on timeout.
+- **Coverage** (workspace): criterion 15's row B13 re-quoted to the `metadata.version` rule;
+  `coverage_rows.py --check` exits 0 and is part of the release verification commands.
+
+The live smoke (`arms/smoke-kill-guard.sh`, Claude Code 2.1.304, haiku) loaded the hooks with
+`onFailure` set, blocked a `pkill` and a `killall`, and ran the next command. Replaying the 48 `u-*` synthesis
+receipts through the new range check rejects none of their 105 revised scores.
 
 ## Release run on `82ec859` (`s-*`, October 2026), superseded by `u-*`
 
