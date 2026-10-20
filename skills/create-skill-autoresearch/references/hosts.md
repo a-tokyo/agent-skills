@@ -142,10 +142,14 @@ script tests in CI (`windows-latest`), not yet by a live build on a Windows host
 - **`claude plugin eval`** (3.6 suite, 5.0 plugin path). Elsewhere the gate runs the manual protocol with no
   `claude` call; `gate.py` picks the path by SKILL.md 3.6's rule: plugin eval only inside Claude Code
   (which sets `$CLAUDECODE`), else manual, even where `claude` is installed, since the build targets its own
-  host's model. `--backend plugin|manual` forces one. **On every host but Claude Code pass `--backend manual`**:
-  a host CLI launched from a Claude Code shell (a benchmark, a nested session) inherits `$CLAUDECODE`, and plugin
-  mode would then run the gate on Claude, not the host's model; `gate.py` warns when plugin mode gets a model id that
-  names no Claude model.
+  host's model. **A Claude Code build never passes `--backend manual`**: `gate.py` picks manual itself where
+  plugin eval cannot run or the skill is user-invoked, and refuses it (exit 3) for a model-invoked skill plugin eval
+  can run, since manual mode there spends a headless session per case, arm and run. **Only another host whose
+  shell inherits `$CLAUDECODE`** (a host CLI launched from a Claude Code shell: a benchmark, a nested session) passes
+  `--backend manual --force-manual "<host>: <why>"`, e.g. `--force-manual "cursor-agent: launched from a Claude
+  Code shell"`; plugin mode would otherwise run the gate on Claude, not the host's model. The reason is logged in
+  `gate.json` (`force_manual`) and data-split.yaml; `gate.py` warns when plugin mode gets a model id that names no
+  Claude model.
 - **skill-creator's description optimizer** (4.6) measures triggering through `claude -p`. Elsewhere revise the
   description by hand against the same eval-set queries and log that no trigger rate was measured.
 - **The reserved words `anthropic`/`claude`** in a skill `name` are a Claude platform rule; the 3.3 checklist

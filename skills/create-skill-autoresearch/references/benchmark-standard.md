@@ -82,7 +82,9 @@ Limits: one task, six skills, two repeats, one model family as executor and judg
 `scripts/gate.py` (SKILL.md 5.0) runs this instead of `claude plugin eval` whenever the build runs outside
 Claude Code (`$CLAUDECODE` unset: another host targets its own model), `claude plugin eval --help` does not
 exit 0, the skill is user-invoked (it never fires through the Skill tool, so plugin eval's with-arm measures
-nothing), or `--backend manual` asks for it. It calls no `claude` command. It runs the
+nothing), or `--backend manual --force-manual "<host>: <why>"` asks for it on another host whose shell inherits
+`$CLAUDECODE` (a Claude Code build never passes `--backend manual`: for a model-invoked skill plugin eval can run,
+`gate.py` refuses it). It calls no `claude` command. It runs the
 gate gold standards on the pinned model:
 
 - **Arms**: *with* gets the shipped `SKILL.md` as its system prompt; *without* gets no system prompt.
@@ -130,6 +132,15 @@ read exactly as plugin eval's Δ:
 ```
 
 `in_sample` is true when the gate cases are also training cases (3-9 gold standards, SKILL.md 4.2).
+
+**The without arm is cached.** It never reads the skill, so a re-gate after a skill edit re-runs only the
+*with* arm. `gate.py` stores each complete without arm in `work/evaluation/baseline-cache/<key>.json`, the key a
+sha256 of the case, model, executor, `run-case.sh`, the case's suite directory and every gate input (gold
+standards, fixtures, scorers, graders): change any of them and the cache misses. A reused case carries
+`"without_cache": {"key": ..., "sha256": ...}` in `uplift.json`; `check_gate.py` recomputes the key, re-hashes
+the entry and compares its scores, failing `stale_baseline` on any mismatch. `gate.py --fresh-baseline` re-runs
+every without arm. Plugin mode caches nothing: `claude plugin eval --ablation` offers `none` or
+`with-without`, no without-only arm.
 
 ## Score by executing, not by reading
 

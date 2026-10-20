@@ -47,12 +47,15 @@ DATA_SPLIT = EVAL_DIR / "data-split.yaml"
 RUN_CASE = EVAL_DIR / "run-case.sh"
 PLUGIN_DIR = EVAL_DIR / "plugin"
 GATE_ATTEMPTS = EVAL_DIR / "gate-attempts.jsonl"
+BASELINE_CACHE = EVAL_DIR / "baseline-cache"
 REQUIRED_RUNS = 3
 # Hashed elsewhere (run-case.sh, data-split.yaml) or written by the gate itself: its records, the skill
-# copy it refreshes into the wrapper plugin before each run, and what claude plugin eval writes there.
+# copy it refreshes into the wrapper plugin before each run, what claude plugin eval writes there, and
+# the manual protocol's cached without-skill arms (check_gate.py validates those against their keys).
 _NOT_INPUTS = {p.as_posix() for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_RECORD, DATA_SPLIT, RUN_CASE,
                                       GATE_ATTEMPTS)}
-_GENERATED_DIRS = tuple(f"{d.as_posix()}/" for d in (PLUGIN_DIR / "skills", PLUGIN_DIR / "evals" / "results"))
+_GENERATED_DIRS = tuple(f"{d.as_posix()}/" for d in (PLUGIN_DIR / "skills", PLUGIN_DIR / "evals" / "results",
+                                                      BASELINE_CACHE))
 
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
 # SKILL.md 4.2: from this many gold standards the split holds out a test set; below it, leave-one-out.
@@ -61,6 +64,7 @@ _GATE_KEYS = ("plugin_eval", "plugin_eval_available")
 _TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
 _INT = re.compile(r"^-?\d+$")
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
+BASELINE_KEY = re.compile(r"[0-9a-f]{64}")
 
 
 class GateError(Exception):
@@ -370,8 +374,8 @@ def inputs_sha256(workspace: Path) -> dict[str, str]:
     everything under work/evaluation/ — scorers, rubrics, fixtures, golden files and the wrapper plugin
     (its manifest, shared mocks and case files). Skipped there: run-case.sh (hashed on its own),
     data-split.yaml (cases_sha256 covers plugin_eval, split_sha256 the splits), what the gate writes (gate.json, the artifacts,
-    gate-attempts.jsonl, *.prev.json, *.tmp), plugin/skills/ (refreshed from output/<skill>/, which the
-    skill hash covers) and plugin/evals/results/ (claude plugin eval's own output)."""
+    gate-attempts.jsonl, baseline-cache/, *.prev.json, *.tmp), plugin/skills/ (refreshed from output/<skill>/,
+    which the skill hash covers) and plugin/evals/results/ (claude plugin eval's own output)."""
     found = {}
     for root in (workspace / "input", workspace / EVAL_DIR):
         if root.is_dir():
@@ -379,6 +383,37 @@ def inputs_sha256(workspace: Path) -> dict[str, str]:
                 if _hashed(path, root) and _gate_input(path, workspace):
                     found[path.relative_to(workspace).as_posix()] = file_sha256(path)
     return dict(sorted(found.items()))
+
+
+def baseline_key(workspace: Path, case: str, model: str, executor: str, inputs: dict[str, str] | None = None) -> str:
+    """sha256 of everything a manual-protocol without-skill run depends on: the case, the pinned model and
+    executor, run-case.sh, the case's suite directory and every gate input (inputs_sha256: the gold
+    standards, fixtures, scorers and graders). The skill is not in it: the bare arm never reads it."""
+    canonical = {"case": case, "model": model, "executor": executor,
+                 "run_case": file_sha256(workspace / RUN_CASE),
+                 "suite": tree_sha256(workspace / PLUGIN_DIR / "evals" / case),
+                 "inputs": inputs_sha256(workspace) if inputs is None else inputs}
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
+
+
+def baseline_path(workspace: Path, key: str) -> Path:
+    if not BASELINE_KEY.fullmatch(key):
+        raise GateError(f"baseline key {key!r} is not a sha256")
+    return workspace / BASELINE_CACHE / f"{key}.json"
+
+
+def read_baseline(workspace: Path, key: str, runs: int) -> list[float] | None:
+    """The without-skill scores cached under `key` when the entry is well formed, names that key and holds
+    exactly `runs` scores in 0..1; else None."""
+    try:
+        entry = json.loads(baseline_path(workspace, key).read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return None
+    scores = entry.get("runs") if isinstance(entry, dict) else None
+    if (not isinstance(entry, dict) or entry.get("key") != key or not isinstance(scores, list) or len(scores) != runs
+            or not all(isinstance(s, (int, float)) and not isinstance(s, bool) and 0 <= s <= 1 for s in scores)):
+        return None
+    return [float(s) for s in scores]
 
 
 def log_attempt(workspace: Path, step: str, error: str | None = None) -> None:

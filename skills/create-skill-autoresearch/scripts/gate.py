@@ -3,12 +3,19 @@
 
 The gate runs as the owned job `gate` (run_owned.py; record and log in work/pids/), whether you
 start it with this script or with `run_owned.py start gate -- python3 gate.py ...`. A full gate can
-take over an hour, longer than an agent's shell call waits, so start it detached and poll:
+take over an hour, longer than an agent's shell call waits, so start it detached, then block on it:
 
-    gate.py --detach --model <model> [options]          # starts the job, prints how to poll
-    run_owned.py wait gate --timeout 540                # repeat until it exits; its exit code is the gate's
+    gate.py --detach --model <model> [options]          # starts the job, prints how to wait for it
+    gate.py --wait [--wait-timeout 540]                 # blocks; 124 = still running: call --wait again
     gate.py --restart --model <model> [options]         # stops only the recorded `gate` group, starts it detached
     gate.py --stop                                      # stops it (and the eval runs it started)
+
+--wait blocks on the recorded `gate` job for up to --wait-timeout seconds (default 540, under the 600 s a
+Claude Code shell call may wait) and never starts one; with --detach or --restart it starts the gate first,
+then blocks. When the gate has finished it prints the gate's log and exits with the gate's exit code (an
+already finished gate returns at once). At the timeout it prints one progress line (elapsed time and the
+log's last line) and exits 124: call --wait again rather than polling `run_owned.py status`. Exit 3: no
+`gate` job is recorded; 125: the job ended without recording an exit status.
 
 Without --detach it starts the job and waits for it (for humans at a terminal). If that call is cut
 off, the job keeps running. A second start while a `gate` job is live is refused. --detach and
@@ -20,7 +27,10 @@ Mode (--backend): `plugin` runs Claude Code's `claude plugin eval` and needs it 
 model-invoked skill; `manual` runs run-case.sh and never calls `claude`. The default is `plugin` only
 when the build runs inside Claude Code ($CLAUDECODE is set), the skill is model-invoked and the probe
 exits 0, else `manual`: a build on another host targets that host's model, which plugin eval cannot run,
-even when `claude` is installed. The case list is never typed by hand: `gate.py record` (3.6) writes `plugin_eval` and
+even when `claude` is installed. Inside Claude Code, `--backend manual` on a model-invoked skill that plugin
+eval can run is refused (exit 3): it costs a headless session per case, arm and run. Only a build on another
+host whose shell inherits $CLAUDECODE passes `--backend manual --force-manual "<host>: <reason>"`; the reason
+is logged in gate.json (`force_manual`) and data-split.yaml. The case list is never typed by hand: `gate.py record` (3.6) writes `plugin_eval` and
 `plugin_eval_available` into work/evaluation/data-split.yaml from disk, and every gate run records
 again before it starts, so the list always matches what runs:
 
@@ -30,7 +40,8 @@ again before it starts, so the list always matches what runs:
   manual  the gate gold standards from the split: `test` with 10 or more gold standards, every gold
           standard with 3-9 (a `test` split there is an error); run-case.sh gets each entry as its <case>
 
-    gate.py record [--workspace DIR] [--skill NAME] [--backend plugin|manual]   # exit 0 recorded, 3 precondition missing
+    gate.py record [--workspace DIR] [--skill NAME] [--backend plugin|manual [--force-manual REASON]]
+                                    # exit 0 recorded, 3 precondition missing
 
 Each eval run goes in its own owned process group, stopped on timeout.
 
@@ -39,7 +50,12 @@ Each eval run goes in its own owned process group, stopped on timeout.
   manual  call work/evaluation/run-case.sh <case> <with|without> --runs times per arm per case;
           it prints EXECUTOR=$GATE_EXECUTOR and SCORE=<0..1> (the last of each counts; a run without the
           --executor it was given fails) -> work/evaluation/uplift.json
-          (a failed run is retried once; a second failure leaves the artifact partial)
+          (a failed run is retried once; a second failure leaves the artifact partial). A complete
+          without-skill arm is cached in work/evaluation/baseline-cache/<key>.json, the key a sha256 of the
+          case, model, executor, run-case.sh, the case's suite directory and every gate input (not the
+          skill, which the bare arm never reads); a later gate reuses it, recording the key and file hash
+          per case in uplift.json for check_gate.py, unless --fresh-baseline. Plugin mode caches nothing:
+          `claude plugin eval --ablation` offers none | with-without, no without-only arm.
 
 At the start it records the mode, the probe's exit code and sha256 hashes of output/<skill>/, the case set,
 the data-split.yaml splits, run-case.sh and the scorer and fixture files (gate_common.inputs_sha256) in
@@ -49,8 +65,9 @@ changes. It moves a previous artifact
 aside to <name>.prev.json before running so a stale file can never pass, ends by running
 check_gate.py, and writes nothing outside work/evaluation/ and work/pids/.
 
-    gate.py --model <model> [--workspace DIR] [--skill NAME] [--backend plugin|manual] [--runs 3] [--jobs 4]
-            [--allow-tools Bash Write] [--in-sample] [--executor single-call|agentic]
+    gate.py --model <model> [--workspace DIR] [--skill NAME] [--backend plugin|manual [--force-manual REASON]]
+            [--runs 3] [--jobs 4]
+            [--allow-tools Bash Write] [--in-sample] [--executor single-call|agentic] [--fresh-baseline]
             [--timeout 5400] [--case-timeout 1200] [--detach] [--restart]
     gate.py --stop [--workspace DIR]
 
@@ -60,12 +77,14 @@ default Git install; WSL's bash.exe is skipped). Tested on macOS, Linux and Wind
 
 Exit codes: 0 complete and valid (--detach, --restart, --stop: started or stopped); 1 the gate ran but the artifact is
 missing, partial or invalid (the message says why); 2 usage error; 3 a precondition is missing
-(suite, cases, run-case.sh) or a `gate` job is already running; 143 the gate was stopped.
+(suite, cases, run-case.sh), a `gate` job is already running, or (--wait) none is recorded; 124 (--wait) still
+running at --wait-timeout; 125 (--wait) the job ended without an exit status; 143 the gate was stopped.
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import shutil
@@ -85,9 +104,9 @@ sys.dont_write_bytecode = True
 import check_gate  # noqa: E402  (sibling imports after disabling bytecode)
 import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
-    DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
-    GateError, cases_sha256, check_skill_name, file_sha256, inputs_sha256, model_invoked, omitted_gold,
-    read_data_split, resolve_skill,
+    BASELINE_CACHE, DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
+    GateError, baseline_key, baseline_path, cases_sha256, check_skill_name, file_sha256, inputs_sha256,
+    model_invoked, omitted_gold, read_baseline, read_data_split, resolve_skill,
     log_attempt, skill_sha256, split_sha256, utf8_stdio, write_gate_cases, write_json,
 )
 
@@ -103,9 +122,9 @@ POLL_SECONDS = 0.5
 STOP_GRACE = 30
 # An eval run's time to exit after TERM before KILL; a run being stopped only needs to flush its log.
 CHILD_GRACE = 10
-# The suggested `run_owned.py wait` timeout: under the 600 s a Claude Code Bash call may wait, so a poll
-# returns (exit 124) before the host cuts the call off.
-WAIT_HINT_SECONDS = 540
+# The default --wait timeout: under the 600 s a Claude Code Bash call may wait, so --wait returns
+# (exit 124) before the host cuts the call off.
+WAIT_SECONDS = 540
 SCORE_RE = re.compile(r"^SCORE=(\S+)\s*$", re.MULTILINE)
 EXECUTOR_RE = re.compile(r"^EXECUTOR=(\S+)\s*$", re.MULTILINE)
 # Plugin eval runs Claude models only; a model id naming none of these is likely another host's.
@@ -251,10 +270,22 @@ def default_backend() -> str:
     return "plugin" if os.environ.get("CLAUDECODE") else "manual"
 
 
-def pick_mode(invoked: bool, backend: str | None) -> tuple[str, int | str, str]:
+def pick_mode(invoked: bool, backend: str | None, force_manual: str | None = None) -> tuple[str, int | str, str]:
     """(mode, probe exit code or NOT_PROBED, why) for the --backend asked for (None: default_backend).
-    Raises GateError when --backend plugin is asked for and cannot run."""
+    Raises GateError when --backend plugin is asked for and cannot run, and when --backend manual is asked
+    for inside Claude Code on a model-invoked skill that plugin eval can run, unless --force-manual gives
+    a reason: there the manual protocol only costs more (a headless session per case, arm and run)."""
     asked = backend or default_backend()
+    if asked == "manual" and force_manual:
+        return "manual", NOT_PROBED, f"--backend manual --force-manual \"{force_manual}\"; claude not probed"
+    if asked == "manual" and backend and invoked and os.environ.get("CLAUDECODE"):
+        available = probe_plugin_eval()
+        if available == 0:
+            raise GateError("--backend manual inside Claude Code: this skill is model-invoked and `claude plugin "
+                            "eval` runs, so the gate is plugin mode; drop --backend manual. Only a build on "
+                            "another host whose shell inherits $CLAUDECODE passes --backend manual --force-manual "
+                            "\"<that host>: <why>\" (logged in gate.json and data-split.yaml)")
+        return "manual", available, "--backend manual: exit code of `claude plugin eval --help`"
     if asked == "manual":
         why = "--backend manual" if backend else "not inside Claude Code ($CLAUDECODE unset)"
         return "manual", NOT_PROBED, f"{why}: the manual protocol, claude not probed"
@@ -268,12 +299,13 @@ def pick_mode(invoked: bool, backend: str | None) -> tuple[str, int | str, str]:
     return ("plugin" if available == 0 else "manual"), available, "exit code of `claude plugin eval --help`"
 
 
-def record_cases(ws: Path, skill: str, backend: str | None = None) -> tuple[list[str], str, int | str, bool]:
+def record_cases(ws: Path, skill: str, backend: str | None = None,
+                 force_manual: str | None = None) -> tuple[list[str], str, int | str, bool]:
     """Write the gate's case list into data-split.yaml from what is on disk: (cases, mode, probe exit
     code, model-invoked). Plugin mode lists the suite's case directories after a load check; manual mode
     lists the gate gold standards from the split (3.6) and never calls `claude`."""
     invoked = model_invoked(ws / "output" / skill / "SKILL.md")
-    mode, available, why = pick_mode(invoked, backend)
+    mode, available, why = pick_mode(invoked, backend, force_manual)
     if mode == "plugin":
         cases, source = suite_cases(ws), (PLUGIN_DIR / "evals").as_posix()
         load_check(ws)
@@ -367,13 +399,14 @@ def preconditions(ws: Path, args: argparse.Namespace) -> tuple[str, list[str], s
     Re-records the case list from disk first, so the gate never runs a hand-edited list. Raises
     GateError naming the first missing piece."""
     skill = resolve_skill(ws, args.skill)
-    cases, mode, available, invoked = record_cases(ws, skill, args.backend)
+    cases, mode, available, invoked = record_cases(ws, skill, args.backend, args.force_manual)
     check_scaffolds(ws, cases)
     if mode == "manual":
         check_adapter(ws, args)
     elif not CLAUDE_MODEL_RE.search(args.model or ""):
         print(f"gate: warning: plugin mode runs Claude models, and --model {args.model!r} names none; a build on "
-              "another host (launched from Claude Code, which exports $CLAUDECODE) passes --backend manual",
+              "another host (launched from Claude Code, which exports $CLAUDECODE) passes --backend manual "
+              "--force-manual '<host>: <reason>'",
               file=sys.stderr)
     return skill, cases, mode, available, invoked
 
@@ -452,9 +485,21 @@ def _one_run(ws: Path, idx: int, case: str, arm: str, run: int, args: argparse.N
     return RunResult(case, arm, run, None, error, log)
 
 
-def run_manual(ws: Path, cases: list[str], args: argparse.Namespace) -> None:
+def run_manual(ws: Path, cases: list[str], args: argparse.Namespace,
+               inputs: dict[str, str]) -> dict[str, tuple[str, list[float]]]:
+    """Run every case's arms and write uplift.json. A without-skill arm cached under the case's
+    baseline_key (same case, model, executor, run-case.sh, suite and gate inputs) is reused unless
+    --fresh-baseline, and the artifact records the entry's key and hash. Returns the complete fresh
+    without-skill arms by case, (key, scores), for run_gate to cache once the inputs are unchanged."""
+    keys = {case: baseline_key(ws, case, args.model, args.executor, inputs) for case in cases}
+    cached = {} if args.fresh_baseline else {
+        case: scores for case in cases if (scores := read_baseline(ws, keys[case], args.runs)) is not None}
+    if cached:
+        print(f"gate: reusing the cached without-skill arm for {len(cached)} of {len(cases)} cases "
+              f"({BASELINE_CACHE.as_posix()}/; --fresh-baseline re-runs them)", file=sys.stderr)
     jobs = [(i, case, arm, run) for i, case in enumerate(cases)
-            for arm in ("with", "without") for run in range(1, args.runs + 1)]
+            for arm in ("with", "without") for run in range(1, args.runs + 1)
+            if not (arm == "without" and case in cached)]
     with ThreadPoolExecutor(max_workers=args.jobs) as pool:
         futures = [pool.submit(_one_run, ws, *job, args) for job in jobs]
         pending = set(futures)
@@ -464,17 +509,22 @@ def run_manual(ws: Path, cases: list[str], args: argparse.Namespace) -> None:
         raise GateStopped()
     results = [f.result() for f in futures]
 
-    out_cases, errors = [], []
+    out_cases, errors, fresh = [], [], {}
     for case in cases:
-        arms = {}
+        arms, entry = {}, {"case": case}
         for arm in ("with", "without"):
             mine = sorted((r for r in results if r.case == case and r.arm == arm), key=lambda r: r.run)
             arms[arm] = [r.score for r in mine if r.score is not None]
             errors += [{"case": case, "arm": arm, "run": r.run, "error": r.error, "log": r.log}
                        for r in mine if r.error]
+        if case in cached:
+            arms["without"] = cached[case]
+            entry["without_cache"] = {"key": keys[case], "sha256": file_sha256(baseline_path(ws, keys[case]))}
+        elif len(arms["without"]) == args.runs:
+            fresh[case] = (keys[case], arms["without"])
         delta = (round(sum(arms["with"]) / len(arms["with"]) - sum(arms["without"]) / len(arms["without"]), 4)
                  if arms["with"] and arms["without"] else None)
-        out_cases.append({"case": case, "with": arms["with"], "without": arms["without"], "delta": delta})
+        out_cases.append({**entry, "with": arms["with"], "without": arms["without"], "delta": delta})
 
     def mean_of(arm: str) -> float | None:
         scores = [s for c in out_cases for s in c[arm]]
@@ -494,6 +544,15 @@ def run_manual(ws: Path, cases: list[str], args: argparse.Namespace) -> None:
     })
     for err in errors:
         print(f"gate: {err['case']} {err['arm']} run {err['run']}: {err['error']} (log {err['log']})", file=sys.stderr)
+    return fresh
+
+
+def cache_baselines(ws: Path, fresh: dict[str, tuple[str, list[float]]], args: argparse.Namespace) -> None:
+    for case, (key, scores) in fresh.items():
+        path = baseline_path(ws, key)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        write_json(path, {"key": key, "case": case, "model": args.model, "executor": args.executor,
+                          "runs": scores, "written": _now()})
 
 
 def _watch_stop_file() -> None:
@@ -519,7 +578,8 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         skill, cases, mode, available, invoked = preconditions(ws, args)
         artifact = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         record = {"mode": mode, "backend": args.backend or default_backend(), "plugin_eval_available": available,
-                  "model_invoked": invoked, "skill": skill,
+                  "model_invoked": invoked, "force_manual": args.force_manual,
+                  "fresh_baseline": args.fresh_baseline, "skill": skill,
                   "model": args.model, "runs": args.runs, "in_sample": args.in_sample, "executor": args.executor,
                   "cases": cases, "artifact": artifact.as_posix(), **_input_hashes(ws, skill, cases),
                   "started": _now(), "finished": None}
@@ -528,10 +588,11 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         print(f"gate: mode={mode} (plugin eval probe exit {available}, model-invoked={invoked}), "
               f"{len(cases)} cases x {args.runs} runs per arm", file=sys.stderr)
         log_attempt(ws, "gate")
+        fresh = {}
         if mode == "plugin":
             run_plugin(ws, skill, args)
         else:
-            run_manual(ws, cases, args)
+            fresh = run_manual(ws, cases, args, record["inputs_sha256"])
     except GateError as exc:
         log_attempt(ws, "gate", str(exc))
         print(f"gate: {exc}", file=sys.stderr)
@@ -549,6 +610,7 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         print(f"gate: GATE INVALID: gate inputs changed while the gate ran ({', '.join(changed)}); gate.json records "
               "no finished run; re-run 5.0 without editing the workspace meanwhile", file=sys.stderr)
         return EXIT_INVALID
+    cache_baselines(ws, fresh, args)
     record |= {"artifact_sha256": file_sha256(ws / artifact), "finished": _now()}
     write_json(ws / GATE_RECORD, record)
     verdict = check_gate.validate(ws, skill)
@@ -590,8 +652,12 @@ def _job_argv(ws: Path, args: argparse.Namespace) -> list[str]:
         argv += ["--skill", args.skill]
     if args.backend:
         argv += ["--backend", args.backend]
+    if args.force_manual:
+        argv += ["--force-manual", args.force_manual]
     if args.in_sample:
         argv.append("--in-sample")
+    if args.fresh_baseline:
+        argv.append("--fresh-baseline")
     if args.executor:
         argv += ["--executor", args.executor]
     return argv
@@ -601,7 +667,45 @@ PYTHON = f'"{sys.executable}"' if os.name == "nt" else "python3"
 
 
 def _wait_hint(ws: Path) -> str:
-    return f"{PYTHON} {SCRIPTS / 'run_owned.py'} --workspace {ws} wait {JOB} --timeout {WAIT_HINT_SECONDS}"
+    return f"{PYTHON} {SCRIPTS / 'gate.py'} --workspace {ws} --wait"
+
+
+def _elapsed(started: str) -> str:
+    try:
+        seconds = int((datetime.now(timezone.utc) - datetime.fromisoformat(started)).total_seconds())
+    except (TypeError, ValueError):
+        return "an unknown time"
+    return f"{seconds // 3600}h{seconds // 60 % 60:02d}m" if seconds >= 3600 else f"{seconds // 60}m{seconds % 60:02d}s"
+
+
+def _last_line(log: str) -> str:
+    try:
+        lines = [line for line in Path(log).read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()]
+    except OSError:
+        return ""
+    return lines[-1].strip() if lines else ""
+
+
+def wait_gate(ws: Path, timeout: float, proc: subprocess.Popen | None = None) -> int:
+    """Block on the recorded `gate` job for up to `timeout` seconds. Finished: print its log, return its exit
+    code. Still running: print one progress line, return 124. No job recorded: 3."""
+    sdir = run_owned.state_dir(ws)
+    try:
+        rec = run_owned.load(sdir, JOB)
+    except run_owned.OwnedError:
+        print(f"gate: no `{JOB}` job is recorded; start one with {PYTHON} {SCRIPTS / 'gate.py'} --detach "
+              "--model <model> [options]", file=sys.stderr)
+        return EXIT_PRECONDITION
+    rc = run_owned.wait(sdir, JOB, timeout=timeout, proc=proc)
+    if rc == run_owned.EXIT_TIMEOUT:
+        last = _last_line(rec.log)
+        print(f"gate: still running after {_elapsed(rec.started)}{f' (last: {last})' if last else ''}; call --wait "
+              f"again (exit 124), not run_owned.py status: {_wait_hint(ws)}", file=sys.stderr)
+        return rc
+    sys.stdout.write(Path(rec.log).read_text(encoding="utf-8", errors="replace"))
+    if rc == run_owned.EXIT_NO_STATUS:
+        print(f"gate: the `{JOB}` job ended without recording an exit status; see {rec.log}", file=sys.stderr)
+    return rc
 
 
 def _stop(sdir: Path) -> int:
@@ -618,7 +722,7 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     live = _running(sdir)
     if live and not args.restart:
         print(f"gate: a `{JOB}` job is already running (pgid {live['pgid']}, log {live['log']}).\n"
-              f"  poll it:   {_wait_hint(ws)}\n"
+              f"  wait:      {_wait_hint(ws)}\n"
               f"  restart:   {PYTHON} {SCRIPTS / 'gate.py'} --restart <the same options>", file=sys.stderr)
         return EXIT_PRECONDITION
     try:
@@ -636,8 +740,11 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     rec = run_owned.load(sdir, JOB)
     log = rec.log
     print(f"gate: started as owned job `{JOB}` (pgid {rec.pgid}); log {log}", file=sys.stderr)
+    if args.wait:
+        return wait_gate(ws, args.wait_timeout, proc)
     if args.detach or args.restart:
-        print(f"gate: poll until it exits (its exit code is the gate's):\n  {_wait_hint(ws)}", file=sys.stderr)
+        print(f"gate: block until it exits (its exit code is the gate's; 124: call it again):\n  {_wait_hint(ws)}",
+              file=sys.stderr)
         return 0
     print(f"gate: waiting; if this call is cut off the gate keeps running: {_wait_hint(ws)}", file=sys.stderr)
     try:
@@ -649,9 +756,9 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     return rc
 
 
-def record(ws: Path, skill: str | None, backend: str | None) -> int:
+def record(ws: Path, skill: str | None, backend: str | None, force_manual: str | None) -> int:
     try:
-        cases, mode, available, _ = record_cases(ws, resolve_skill(ws, skill), backend)
+        cases, mode, available, _ = record_cases(ws, resolve_skill(ws, skill), backend, force_manual)
     except GateError as exc:
         log_attempt(ws, "record", str(exc))
         print(f"gate: {exc}", file=sys.stderr)
@@ -672,6 +779,10 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--backend", choices=["plugin", "manual"],
                         help="plugin: claude plugin eval (Claude Code); manual: run-case.sh (default: plugin "
                              "inside Claude Code when it can run, else manual)")
+    parser.add_argument("--force-manual", metavar="'<host>: <reason>'",
+                        help="with --backend manual: run it inside Claude Code on a model-invoked skill plugin eval "
+                             "could run (another host whose shell inherits $CLAUDECODE); logged in gate.json and "
+                             "data-split.yaml")
     parser.add_argument("--model", help="the model the skill targets (pinned for both arms; required unless --stop)")
     parser.add_argument("--runs", type=int, default=REQUIRED_RUNS,
                         help=f"runs per arm per case (default {REQUIRED_RUNS}; check_gate requires {REQUIRED_RUNS})")
@@ -682,23 +793,41 @@ def main(argv: list[str] | None = None) -> int:
                         help="the gate cases are also training cases (3-9 gold standards)")
     parser.add_argument("--executor", choices=["single-call", "agentic"],
                         help="manual mode: how run-case.sh executes the skill (required there)")
+    parser.add_argument("--fresh-baseline", action="store_true",
+                        help="manual mode: re-run every without-skill arm instead of reusing work/evaluation/"
+                             "baseline-cache/")
     parser.add_argument("--timeout", type=float, default=EVAL_TIMEOUT,
                         help=f"plugin mode: seconds for the whole eval (default {EVAL_TIMEOUT})")
     parser.add_argument("--case-timeout", type=float, default=CASE_TIMEOUT,
                         help=f"manual mode: seconds per run (default {CASE_TIMEOUT})")
-    parser.add_argument("--detach", action="store_true", help="start the `gate` job and return; poll with run_owned.py wait")
+    parser.add_argument("--detach", action="store_true", help="start the `gate` job and return; then block with --wait")
     parser.add_argument("--restart", action="store_true",
                         help="stop the recorded `gate` job, then start a new one detached")
     parser.add_argument("--stop", action="store_true", help="stop the recorded `gate` job and its eval runs")
+    parser.add_argument("--wait", action="store_true",
+                        help="block on the recorded `gate` job (after starting it, with --detach or --restart); "
+                             "exit 124 while it still runs: call --wait again")
+    parser.add_argument("--wait-timeout", type=float, default=WAIT_SECONDS,
+                        help=f"--wait: seconds to block before exiting 124 (default {WAIT_SECONDS}, under a "
+                             "600 s shell-call limit)")
     args = parser.parse_args(argv)
+    if args.force_manual is not None:
+        host, _, reason = " ".join(args.force_manual.split()).partition(":")
+        if args.backend != "manual" or not host.strip() or not reason.strip():
+            parser.error("--force-manual goes with --backend manual and names the host and why: "
+                         "--force-manual '<host>: <reason>'")
+        args.force_manual = f"{host.strip()}: {reason.strip()}"
     if args.command == "record":
-        if args.stop or args.detach or args.restart:
-            parser.error("record takes no --stop, --detach or --restart")
-        return record(args.workspace.resolve(), args.skill, args.backend)
-    if args.stop and (args.detach or args.restart):
-        parser.error("--stop takes no --detach or --restart")
-    if not args.stop and not args.model:
-        parser.error("--model is required (except with --stop)")
+        if args.stop or args.detach or args.restart or args.wait:
+            parser.error("record takes no --stop, --detach, --restart or --wait")
+        return record(args.workspace.resolve(), args.skill, args.backend, args.force_manual)
+    if args.stop and (args.detach or args.restart or args.wait):
+        parser.error("--stop takes no --detach, --restart or --wait")
+    if args.wait_timeout <= 0:
+        parser.error("--wait-timeout must be > 0")
+    bare_wait = args.wait and not (args.detach or args.restart)
+    if not (args.stop or bare_wait) and not args.model:
+        parser.error("--model is required (except with --stop or a bare --wait)")
     if args.runs < 1 or not 1 <= args.jobs <= 8:
         parser.error("--runs must be >= 1 and --jobs 1-8")
 
@@ -706,6 +835,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.stop:
             return _stop(run_owned.state_dir(ws))
+        if bare_wait:
+            return wait_gate(ws, args.wait_timeout)
         if _inside_gate_job(ws):
             return run_gate(ws, args)
         return supervise(ws, args)

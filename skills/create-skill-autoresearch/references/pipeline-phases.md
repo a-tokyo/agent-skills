@@ -387,11 +387,11 @@ arm: both
 
 `scripts/gate.py` is the only writer of the gate artifact, and it always runs as the owned job `gate`. A
 full gate can take over an hour (default plugin-eval timeout 90 minutes), longer than any agent shell call
-waits, so an agent starts it detached and polls with short calls:
+waits, so an agent starts it detached, then blocks on it with `--wait` instead of polling its status:
 
 ```bash
 python3 <skill-dir>/scripts/gate.py --detach --model <model> …       # or: run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py --model <model> …
-python3 <skill-dir>/scripts/run_owned.py wait gate --timeout 540      # exits 124 while it runs; repeat until it exits with the gate's code
+python3 <skill-dir>/scripts/gate.py --wait [--wait-timeout 540]      # blocks; exits 124 while it runs (call it again), then with the gate's code
 ```
 
 A second start while the job is live is refused with these commands. `--detach` and `--restart` first check

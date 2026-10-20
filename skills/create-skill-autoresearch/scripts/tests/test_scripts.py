@@ -229,7 +229,10 @@ class TempWorkspace(unittest.TestCase):
             (plugin / "evals" / case / "prompt.md").write_text(f"Do {case}.\n", encoding="utf-8")
 
     def write_adapter(self, body: str = SCORING_ADAPTER) -> None:
-        adapter = self.ws / "work" / "evaluation" / "run-case.sh"
+        self.write_adapter_to(self.ws, body)
+
+    def write_adapter_to(self, ws: Path, body: str = SCORING_ADAPTER) -> None:
+        adapter = ws / "work" / "evaluation" / "run-case.sh"
         adapter.write_text(body)
         adapter.chmod(0o755)
 
@@ -960,7 +963,7 @@ class GateLifecycleTest(TempWorkspace):
     def detach(self, ws: Path | None = None) -> dict:
         out = self.run_script("gate.py", "--detach", "--model", "m", ws=ws, FAKE_MODE="hang")
         self.assertEqual(out.returncode, 0, out.stderr)
-        self.assertIn("wait gate --timeout 540", out.stderr)
+        self.assertRegex(out.stderr, r"gate\.py --workspace \S+ --wait")
         self.assertTrue(_until(lambda: ((ws or self.ws) / "work" / "pids" / "gate-plugin-eval.json").is_file()))
         return self.record("gate", ws)
 
@@ -974,7 +977,7 @@ class GateLifecycleTest(TempWorkspace):
             out = self.run_script("gate.py", "--model", "m", FAKE_MODE="hang")
             self.assertEqual(out.returncode, 3)
             self.assertIn("already running", out.stderr)
-            self.assertIn("wait gate --timeout 540", out.stderr)
+            self.assertRegex(out.stderr, r"gate\.py --workspace \S+ --wait")
             self.assertIn("--restart", out.stderr)
             self.assertEqual(self.record("gate")["pid"], gate["pid"], "the running gate's record is untouched")
             poll = self.run_script("run_owned.py", "wait", "gate", "--timeout", "0.2")
@@ -1066,6 +1069,42 @@ class GateLifecycleTest(TempWorkspace):
         finally:
             self.stop()
 
+    def test_wait_blocks_then_prints_one_progress_line_and_exits_124(self) -> None:
+        self.make_build(self.CASES)
+        self.detach()
+        try:
+            started = time.monotonic()
+            out = self.run_script("gate.py", "--wait", "--wait-timeout", "1")
+            self.assertGreaterEqual(time.monotonic() - started, 1)
+            self.assertEqual(out.returncode, 124, out.stderr)
+            self.assertEqual(len(out.stderr.strip().splitlines()), 1, out.stderr)
+            self.assertIn("still running after", out.stderr)
+            self.assertIn("call --wait again", out.stderr)
+            self.assertEqual(out.stdout, "")
+        finally:
+            self.stop()
+
+    def test_wait_returns_the_gate_exit_code_and_its_log(self) -> None:
+        self.make_build(["input-01"], invoked=False)
+        self.write_adapter()
+        out = self.run_script("gate.py", "--detach", "--wait", "--model", "m", "--executor", "single-call")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("GATE VALID", out.stdout)
+        again = self.run_script("gate.py", "--wait", "--wait-timeout", "1")
+        self.assertEqual(again.returncode, 0, "a finished gate returns its exit code at once")
+        self.assertIn("GATE VALID", again.stdout)
+        self.write_adapter(SCORING_ADAPTER.replace('echo "EXECUTOR=$GATE_EXECUTOR"', ""))
+        out = self.run_script("gate.py", "--detach", "--wait", "--model", "m", "--executor", "single-call")
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("GATE INVALID", out.stdout)
+
+    def test_wait_without_a_gate_or_with_bad_options(self) -> None:
+        out = self.run_script("gate.py", "--wait")
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("no `gate` job is recorded", out.stderr)
+        for args in (["--wait", "--stop"], ["--wait", "--wait-timeout", "0"], ["record", "--wait"]):
+            self.assertEqual(self.run_script("gate.py", *args).returncode, 2, args)
+
     def test_stop_without_a_gate_is_a_no_op(self) -> None:
         out = self.run_script("gate.py", "--stop")
         self.assertEqual(out.returncode, 0)
@@ -1130,13 +1169,61 @@ class GateManualTest(TempWorkspace):
                          ("manual", "manual"))
         self.assertFalse(self.argv_log.exists(), "the other host's model id never reached claude")
 
-    def test_backend_manual_inside_claude_code_never_calls_claude(self) -> None:
+    def test_backend_manual_inside_claude_code_is_refused_without_force_manual(self) -> None:
         self.make_build(["gold-01"], invoked=True, manual=True)
         self.write_adapter()
-        out = self.run_script("gate.py", "--backend", "manual", "--model", "m", "--executor", "agentic")
+        for args in (["record", "--backend", "manual"],
+                     ["--detach", "--backend", "manual", "--model", "m", "--executor", "agentic"],
+                     ["--backend", "manual", "--model", "m", "--executor", "agentic"]):
+            out = self.run_script("gate.py", *args)
+            self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+            self.assertIn("--force-manual", out.stdout + out.stderr)
+            if args[0] == "--detach":
+                self.assertFalse((self.ws / "work" / "pids" / "gate.json").exists(), "no gate job was started")
+        self.assertFalse((self.ws / "work" / "evaluation" / "gate.json").exists(), "no gate record was written")
+        self.assertFalse((self.ws / "work" / "evaluation" / "uplift.json").exists())
+        attempts = gate_common.read_attempts(self.ws)
+        self.assertEqual([a["step"] for a in attempts], ["record", "gate", "gate"])
+        self.assertTrue(all("--backend manual inside Claude Code" in a["error"] for a in attempts))
+
+    def test_backend_manual_still_runs_where_plugin_eval_cannot_or_the_skill_is_user_invoked(self) -> None:
+        self.make_build(["gold-01"], invoked=True, manual=True)
+        self.write_adapter()
+        out = self.run_script("gate.py", "--backend", "manual", "--model", "m", "--executor", "agentic",
+                              FAKE_HELP_RC="1")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
-        self.assertEqual(self.evaluation("gate.json")["mode"], "manual")
-        self.assertFalse(self.argv_log.exists())
+        self.make_build(["input-01"], invoked=False, ws=self.root / "user-invoked")
+        self.write_adapter_to(self.root / "user-invoked")
+        out = self.run_script("gate.py", "--backend", "manual", "--model", "m", "--executor", "single-call",
+                              ws=self.root / "user-invoked")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+
+    def test_force_manual_runs_unprobed_and_logs_the_reason(self) -> None:
+        self.make_build(["gold-01"], invoked=True, manual=True)
+        self.write_adapter()
+        reason = "cursor-agent:  the benchmark launched it\nfrom a Claude Code shell"
+        out = self.run_script("gate.py", "--backend", "manual", "--force-manual", reason, "--model", "gpt-5.6",
+                              "--executor", "agentic")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        logged = "cursor-agent: the benchmark launched it from a Claude Code shell"
+        record = self.evaluation("gate.json")
+        self.assertEqual((record["mode"], record["force_manual"]), ("manual", logged))
+        split = (self.ws / "work" / "evaluation" / "data-split.yaml").read_text(encoding="utf-8")
+        self.assertIn(logged, split)
+        self.assertEqual(gate_common.read_data_split(self.ws / "work" / "evaluation" / "data-split.yaml")
+                         .plugin_eval_available, "not-probed")
+        self.assertFalse(self.argv_log.exists(), "a forced manual gate never calls claude")
+        self.assertEqual(self.run_script("check_gate.py").returncode, 0)
+
+    def test_force_manual_needs_backend_manual_and_a_host_and_reason(self) -> None:
+        self.make_build(["gold-01"], invoked=True, manual=True)
+        for args in (["record", "--force-manual", "cursor: why"],
+                     ["record", "--backend", "plugin", "--force-manual", "cursor: why"],
+                     ["record", "--backend", "manual", "--force-manual", "no colon"],
+                     ["record", "--backend", "manual", "--force-manual", "cursor:  "]):
+            out = self.run_script("gate.py", *args)
+            self.assertEqual(out.returncode, 2, args)
+            self.assertIn("--force-manual goes with --backend manual", out.stderr)
 
     def test_backend_plugin_that_cannot_run_is_a_precondition_error(self) -> None:
         self.make_build(["gold-01"], invoked=True, manual=True)
@@ -1195,7 +1282,7 @@ class GateManualTest(TempWorkspace):
         self.manual_gate()
         evaluation = self.ws / "work" / "evaluation"
         for generated in (".cases.tmp", "uplift.prev.json", "plugin/skills/demo/SKILL.md",
-                          "plugin/evals/results/run-1/report.html"):
+                          "plugin/evals/results/run-1/report.html", "baseline-cache/scratch.json"):
             (evaluation / generated).parent.mkdir(parents=True, exist_ok=True)
             (evaluation / generated).write_text("x")
         self.assertEqual(self.run_script("check_gate.py").returncode, 0)
@@ -1245,6 +1332,8 @@ class GateManualTest(TempWorkspace):
         record = self.evaluation("gate.json")
         self.assertIsNone(record["finished"])
         self.assertEqual(record["changed_during_run"], ["inputs_sha256"])
+        self.assertFalse((self.ws / "work" / "evaluation" / "baseline-cache").exists(),
+                         "a without arm run on changing inputs is never cached")
         self.assertEqual(json.loads(self.run_script("check_gate.py", "--json").stdout)["code"], "gate_unfinished")
 
     def test_a_run_without_the_executor_receipt_fails(self) -> None:
@@ -1269,6 +1358,91 @@ class GateManualTest(TempWorkspace):
         self.assertEqual(self.run_script("check_gate.py").returncode, 0, "comments and layout are not the splits")
         split.write_text(split.read_text().replace("training: []", 'training: ["input-02"]'))
         self.assert_stale("work/evaluation/data-split.yaml (its splits)")
+
+    def baseline_build(self) -> Path:
+        """A user-invoked build whose adapter logs each run's `<case> <arm>` to work/pids/calls.log."""
+        self.make_build(["input-01", "input-02"], invoked=False)
+        self.write_adapter(SCORING_ADAPTER.replace(
+            'echo "EXECUTOR=$GATE_EXECUTOR"', 'echo "EXECUTOR=$GATE_EXECUTOR"; echo "$case $arm" >> work/pids/calls.log'))
+        (self.ws / "work" / "evaluation" / "score.py").write_text("print('SCORE=1')\n")
+        return self.ws / "work" / "pids" / "calls.log"
+
+    def gate_runs(self, calls: Path, *args: str) -> tuple[subprocess.CompletedProcess, int, int]:
+        """One manual gate; (its output, with-arm runs, without-arm runs) it spawned."""
+        def counts() -> tuple[int, int]:
+            lines = calls.read_text().splitlines() if calls.is_file() else []
+            return sum(line.endswith(" with") for line in lines), sum(line.endswith(" without") for line in lines)
+        with_before, without_before = counts()
+        out = self.run_script("gate.py", "--model", "m", "--executor", "single-call", *args)
+        with_after, without_after = counts()
+        return out, with_after - with_before, without_after - without_before
+
+    def test_a_re_gate_reuses_the_cached_without_arm(self) -> None:
+        calls = self.baseline_build()
+        out, with_runs, without_runs = self.gate_runs(calls)
+        self.assertEqual((out.returncode, with_runs, without_runs), (0, 6, 6), out.stdout + out.stderr)
+        cache = self.ws / "work" / "evaluation" / "baseline-cache"
+        self.assertEqual(len(list(cache.glob("*.json"))), 2)
+        self.assertNotIn("without_cache", json.dumps(self.evaluation("uplift.json")))
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndisable-model-invocation: true\n"
+                                                              "description: Demo.\n---\n# Demo, revised\n")
+        out, with_runs, without_runs = self.gate_runs(calls)
+        self.assertEqual((out.returncode, with_runs, without_runs), (0, 6, 0), out.stdout + out.stderr)
+        self.assertIn("reusing the cached without-skill arm for 2 of 2 cases", out.stdout)
+        data = self.evaluation("uplift.json")
+        self.assertEqual([c["without"] for c in data["cases"]], [[0.4] * 3] * 2)
+        for case in data["cases"]:
+            path = cache / f"{case['without_cache']['key']}.json"
+            self.assertEqual(case["without_cache"]["sha256"], gate_common.file_sha256(path))
+        self.assertEqual(self.run_script("check_gate.py").returncode, 0)
+        out, with_runs, without_runs = self.gate_runs(calls, "--fresh-baseline")
+        self.assertEqual((out.returncode, with_runs, without_runs), (0, 6, 6), out.stdout + out.stderr)
+        self.assertNotIn("without_cache", json.dumps(self.evaluation("uplift.json")))
+        self.assertTrue(self.evaluation("gate.json")["fresh_baseline"])
+
+    def test_a_grader_change_misses_the_cache(self) -> None:
+        calls = self.baseline_build()
+        self.assertEqual(self.gate_runs(calls)[0].returncode, 0)
+        (self.ws / "work" / "evaluation" / "score.py").write_text("print('SCORE=0.5')\n")
+        out, _, without_runs = self.gate_runs(calls)
+        self.assertEqual((out.returncode, without_runs), (0, 6), out.stdout + out.stderr)
+        self.assertNotIn("reusing", out.stdout)
+        self.write_adapter(SCORING_ADAPTER.replace('echo "EXECUTOR', 'echo "$case $arm" >> work/pids/calls.log; echo "EXECUTOR'))
+        out, _, without_runs = self.gate_runs(calls)
+        self.assertEqual((out.returncode, without_runs), (0, 6), "a run-case.sh edit misses it too")
+        out = self.run_script("gate.py", "--model", "other", "--executor", "single-call")
+        self.assertNotIn("reusing", out.stdout, "so does another model")
+
+    def test_a_stale_or_missing_cache_entry_fails_the_gate_that_reused_it(self) -> None:
+        calls = self.baseline_build()
+        self.assertEqual(self.gate_runs(calls)[0].returncode, 0)
+        self.assertEqual(self.gate_runs(calls)[2], 0)
+        entry = self.ws / "work" / "evaluation" / "baseline-cache" / \
+            f"{self.evaluation('uplift.json')['cases'][0]['without_cache']['key']}.json"
+        original = entry.read_bytes()
+        entry.write_bytes(original.replace(b"0.4", b"0.1"))
+        verdict = json.loads(self.run_script("check_gate.py", "--json").stdout)
+        self.assertEqual(verdict["code"], "stale_baseline")
+        self.assertIn("not the entry the gate reused", verdict["reason"])
+        entry.unlink()
+        self.assertEqual(json.loads(self.run_script("check_gate.py", "--json").stdout)["code"], "stale_baseline")
+        entry.write_bytes(original)
+        self.assertEqual(self.run_script("check_gate.py").returncode, 0)
+        case = dict(self.evaluation("uplift.json")["cases"][0])
+        with self.assertRaises(gate.check_gate.Invalid) as raised:
+            gate.check_gate._reused_baseline(self.ws, case["case"], case, {"model": "other", "executor": "single-call"})
+        self.assertIn("key no longer matches", raised.exception.reason)
+        case["without_cache"] = {"key": "../../escape", "sha256": "x"}
+        with self.assertRaises(gate.check_gate.Invalid):
+            gate.check_gate._reused_baseline(self.ws, case["case"], case, {"model": "m", "executor": "single-call"})
+
+    def test_a_malformed_cache_entry_is_re_run_not_reused(self) -> None:
+        calls = self.baseline_build()
+        self.assertEqual(self.gate_runs(calls)[0].returncode, 0)
+        for entry in (self.ws / "work" / "evaluation" / "baseline-cache").glob("*.json"):
+            entry.write_text(json.dumps({**json.loads(entry.read_text()), "runs": [0.4, 0.4]}))
+        out, _, without_runs = self.gate_runs(calls)
+        self.assertEqual((out.returncode, without_runs), (0, 6), out.stdout + out.stderr)
 
     def test_missing_adapter_is_a_precondition_error(self) -> None:
         self.make_build(["input-01"], invoked=False)

@@ -12,7 +12,10 @@ records `"partial": false`:
     plugin mode   work/evaluation/plugin-eval.json   (written by claude plugin eval)
     manual mode   work/evaluation/uplift.json        (the manual with/without protocol)
 
-An artifact without a finished gate.py record never passes: only gate.py writes the artifact.
+An artifact without a finished gate.py record never passes: only gate.py writes the artifact. A manual case
+whose without-skill arm gate.py reused from work/evaluation/baseline-cache/ (`without_cache` in uplift.json)
+passes only while that entry's file hash, its key recomputed from the case, model, executor and gate inputs
+now, and its scores all match (code `stale_baseline`).
 
 Cases are classed by their graders. A case is gold when it has any score-bearing grader (anything but
 `tool_used` on `Skill`), whatever Skill indicator it also carries; every manual-mode case is gold.
@@ -61,9 +64,9 @@ sys.dont_write_bytecode = True
 import panel  # noqa: E402  (sibling imports after disabling bytecode)
 import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
-    DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE, GateError,
-    cases_sha256, check_skill_name, file_sha256, inputs_sha256, read_attempts, read_data_split, skill_sha256, split_sha256,
-    utf8_stdio,
+    BASELINE_KEY, DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE,
+    GateError, baseline_key, baseline_path, cases_sha256, check_skill_name, file_sha256, inputs_sha256, read_attempts,
+    read_baseline, read_data_split, skill_sha256, split_sha256, utf8_stdio,
 )
 
 BENCHMARK = Path("BENCHMARK.md")
@@ -238,7 +241,28 @@ def _plugin(data: dict, recorded: list[str], min_runs: int) -> list[CaseResult]:
     return results
 
 
-def _manual(data: dict, recorded: list[str], min_runs: int) -> list[CaseResult]:
+def _reused_baseline(workspace: Path, name: str, case: dict, summary: dict) -> None:
+    """A case whose without-skill arm the gate took from work/evaluation/baseline-cache/ must still match
+    that entry: the key recomputed from the case, model, executor and inputs as they are now, the entry's
+    file hash as the gate read it, and its scores as the artifact lists them."""
+    reused = case["without_cache"]
+    key = reused.get("key") if isinstance(reused, dict) else None
+    if not isinstance(key, str) or not BASELINE_KEY.fullmatch(key) or not isinstance(reused.get("sha256"), str):
+        raise Invalid("stale_baseline", f"case {name!r}: without_cache needs a sha256 key and file hash; re-run 5.0")
+    path = baseline_path(workspace, key)
+    stale = None
+    if file_sha256(path) != reused["sha256"]:
+        stale = f"{path.relative_to(workspace).as_posix()} is missing or not the entry the gate reused"
+    elif key != baseline_key(workspace, name, summary.get("model"), summary.get("executor")):
+        stale = "its key no longer matches the case, model, executor, run-case.sh or gate inputs"
+    elif read_baseline(workspace, key, len(case["without"])) != [float(s) for s in case["without"]]:
+        stale = "its scores differ from the artifact's without arm"
+    if stale:
+        raise Invalid("stale_baseline", f"case {name!r}: the cached without-skill arm is stale ({stale}); re-run 5.0 "
+                                        "with --fresh-baseline")
+
+
+def _manual(data: dict, recorded: list[str], min_runs: int, workspace: Path) -> list[CaseResult]:
     if data.get("partial") is not False:
         state = "partial" if data.get("partial") is True else "records no \"partial\": false"
         raise Invalid("partial", f"uplift.json is {state}; re-run the gate")
@@ -258,6 +282,8 @@ def _manual(data: dict, recorded: list[str], min_runs: int) -> list[CaseResult]:
             if len(runs) < min_runs:
                 raise Invalid("too_few_runs", f"case {name!r} arm {arm!r} has {len(runs)} runs; {min_runs} required")
             scores[arm] = [float(s) for s in runs]
+        if "without_cache" in case:
+            _reused_baseline(workspace, name, case, data.get("summary") if isinstance(data.get("summary"), dict) else {})
         results.append(CaseResult(name, _mean(scores["with"]) - _mean(scores["without"])))
     _coverage(recorded, [r.name for r in results])
     return results
@@ -294,7 +320,8 @@ def validate(workspace: Path, skill: str | None = None) -> Verdict:
             raise Invalid("bad_artifact", f"{rel} is not valid JSON: {exc}") from exc
         if not isinstance(data, dict):
             raise Invalid("bad_artifact", f"{rel} is not a JSON object")
-        results = (_plugin if mode == "plugin" else _manual)(data, split.plugin_eval, REQUIRED_RUNS)
+        results = (_plugin(data, split.plugin_eval, REQUIRED_RUNS) if mode == "plugin" else
+                   _manual(data, split.plugin_eval, REQUIRED_RUNS, workspace))
         if split.gold_recorded and not any(r.kind == "gold" for r in results):
             raise Invalid("no_gold", f"{DATA_SPLIT} records gold standards but no gate case is a gold case "
                                      "(every case grades only `tool_used` on Skill); 3.6 adds one per gate "

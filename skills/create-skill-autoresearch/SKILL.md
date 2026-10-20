@@ -208,7 +208,7 @@ upstream autoresearch never commits one, and its `git reset --hard HEAD~1` needs
 **Pick the path first.** Build the plugin-eval suite below only when the build runs in Claude Code, `claude plugin eval
 --help` exits 0 and the skill is model-invoked. Otherwise — another host (plugin eval cannot run its model), or a user-invoked
 skill (`disable-model-invocation: true` never fires through the Skill tool, so plugin eval's with-arm would measure nothing)
-— skip it: 5.0 runs the gate gold standards by the **manual protocol** (`--backend manual`), with no `claude` call anywhere.
+— skip it: `gate.py` picks the **manual protocol** for 5.0 itself (gate gold standards, no `claude` call anywhere).
 
 Plugin path: build the suite in a wrapper plugin under `work/` so nothing eval-related ships: `work/evaluation/plugin/` holds `.claude-plugin/plugin.json` (`name`, `version`) and `evals/`
 (`scripts/gate.py` copies the skill to `skills/<skill-name>/` before every run). From that directory, scaffold each
@@ -344,23 +344,23 @@ no trigger rate was measured.
 
 ### 5.0 Eval Gate
 
-A full gate runs longer than one shell call waits, so start it detached from the workspace root, then
-poll it with short calls until it exits (`wait` exits 124 while it runs, then with the gate's exit code):
+A full gate runs longer than one shell call waits, so start it detached from the workspace root, then block
+on it with `--wait` (exit 124: still running — call `--wait` again, never poll `run_owned.py status`):
 
 ```bash
 python3 <skill-dir>/scripts/gate.py --detach --model <model the skill targets> [--in-sample] \
   [--allow-tools Bash Write] [--executor single-call|agentic]
-python3 <skill-dir>/scripts/run_owned.py wait gate --timeout 540    # repeat until it exits
+python3 <skill-dir>/scripts/gate.py --wait    # blocks up to 540 s; repeat on 124, else it exits with the gate's code
 ```
 
 `gate.py` runs as the owned job `gate`, as `run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py …`
 would (log `work/pids/gate.log`), and refuses a second start while it runs. To restart the gate, run
-`gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the path by the 3.6 rule (`--backend plugin|manual`
-forces one, and a host other than Claude Code always passes `--backend manual`; manual runs `run-case.sh` and needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
+`gate.py --restart` with the same options; `gate.py --stop` ends it. It picks the path by the 3.6 rule (a Claude Code build never passes
+`--backend manual`; only another host whose shell inherits `$CLAUDECODE` does, plus `--force-manual "<host>: <why>"`; manual runs `run-case.sh` and needs `--executor`), runs every recorded case 3 times per arm, and writes `plugin-eval.json`
 or `uplift.json` plus `gate.json` (hashes of skill, cases, scorers, fixtures, artifact) under `work/evaluation/`. Grant only the tools
 the skill needs. With 3-9 gold standards pass `--in-sample` (gate cases are training cases; `BENCHMARK.md` and
 the panel label Δ in-sample). A non-zero exit says why: fix the suite or `run-case.sh` and re-run; only
-`gate.py` writes the artifact. Every file under `work/evaluation/` is a gate input, so keep scratch and logs (saved
+`gate.py` writes the artifact. Every file under `work/evaluation/` (bar the gate's no-skill-arm `baseline-cache/`) is a gate input, so keep scratch and logs (saved
 `check_gate.py` output included) under `work/experiments/`. Plugin-eval flags: [references/pipeline-phases.md](references/pipeline-phases.md).
 
 Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, the same-model uplift the shipping evidence needs ([references/benchmark-standard.md](references/benchmark-standard.md)):
