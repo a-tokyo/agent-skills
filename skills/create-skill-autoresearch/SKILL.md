@@ -201,7 +201,7 @@ Multi-judge scoring across model families (`judges.yaml`) and optional `evaluate
 
 Run `evaluate.sh` on the draft, commit it (`git add output/<skill-name> && git commit -m "baseline"`; upstream autoresearch
 never commits one, and its `git reset --hard HEAD~1` needs that parent), log experiment 0 in `autoresearch.jsonl` (4.1), report it.
-**Fast path:** at `target_score`, run 3.6 and 5.0 next; `check_gate.py --fast-path` exit 0 skips 4.1-4.6 (5.1-5.4 still run).
+**Fast path:** at `target_score`, record the 4.2 split, run 3.6 and 5.0; `check_gate.py --fast-path` exit 0 skips 4.1 and 4.3-4.6.
 
 ### 3.6 Scaffold the Eval Suite
 
