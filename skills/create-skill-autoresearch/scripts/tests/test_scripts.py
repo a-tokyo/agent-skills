@@ -1224,6 +1224,10 @@ class GateManualTest(TempWorkspace):
             out = self.run_script("gate.py", *args)
             self.assertEqual(out.returncode, 2, args)
             self.assertIn("--force-manual goes with --backend manual", out.stderr)
+        for host in ("Claude Code", "claude-code", "CLAUDE_CODE"):
+            out = self.run_script("gate.py", "record", "--backend", "manual", "--force-manual", f"{host}: faster")
+            self.assertEqual(out.returncode, 2, host)
+            self.assertIn("never Claude Code", out.stderr)
 
     def test_backend_plugin_that_cannot_run_is_a_precondition_error(self) -> None:
         self.make_build(["gold-01"], invoked=True, manual=True)

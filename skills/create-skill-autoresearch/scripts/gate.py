@@ -816,6 +816,9 @@ def main(argv: list[str] | None = None) -> int:
         if args.backend != "manual" or not host.strip() or not reason.strip():
             parser.error("--force-manual goes with --backend manual and names the host and why: "
                          "--force-manual '<host>: <reason>'")
+        if re.search(r"claude[\s_-]*code", host, re.IGNORECASE):
+            parser.error("--force-manual names another host, never Claude Code: a Claude Code build runs the plugin "
+                         "gate; drop --backend manual")
         args.force_manual = f"{host.strip()}: {reason.strip()}"
     if args.command == "record":
         if args.stop or args.detach or args.restart or args.wait:
