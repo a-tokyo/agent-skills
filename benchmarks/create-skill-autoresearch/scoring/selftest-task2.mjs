@@ -5,6 +5,7 @@ import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   checkPurchaseOrder, checkCompliance, checkCraft, isExecutorFault, runWithRetry, aggregateExecution, INFRA_ERROR_RE,
+  spawnOwned, killOwned,
 } from "./score-task2.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -77,6 +78,17 @@ const agg = aggregateExecution([
 expect("env-failed runs are excluded, never 0", agg.score === 1 && agg.cases.h1.runs.length === 1);
 expect("env failures and excluded cases are reported", agg.env_failures.join() === "h1-r1,h2-r0" && agg.excluded_cases.join() === "h2");
 expect("all runs env-failed gives no score", aggregateExecution([{ id: "h1", r: 0, envFailure: true, result: one }]).score === null);
+
+if (process.platform !== "win32") {
+  const alive = (pid) => { try { process.kill(pid, 0); return true; } catch { return false; } };
+  const child = spawnOwned("sh", ["-c", "sleep 60 >/dev/null 2>&1 & echo $!; wait"], { stdio: ["ignore", "pipe", "ignore"] });
+  const helper = Number(await new Promise((resolve) => child.stdout.once("data", (d) => resolve(String(d).trim()))));
+  const closed = new Promise((resolve) => child.on("close", resolve));
+  killOwned(child);
+  await closed;
+  for (let i = 0; i < 50 && alive(helper); i++) await new Promise((r) => setTimeout(r, 100));
+  expect("killOwned stops the executor's helper, not only its pid", helper > 0 && !alive(helper));
+}
 
 if (failures.length) {
   console.log(`SELFTEST FAIL\n- ${failures.join("\n- ")}`);

@@ -22,7 +22,7 @@
 import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, rmSync, cpSync, statSync } from "node:fs";
 import { join, dirname, basename } from "node:path";
 import { tmpdir } from "node:os";
-import { spawn } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -156,6 +156,18 @@ const EXECUTOR_PROMPT =
   "Use the purchase-order-builder skill to turn request.md into a purchase order, using the master data in master-data/. " +
   "Write the result to po.json in the current directory. Do not ask questions; work non-interactively.";
 
+// The executor gets a process group of its own (POSIX) so a timeout, or the run's end, also stops what it
+// started (a server, a detached helper) before the next run; on Windows `taskkill /T` ends its tree by PID.
+export const spawnOwned = (cmd, args, opts) => spawn(cmd, args, { ...opts, detached: process.platform !== "win32" });
+
+export function killOwned(child) {
+  if (process.platform === "win32") {
+    spawnSync("taskkill", ["/PID", String(child.pid), "/T", "/F"], { stdio: "ignore" });
+    return;
+  }
+  try { process.kill(-child.pid, "SIGKILL"); } catch { /* the group has already exited */ }
+}
+
 function runAgent(skillDir, skillName, caseInput, auth) {
   const root = mkdtempSync(join(tmpdir(), "csa-t2-exec-"));
   const home = join(root, "home");
@@ -169,18 +181,19 @@ function runAgent(skillDir, skillName, caseInput, auth) {
     const env = { PATH: process.env.PATH, HOME: home, TERM: "dumb", LANG: "en_US.UTF-8", DISABLE_AUTOUPDATER: "1" };
     if (auth.apiKey) env.ANTHROPIC_API_KEY = auth.apiKey;
     else env.CLAUDE_CODE_OAUTH_TOKEN = auth.oauthToken;
-    const child = spawn("claude", ["-p", EXECUTOR_PROMPT, "--model", EXECUTOR_MODEL,
+    const child = spawnOwned("claude", ["-p", EXECUTOR_PROMPT, "--model", EXECUTOR_MODEL,
       "--dangerously-skip-permissions", "--max-turns", "30"], { cwd: work, env, stdio: ["ignore", "pipe", "pipe"] });
     let transcript = "";
     let timedOut = false;
     let settled = false;
     child.stdout.on("data", (d) => (transcript += d));
     child.stderr.on("data", (d) => (transcript += d));
-    const timer = setTimeout(() => { timedOut = true; child.kill("SIGKILL"); }, 900000);
+    const timer = setTimeout(() => { timedOut = true; killOwned(child); }, 900000);
     const finish = (code, spawnError) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
+      if (!spawnError) killOwned(child);
       const poPath = join(work, "po.json");
       const poWritten = existsSync(poPath);
       const raw = poWritten ? readFileSync(poPath, "utf8") : "";
