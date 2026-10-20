@@ -322,3 +322,25 @@ s-t1-factory-v030-haiku-3,factory,haiku,1.000,1.000,0.952,0.971,1930,claude-cli,
 s-t1-factory-v030-haiku-4,factory,haiku,1.000,0.667,0.952,0.921,2094,claude-cli,exit=0,task
 s-t1-factory-v030-haiku-2,factory,haiku,1.000,1.000,0.911,0.946,2647,claude-cli,exit=0,task
 s-t1-factory-v030-haiku-5,factory,haiku,1.000,0.333,0.726,0.736,2213,claude-cli,exit=0,task
+u-t2-factory-v030-haiku-1,factory,haiku,1.000,1.000,0.862,0.903,999,claude-cli,exit=0,task-2
+u-t2-factory-v030-sonnet-5,factory,sonnet,1.000,1.000,1.000,1.000,1510,claude-cli,exit=0,task-2
+u-t2-factory-v030-sonnet-4,factory,sonnet,1.000,1.000,1.000,1.000,2092,claude-cli,exit=0,task-2
+u-t1-factory-cursor-sonnet-2,factory,sonnet,1.000,1.000,0.952,0.971,2331,claude-cli,exit=0 host=cursor,task
+u-t2-factory-v030-sonnet-2,factory,sonnet,1.000,1.000,1.000,1.000,2400,claude-cli,exit=0,task-2
+u-t2-factory-v030-sonnet-3,factory,sonnet,0.900,0.750,0.985,0.944,2879,claude-cli,exit=0,task-2
+u-t1-factory-v030-sonnet-1,factory,sonnet,1.000,1.000,0.911,0.946,478,claude-cli,exit=0,task
+u-t1-factory-cursor-sonnet-1,factory,sonnet,1.000,1.000,0.952,0.971,3528,claude-cli,exit=0 host=cursor,task
+u-t2-factory-v030-haiku-3,factory,haiku,1.000,1.000,0.954,0.968,2241,claude-cli,exit=0,task-2
+u-t2-factory-v030-sonnet-1,factory,sonnet,0.900,1.000,1.000,0.980,4136,claude-cli,exit=0,task-2
+u-t1-factory-v030-sonnet-2,factory,sonnet,1.000,1.000,0.869,0.921,905,claude-cli,exit=0,task
+u-t1-factory-v030-sonnet-3,factory,sonnet,1.000,1.000,0.952,0.971,552,claude-cli,exit=0,task
+u-t1-factory-v030-sonnet-5,factory,sonnet,1.000,1.000,0.911,0.946,1213,claude-cli,exit=0,task
+u-t1-factory-v030-sonnet-4,factory,sonnet,1.000,0.667,0.911,0.896,1402,claude-cli,exit=0,task
+u-t2-factory-v030-haiku-4,factory,haiku,0.900,1.000,0.846,0.872,3686,claude-cli,exit=0,task-2
+u-t2-factory-v030-haiku-5,factory,haiku,0.900,1.000,0.969,0.958,3767,claude-cli,exit=0,task-2
+u-t1-factory-v030-haiku-4,factory,haiku,1.000,0.667,0.952,0.921,927,claude-cli,exit=0,task
+u-t1-factory-v030-haiku-3,factory,haiku,1.000,0.333,0.768,0.761,1275,claude-cli,exit=0,task
+u-t1-factory-v030-haiku-5,factory,haiku,1.000,0.333,0.810,0.786,1671,claude-cli,exit=0,task
+u-t1-factory-v030-haiku-2,factory,haiku,1.000,0.333,0.952,0.871,2925,claude-cli,exit=0,task
+u-t1-factory-v030-haiku-1,factory,haiku,1.000,1.000,0.911,0.946,4109,claude-cli,exit=0,task
+u-t2-factory-v030-haiku-2,factory,haiku,0.800,1.000,0.938,0.917,7782,claude-cli,exit=0,task-2

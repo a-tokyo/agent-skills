@@ -40,7 +40,8 @@ unattended with a 6-iteration autoresearch budget.
 
 A factory that ships `hooks/hooks.json` (v0.3.0 from cycle 3 on) loads as a plugin
 (`claude -p --plugin-dir <run>/plugins/create-skill-autoresearch`), so its kill guard — a `PreToolUse`
-hook that blocks `pkill`, `killall` and pgrep-fed kills — is active; the skill is then listed as
+hook that blocks `pkill`, `killall` and pgrep-fed kills — is active, and from `u-*` on so is its finish
+guard, a `Stop` hook that sends an unfinished build back once; the skill is then listed as
 `create-skill-autoresearch:create-skill-autoresearch`. Earlier `factory` runs and `factory-v021` place
 the skill under the fake HOME's `~/.claude/skills/` instead. [`arms/smoke-kill-guard.sh`](arms/smoke-kill-guard.sh)
 is a one-call check that the guard blocks a dummy `pkill` under that load. Its single run on
@@ -106,14 +107,14 @@ scoring/fixtures/t2-good-skill` (the task-2 reference solver wrapped as a skill)
 most stable and cheapest, but measures absolute quality only; plugin eval with deterministic graders is
 the factory's 5.0 uplift gate, and skill-creator's lenient grader is read as a ranking.
 
-## Results — v0.3.0 release (`s-*`, October 2026)
+## Results — v0.3.0 release (`u-*`, October 2026)
 
-The published v0.3.0 result is measured on the factory this PR ships: harness `82ec859`, byte-identical
+The published v0.3.0 result is measured on the factory this PR ships: harness `f684797`, byte-identical
 to [`skills/create-skill-autoresearch/`](../../skills/create-skill-autoresearch/). After the run, the
 copy installed in each of the 22 builds (`plugins/` for Claude Code, `ws/.agents/skills/` for Cursor) was
-diffed against it and matched. The run repeats all 20 `r-*` cells: builders Claude Sonnet 5.5 and Haiku
-5.5 under Claude Code, n=5 per cell, with the factory loaded with `--plugin-dir` so the kill guard was
-active. Tables show medians with min–max, from the `overall` column of
+diffed against it and matched. The run repeats all 20 `s-*` cells: builders Claude Sonnet 5.5 and Haiku
+5.5 under Claude Code 2.1.304, n=5 per cell, with the factory loaded with `--plugin-dir`, so the kill
+guard and the finish guard were active. Tables show medians with min–max, from the `overall` column of
 [`results/scores.csv`](results/scores.csv). All 20 builds exited 0 and produced a skill. There were no
 environment failures (`env_failure=0` in [`results/runs.csv`](results/runs.csv)), no retries and no
 executor faults. bare, skill-creator and v0.2.1 are the `m-*` baselines. Two more task builds ran
@@ -121,20 +122,20 @@ under Cursor (below) and are not in these tables.
 
 | Task | Model | bare | skill-creator | factory v0.2.1 | **factory v0.3.0** |
 |------|-------|------|---------------|----------------|--------------------|
-| task-2 | Sonnet 5.5 | 0.975 (0.932–0.980) | 0.964 (0.908–0.975) | 0.975 (0.933–0.980) | **0.980 (0.935–1.000)** |
-| task-2 | Haiku 5.5 | 0.969 (0.937–0.980) | 0.950 (0.943–0.980) | 0.969 (0.958–0.989) | **0.932 (0.858–0.980)** |
-| task | Sonnet 5.5 | 0.971 (0.886–0.971) | 0.921 (0.921–0.971) | 0.946 (0.836–0.971) | **0.971 (0.921–0.971)** |
-| task | Haiku 5.5 | 0.896 (0.846–0.921) | 0.896 (0.846–0.921) | 0.871 (0.836–0.943) | **0.921 (0.736–0.971)** |
+| task-2 | Sonnet 5.5 | 0.975 (0.932–0.980) | 0.964 (0.908–0.975) | 0.975 (0.933–0.980) | **1.000 (0.944–1.000)** |
+| task-2 | Haiku 5.5 | 0.969 (0.937–0.980) | 0.950 (0.943–0.980) | 0.969 (0.958–0.989) | **0.917 (0.872–0.968)** |
+| task | Sonnet 5.5 | 0.971 (0.886–0.971) | 0.921 (0.921–0.971) | 0.946 (0.836–0.971) | **0.946 (0.896–0.971)** |
+| task | Haiku 5.5 | 0.896 (0.846–0.921) | 0.896 (0.846–0.921) | 0.871 (0.836–0.943) | **0.871 (0.761–0.946)** |
 
 Median build cost: wall time · input tokens · output tokens, counted as in the cycle-2 table below.
 v0.2.1 excludes its killed attempts. These figures are reported, not gated.
 
-| Task | Model | factory v0.2.1 | factory v0.3.0 (`s-*`) | v0.3.0 ÷ v0.2.1 (wall · in · out) |
+| Task | Model | factory v0.2.1 | factory v0.3.0 (`u-*`) | v0.3.0 ÷ v0.2.1 (wall · in · out) |
 |------|-------|----------------|------------------------|-----------------------------------|
-| task-2 | Sonnet 5.5 | 8.2 min · 3.12M · 81k | 33.0 min · 7.02M · 136k | 4.04× · 2.25× · 1.69× |
-| task-2 | Haiku 5.5 | 12.2 min · 7.92M · 194k | 55.3 min · 30.53M · 572k | 4.54× · 3.85× · 2.94× |
-| task | Sonnet 5.5 | 9.3 min · 1.78M · 46k | 10.7 min · 2.74M · 68k | 1.14× · 1.54× · 1.49× |
-| task | Haiku 5.5 | 17.6 min · 4.08M · 96k | 34.9 min · 7.42M · 240k | 1.98× · 1.82× · 2.51× |
+| task-2 | Sonnet 5.5 | 8.2 min · 3.12M · 81k | 40.0 min · 7.17M · 114k | 4.90× · 2.30× · 1.41× |
+| task-2 | Haiku 5.5 | 12.2 min · 7.92M · 194k | 61.4 min · 48.87M · 548k | 5.04× · 6.17× · 2.82× |
+| task | Sonnet 5.5 | 9.3 min · 1.78M · 46k | 15.1 min · 3.41M · 85k | 1.62× · 1.91× · 1.85× |
+| task | Haiku 5.5 | 17.6 min · 4.08M · 96k | 27.9 min · 9.77M · 352k | 1.58× · 2.40× · 3.68× |
 
 ### Release criterion (criterion 4, Amendment 2)
 
@@ -144,122 +145,180 @@ and bare. On top of that, v0.3.0 must gain in median overall or completion in at
 
 | Task | Model | v0.2.1 floor | bare floor | v0.3.0 median | vs v0.2.1 | Completed (v0.3.0 · v0.2.1) | Result |
 |------|-------|--------------|------------|---------------|-----------|-----------------------------|--------|
-| task-2 | Sonnet 5.5 | 0.975 − 0.067 = 0.908 | 0.975 − 0.068 = 0.907 | 0.980 | +0.005 | 5/5 · 5/5 | PASS |
-| task-2 | Haiku 5.5 | 0.969 − 0.131 = 0.838 | 0.969 − 0.122 = 0.847 | 0.932 | −0.037 | 5/5 · 5/5 | PASS |
-| task | Sonnet 5.5 | 0.946 − 0.135 = 0.811 | 0.971 − 0.085 = 0.886 | 0.971 | +0.025 | 5/5 · 5/5 | PASS |
-| task | Haiku 5.5 | 0.871 − 0.235 = 0.636 | 0.896 − 0.235 = 0.661 | 0.921 | +0.050 | 5/5 · 5/5 | PASS |
+| task-2 | Sonnet 5.5 | 0.975 − 0.067 = 0.908 | 0.975 − 0.068 = 0.907 | 1.000 | +0.025 | 5/5 · 5/5 | PASS |
+| task-2 | Haiku 5.5 | 0.969 − 0.117 = 0.852 | 0.969 − 0.108 = 0.861 | 0.917 | −0.052 | 5/5 · 5/5 | PASS |
+| task | Sonnet 5.5 | 0.946 − 0.135 = 0.811 | 0.971 − 0.085 = 0.886 | 0.946 | ±0.000 | 5/5 · 5/5 | PASS |
+| task | Haiku 5.5 | 0.871 − 0.185 = 0.686 | 0.896 − 0.185 = 0.711 | 0.871 | ±0.000 | 5/5 · 5/5 | PASS |
 
-Every cell meets the quality condition. The gain condition is met in three cells: task-2 with Sonnet
-(+0.005), task with Sonnet (+0.025) and task with Haiku (+0.050). All three are inside their pooled
-spreads, so they are gains the criterion counts, not measured improvements. Against bare, v0.3.0 is
-+0.005 on task-2 Sonnet, ties on task Sonnet, is +0.025 on task Haiku and is −0.037 on task-2 Haiku,
-each inside the spread. Completion ties at 5/5 everywhere.
+Every cell meets the quality condition. The gain condition is met in one cell: task-2 with Sonnet,
++0.025 over both v0.2.1 and bare, inside the 0.067 and 0.068 pooled spreads, so it counts for the
+criterion but is not a measured improvement. Task with Sonnet and task with Haiku tie v0.2.1 and sit
+0.025 below bare. Task-2 with Haiku is 0.052 below both, inside the 0.117 and 0.108 spreads.
+Completion ties at 5/5 everywhere.
+
+### Run-to-run noise across the v0.3.0 runs
+
+Five v0.3.0 runs measured the same 20 cells, each on a later factory revision (`k-*` `a3fa032`, `p-*`
+`0c94f94`, `r-*` `8e505b0`, `s-*` `82ec859`, `u-*` `f684797`). The changes between them mostly target
+the gate, the panel and how a build ends; few touch how the produced skill is written.
+
+| Task | Model | `k-*` | `p-*` | `r-*` | `s-*` | **`u-*`** | Range of the five medians | `u-*` spread (max − min) |
+|------|-------|-------|-------|-------|-------|-----------|---------------------------|--------------------------|
+| task-2 | Sonnet 5.5 | 0.964 | 0.957 | 0.975 | 0.980 | **1.000** | 0.043 | 0.056 |
+| task-2 | Haiku 5.5 | 0.969 | 0.958 | 0.969 | 0.932 | **0.917** | 0.052 | 0.096 |
+| task | Sonnet 5.5 | 0.971 | 0.946 | 0.971 | 0.971 | **0.946** | 0.025 | 0.075 |
+| task | Haiku 5.5 | 0.871 | 0.886 | 0.921 | 0.921 | **0.871** | 0.050 | 0.185 |
+
+From `s-*` to `u-*` the medians moved +0.020, −0.015, −0.025 and −0.050 (rows in table order). Each
+move is smaller than the spread inside the `u-*` cell itself, and the five medians of a cell span
+0.025–0.052. Release-to-release movement of this size is run-to-run noise at n=5, in either direction.
 
 ### Fidelity (criteria 7, 8, 9, 12, 13)
 
-These counts come from `python3 scoring/fidelity.py "$BENCH_RUNS_ROOT"/s-*`, run with the validator
+These counts come from `python3 scoring/fidelity.py "$BENCH_RUNS_ROOT"/u-*`, run with the validator
 published beside this README (byte-identical to the one the builds ran), and from `check_gate.py
 --finish` on each workspace. How `fidelity.py` counts is explained under **Fidelity of unattended
-builds** in the cycle-2 section below. Rows about issued commands count `check_gate.py` calls the
-builder made, found the same way `fidelity.py` finds kill commands.
+builds** in the cycle-2 section below. The `s-*` column is as published, counted with `82ec859`'s
+validator, which had no role receipts, consensus or finish guard.
 
-| Measure | Bar | `r-*` Claude Code | **`s-*` Claude Code** | `s-*` Cursor |
+| Measure | Bar | `s-*` Claude Code | **`u-*` Claude Code** | `u-*` Cursor |
 |---------|-----|-------------------|-----------------------|--------------|
 | Builds | — | 20 | 20 | 2 |
-| Gate artifact at its canonical path | — | 20 | 19 | 2 |
-| Validator passes (criterion 7) | ≥ 18 of 20 | 20 | **19** | 2 |
+| Gate artifact at its canonical path | — | 19 | 20 | 2 |
+| Validator passes (criterion 7) | ≥ 18 of 20 | 19 | **20** | 2 |
 | "artifact cases differ" failures (criterion 12) | 0 | 0 | **0** | 0 |
 | Stale gates · shipped verdicts on an invalid gate | — | 0 · 0 | 0 · 0 | 0 · 0 |
 | Pattern-kill commands executed (criteria 8, 13) | 0 | 0 | **0** | 0 |
 | Pattern-kill attempts blocked by the guard | — | 0 | 0 | 0 |
 | Builds killed from outside | 0 | 0 | 0 | 0 |
 | Builds that ended without a verdict (no `BENCHMARK.md`) | — | 0 | **0** | 0 |
-| Below-target verdicts (`UNSHIPPED`) | — | 6 | 6 | 1 |
+| Below-target verdicts (`UNSHIPPED`) | — | 6 | 7 | 1 |
 | Below-target verdicts labelled shipped (criterion 9) | 0 | 0 | **0** | 0 |
-| Panel receipt written (`work/experiments/panel.json`, `--panel`) | — | — | 19 | 2 |
-| Builds that ran `check_gate.py --finish` themselves | — | 20 | 19 | 2 |
-| `--finish` today reports `BUILD FINISHED` | — | 20 | 19 | 2 |
+| Three role receipts and a consensus (`work/experiments/panel/`) | — | — | 20 | 2 |
+| Verdicts above the label the consensus allows | 0 | — | **0** | 0 |
+| Builds that ran `check_gate.py --finish` themselves | — | 19 | 20 | 2 |
+| `--finish` today reports `BUILD FINISHED` | — | 19 | 20 | 2 |
+| Builds the finish guard sent back · send-backs | — | — | 6 · 14 | n/a (no stop hook in `-p`) |
 
-- **Criterion 7 is met: 19 of 20**, and every gate counted gold cases. The task builds gated in manual
-  mode (`uplift.json`, 6 gold cases). Of the nine valid task-2 gates, six used `claude plugin eval`
-  (`plugin-eval.json`, 10 cases, 7 of them gold) and three (Haiku 2, 3 and 5) used manual mode (7 gold
-  cases). The one failure is task-2 Haiku 4. It never ran `gate.py` or `check_gate.py`. Its only
-  `check_gate` string is inside the heredoc that wrote its `BENCHMARK.md`. It wrote no panel receipt and
-  never ran `--finish`. Its panel's Devil's Advocate returned ESCALATE, and the build wrote `UNSHIPPED`,
-  saying that no gate had run. `--finish` rejects that end state today ("UNSHIPPED needs a gate
-  attempt"), so the factory's own end check would have caught it if the build had run it. That build's
-  skill scored 0.980, the best in its cell.
+- **Criterion 7 is met: 20 of 20.** The task builds gated in manual mode (`uplift.json`, 6 gold cases,
+  mean Δ +0.422 to +0.767). Of the task-2 gates, six used `claude plugin eval` (all five Sonnet builds
+  and Haiku 2; 10 or 11 cases, 7 or 8 of them gold) and four used manual mode (Haiku 1, 3, 4 and 5; 7
+  gold cases). Two task-2 Haiku gates list gold cases at Δ <= 0 (Haiku 2: `gold-02`, `gold-07`; Haiku 5:
+  one case), which caps both at SHIP WITH CAVEATS, the verdict they wrote.
 - **Criterion 12 is met:** there was no "artifact cases differ" failure.
-- **Criteria 8 and 13 are met, but the guard is still untested here.** No build executed or attempted a
-  pattern kill, so the guard blocked nothing. The smoke test (see Arms, above) remains the evidence
-  that it blocks.
-- **Criterion 9 is met.** The six below-target builds wrote `UNSHIPPED`: task Sonnet 1, task Haiku 1
-  and 5, and task-2 Haiku 1, 3 and 4. They include the four lowest-scoring builds (task Haiku 5 0.736,
-  task Haiku 1 0.836, task-2 Haiku 1 0.858, task-2 Haiku 3 0.890). The other 14 verdicts are SHIP WITH
-  CAVEATS. None is a plain SHIP.
-- **The panel is bound to the skill it scored.** In `r-*`, eight verdicts covered an earlier artifact
-  than the one shipped. In `s-*`, `--finish` accepts all 14 shipped verdicts, so each panel receipt
-  carries the final skill's hash. One caveat remains: task-2 Haiku 2 says its full panel scores predate
-  its last two fixes. A targeted Devil's Advocate check, run after those fixes, covered them, and the
-  receipt was written on the final hash. A receipt proves which skill the last `--panel` call saw. It
-  does not prove that every panel member re-scored that skill.
+- **Criteria 8 and 13 are met, but the kill guard is still untested here.** No build executed or
+  attempted a pattern kill, so the guard blocked nothing. The smoke test (see Arms, above) remains the
+  evidence that it blocks.
+- **Criterion 9 is met.** The seven below-target Claude Code builds wrote `UNSHIPPED`: task Sonnet 2
+  and 5, task Haiku 2, 3 and 5, and task-2 Haiku 1 and 4. They include the four lowest-scoring builds
+  (task Haiku 3 0.761, task Haiku 5 0.786, task Haiku 2 0.871, task-2 Haiku 4 0.872). The other 13
+  verdicts are SHIP WITH CAVEATS. None is a plain SHIP.
+- **The verdict follows the panel's scores.** Each panel role wrote a receipt after scoring, and
+  `check_gate.py --consensus` computed the label from the three receipts. Every verdict equals the
+  label its consensus allows: the 13 shipped verdicts sit on a SHIP WITH CAVEATS consensus, and the
+  seven `UNSHIPPED` ones on ITERATE (five) or ESCALATE (two). In `s-*` the panel receipt was written
+  before the panel ran, and `--finish` read no score.
+- **What an `UNSHIPPED` report shows.** `--finish` requires the current `GATE VALID:` and `PANEL
+  CONSENSUS:` lines in an `UNSHIPPED` `BENCHMARK.md`, and all eight (Cursor included) carry both, so
+  each states its gate Δ (+0.413 to +0.980, all positive) and the panel's label, overall and target.
+  Only two (task Sonnet 2 and Cursor 2) put the lines directly under `Verdict: UNSHIPPED`; the others
+  put them 6 to 63 lines further down. No `UNSHIPPED` build had a blocked dimension (`blocked: none` in
+  all eight): ITERATE came from a panel overall of 0.634–0.737 against the 0.85 target, and ESCALATE
+  from the Devil's Advocate. The consensus line names no limiting dimension in that case, so the reason
+  is in each report's prose (task-2 Haiku 1, for example, names the approval tier as its binding
+  constraint). `UNSHIPPED` is a panel verdict, not a score: task Sonnet 5 (0.946) and Cursor 2 (0.971)
+  are among them.
+- **The finish guard sent builds back 14 times, in 6 builds** (task Haiku 5: 2, task Sonnet 3 and 4:
+  1 each; task-2 Haiku 1: 6, Haiku 4: 3, Haiku 5: 1). Thirteen send-backs were "no `BENCHMARK.md` at
+  the build root" and one was a `BENCHMARK.md` without a `Verdict:` line. All six builds then wrote a
+  verdict that `--finish` accepts. The guard never sends a build back twice in a row: in Claude Code a
+  stop that follows a send-back (`stop_hook_active`) always ends the turn. Task-2 Haiku 1's six
+  send-backs are six turns, not a loop. It ran its panel as background subagents, and each subagent's
+  completion notice opened a new turn. The builder ended each of those turns while the rest of the
+  panel was still running, before `BENCHMARK.md` existed. Each send-back was followed by an allowed
+  stop, all six fell between 23:16 and 23:23 UTC, and the last turn wrote `UNSHIPPED` (consensus
+  ITERATE) and ended at 23:24 with `--finish` passing, after 999 s, the fastest task-2 Haiku build.
 
 ### Cursor builds (Amendment 3)
 
-`s-t1-factory-cursor-sonnet-1` and `-2` ran the task cell with `HOST=cursor` (Sonnet 5.5 =
+`u-t1-factory-cursor-sonnet-1` and `-2` ran the task cell with `HOST=cursor` (Sonnet 5.5 =
 `claude-sonnet-5-5-high`) on the same factory. `meta.json` records `home_isolated: true` and
 `claude_on_path: false` for both. Both scored **0.971** (compliance 1.000, craft 1.000, execution
-0.952), the same as the Claude Code Sonnet median. Both gates validated in manual mode (`uplift.json`,
-6 gold cases, mean Δ +0.414 and +0.368, no case at Δ <= 0). Both wrote a panel receipt and passed
-`--finish`. Build 1 ended `UNSHIPPED` on a panel score of 0.699, below the 0.75 floor. Build 2 ended
-SHIP WITH CAVEATS on 0.785, from a panel of three non-Claude models. Each builder picked its gate
-executor from Cursor's models (`claude-haiku-5-5-medium` and `gemini-3.7-flash-high`), so their gate
-numbers do not compare with the Claude Code builds'. Wall times were 44 and 92 minutes, with 6.58M /
-64k and 14.20M / 108k tokens (top-level session only). Two builds show that the pipeline runs end to
-end without Claude Code; they are not a quality result for Cursor.
+0.952), above the Claude Code Sonnet median of 0.946. Both gates validated in manual mode (`uplift.json`,
+6 gold cases, mean Δ +0.623 and +0.883, no case at Δ <= 0), each with `composer-2.5` as the executor the
+builder chose, so their gate numbers do not compare with the Claude Code builds'. Both wrote three role
+receipts and a consensus and ran and passed `--finish` themselves. The finish guard was not active:
+`cursor-agent -p` runs no `stop` hook (`references/hosts.md`). Build 1 ended SHIP
+WITH CAVEATS on a panel overall of 0.814. Build 2 ended `UNSHIPPED` on an ESCALATE consensus (overall
+0.723). Wall times were 59 and 39 minutes, with 12.63M / 77k and 7.36M / 61k tokens (top-level session
+only). Two builds show that the pipeline runs end to end without Claude Code; they are not a quality
+result for Cursor.
 
 ### Honest reading
 
-- **No regression beyond noise, and no gain beyond it either.** v0.3.0 is above v0.2.1 in three cells
-  (+0.005, +0.025, +0.050) and below it in one (−0.037), all inside the pooled spreads. Against `r-*`
-  the medians moved +0.005, −0.037, ±0.000 and ±0.000 (task-2 Sonnet, task-2 Haiku, task Sonnet, task
-  Haiku). These tasks are near the models' ceiling (see the cycle-2 reading below).
-- **Honest negative: task-2 Haiku is the one cell below v0.2.1, bare and `r-*`.** Its median is 0.932,
-  against 0.969 for all three, with runs of 0.858, 0.937, 0.890, 0.980 and 0.932 (Haiku 1 to 5). The
-  gap is −0.037, inside the 0.131 pooled spread with v0.2.1 and the 0.122 spread with bare. Two builds
-  account for most of it, and both fail on holdout inputs that no gold standard shows:
-  - Haiku 1 (0.858) cannot parse "a dozen". In both executor runs on h3, the docking-station line was
-    dropped as `ITEM_NOT_FOUND` (h3 scored 0.385).
-  - Haiku 3 (0.890) treats a fractional contract discount as an invalid catalog row. The holdout
-    vendors include 12.5 %, while the gold vendors have only 0, 5 and 10. So the build emits
-    `CATALOG_ROW_INVALID` exceptions the answer key does not have (h1, h2).
-  - Both also miss an approval tier on one or two holdouts. That has been the most-failed check in
-    every arm since `k-*`.
-  - The static checks cost more than in `r-*`: 3 of 5 builds hard-code master data (compliance) and
-    3 of 5 have no concrete example (craft), against 1 and 0 in `r-*`.
-
-  The gate cannot see these failures, because it measures uplift on the gold standards. The factory
-  did label both builds `UNSHIPPED`. With n=5, the drop cannot be attributed to any change between
-  `r-*` and `s-*`.
-- **Reliability holds, with one gap.** There were no kill commands, no stale gates, no build without a
-  verdict and no below-target build labelled shipped. Shipped verdicts are now bound to the panel's
-  skill hash. Gate validity is 19 of 20, against 20 in `r-*`: the one miss skipped the gate and every
-  check and labelled itself `UNSHIPPED`.
-- **v0.3.0 costs more in every cell**: wall time is 1.14×–4.54× v0.2.1's and input tokens 1.54×–3.85×.
-  Task-2 Haiku costs much more than in `r-*` (30.5M against 17.2M input tokens, two builds over 40M).
-  Task Sonnet got cheaper (10.7 against 13.1 minutes).
-- **Weakest builds:** task Haiku 5 (0.736: craft 0.333, execution 0.726) and task-2 Haiku 1 (0.858).
+- **No regression beyond noise, and no gain beyond it either.** Task-2 Sonnet improves (1.000, +0.025
+  over v0.2.1 and bare, with three of five builds at 1.000). Both task cells tie v0.2.1 and sit 0.025
+  below bare. Task-2 Haiku is below both. Every gap is inside its pooled spread, and the `s-*` to `u-*`
+  movement is inside the run-to-run noise shown above. These tasks are near the models' ceiling (see
+  the cycle-2 reading below).
+- **Honest negative: task-2 Haiku is the weakest cell for the second run in a row.** Its median is
+  0.917 (runs 0.903, 0.917, 0.968, 0.872 and 0.958, Haiku 1 to 5), against 0.969 for v0.2.1 and bare and
+  0.932 in `s-*`. The approval tier is the main loss: 14 of 25 holdout scores miss it, against 11 in
+  `s-*` and 1 for `u-*` Sonnet. Haiku 1 and 4 also lose holdout h3 almost entirely (0.385 and 0.462:
+  wrong lines, quantities and totals). Two builds hard-code master data and two leave a script
+  unreferenced (compliance). The gate cannot see these failures, because it measures uplift on the gold
+  standards; the factory labelled Haiku 1 and 4 `UNSHIPPED`.
+- **Task Haiku's craft checks are the other loss.** Three of five builds score craft 0.333 (a
+  multi-line description and trigger scaffolding), and Haiku 3 and 5 fail most checks on holdout h3.
+- **Reliability is complete in this run.** 20 of 20 gates valid, 20 of 20 verdicts, no kill command,
+  no stale gate, no below-target build labelled shipped, and no verdict above the panel's consensus.
+  The `s-*` gap (task-2 Haiku 4 ended without a gate) did not recur, and the six builds the finish
+  guard sent back all ended with a verdict `--finish` accepts.
+- **v0.3.0 costs more in every cell, and more than in `s-*`**: wall time is 1.58×–5.04× v0.2.1's and
+  input tokens 1.91×–6.17×. Task-2 Haiku costs most (48.9M median input tokens against 30.5M in `s-*`;
+  three builds above 45M).
+- **Weakest builds:** task Haiku 3 (0.761: craft 0.333, execution 0.768) and task Haiku 5 (0.786).
 
 Reproduce from the workspace's benchmarks directory (the matrix driver lives there, not in this repo)
-with `FACTORY_V030_DIR=<factory> caffeinate -dimsu ./drive-matrix.sh cells-v030-s-final.txt 6`. Run the
-two Cursor builds with `HOST=cursor` and `cells-v030-s-cursor.txt`. `<factory>` is
-`skills/create-skill-autoresearch` at this branch's head (byte-identical to harness `82ec859`). A single
+with `FACTORY_V030_DIR=<factory> caffeinate -dimsu ./drive-matrix.sh cells-v030-u-final.txt 6`. Run the
+two Cursor builds with `HOST=cursor` and `cells-v030-u-cursor.txt`. `<factory>` is
+`skills/create-skill-autoresearch` at this branch's head (byte-identical to harness `f684797`). A single
 build is `arms/run-and-score.sh factory <model> <run-id> [task-2]` (see Reproduce).
 
-### Changes measured by `s-*` (harness `0c94f94`..`82ec859`)
+### Changes measured by `u-*` (harness `0c94f94`..`f684797`)
 
-The published result matches the shipped factory: `s-*` measured all of the changes below, and the
+The published result matches the shipped factory: `u-*` measured all of the changes below, and the
 factory has not changed since.
+
+`s-*` (harness `82ec859`) to `u-*` (`f684797`):
+- **Verdict from panel role receipts** (`9dcdeab`): each panel role writes a receipt after scoring
+  (`check_gate.py --panel-receipt`), bound to the skill and rubric hashes, and `--consensus` computes the
+  label from the three receipts and `references/verdict-rules.json`. `--finish` rejects a verdict above
+  that label, and an `UNSHIPPED` report carries the gate and consensus lines. A missed should-trigger or
+  a firing near miss invalidates the gate, and the gate fails a run whose inputs changed meanwhile.
+- **Finish guard** (`34c587e`): a turn-end hook (Claude Code and Codex `Stop`, Cursor `stop`, OpenCode
+  `session.idle`) runs `--finish` in a factory build workspace and sends an unfinished build back once.
+- **Kill guard and processes**: a variable kill is blocked only when a listing filled that variable
+  (`9730fb4`), and a job stopped mid-exit is reported as stopped (`44e1a18`).
+- **Text and CI** (`1f28210`, `f684797`): SKILL.md 5.2–5.4 and `references/hosts.md` document the
+  receipts, consensus and finish guard per host, and the Windows gate smoke runs them.
+
+The changes from `p-*` to `s-*` are listed under the `s-*` run below.
+
+## Release run on `82ec859` (`s-*`, October 2026), superseded by `u-*`
+
+This run used the factory at harness `82ec859`, loaded with `--plugin-dir`, with n=5 per cell. All 20
+Claude Code builds exited 0, with no environment failures and no retries. Median overall (min–max):
+task-2 Sonnet 0.980 (0.935–1.000), task-2 Haiku 0.932 (0.858–0.980), task Sonnet 0.971
+(0.921–0.971), task Haiku 0.921 (0.736–0.971). Criterion 4 passed in every cell, and the gain
+condition was met in three (+0.005, +0.025, +0.050), all inside the spread. Median wall time was 33.0,
+55.3, 10.7 and 34.9 minutes in the same order. Fidelity: 19 of 20 gates were valid. The miss, task-2
+Haiku 4, ran neither the gate nor the validator, wrote `UNSHIPPED` and never ran `--finish`; the finish
+guard (`34c587e`) answers that end state. There were no kill commands and no below-target build
+labelled shipped. Its panel receipt was written before the panel ran and held no score, so one shipped
+verdict (task-2 Haiku 2) rested on panel scores that predated its last two fixes; role receipts
+(`9dcdeab`) close that gap. Two Cursor builds both scored 0.971 and ended `UNSHIPPED` and SHIP WITH
+CAVEATS. The driver was `cells-v030-s-final.txt`.
 
 `r-*` (harness `8e505b0`) to `s-*` (`82ec859`):
 - **Panel bound to the skill** (`f4c31cc`): `check_gate.py --panel` records the skill hash the panel
@@ -277,27 +336,7 @@ factory has not changed since.
   the timing constants give their reasons (`e61ac10`). The Cursor plugin hook is labelled unsupported
   on native Windows (`0d39446`). CI runs one manual gate end to end on `windows-latest` (`12261a0`).
 
-`p-*` (harness `0c94f94`) to `r-*` (`8e505b0`):
-- **Any host** (`6a9f6f2`, Amendment 3): `references/hosts.md` maps each step to Claude Code, Cursor,
-  Codex and OpenCode. Without `claude plugin eval`, the gate runs the manual protocol with no `claude`
-  call. The kill guard ships for all four hosts, and `references/authoring-rules.md` is read on every
-  build.
-- **Unattended endings** (`6a9f6f2`): 5.1 writes the premortem to a file and ends by running 5.2's
-  validator. `check_gate.py --finish` accepts `UNSHIPPED` only after a logged gate attempt.
-- **Native Windows** (`5a60328`, `3cfdb03`, `f902b51`): `run_owned.py` owns jobs through a Job Object on
-  Windows and needs no `fcntl`, `/bin/sh` or `ps` anywhere. `gate.py` runs `run-case.sh` with Git for
-  Windows' bash. The kill guard blocks Windows name kills (`taskkill /IM`, `Stop-Process -Name`), and
-  its `hooks/kill-guard` launcher finds `python3`, `python` or `py -3`.
-- **Gate checks**: `run_owned.py start` refuses to overwrite a live job it cannot verify (`da9442a`).
-  The input hash covers the whole wrapper plugin and golden `*.out` files (`a79b3b6`). `gate.py record`
-  reports gold standards on disk that the manual split leaves out (`8f15fd0`). `--finish` needs the
-  validator's current `GATE VALID` line (`e42a158`). Data-split names decode JSON escapes (`0053757`).
-- **Kill guard**: multi-line pattern kills are caught (`8f112e7`), the OpenCode plugin exports only the
-  plugin (`0f35594`), and unreadable input answers `{"permission": "allow"}` for Cursor (`3cfdb03`).
-- **Text**: Codex runs pass `--skip-git-repo-check` and trust hooks in `/hooks` (`951da88`,
-  `1478991`). The gate-path rule is stated once, and `name` matches its folder (`966ee9e`).
-
-## Release-candidate run (`r-*`, October 2026), superseded by `s-*`
+## Release-candidate run (`r-*`, October 2026), superseded by `s-*` and `u-*`
 
 This run used the factory at harness `8e505b0`, loaded with `--plugin-dir`, with n=5 per cell. All 20
 Claude Code builds exited 0, with no environment failures and no retries. Median overall (min–max):
@@ -322,9 +361,9 @@ validate. The validator published here reads six as stale (`stale_inputs`), thre
 shipped verdict. That is a validator change, not a build failure: five task-2 gates predate `a79b3b6`,
 which extended the input hash to the whole wrapper plugin, so their `gate.json` holds no hash for
 those files. Task Haiku 3 wrote `work/evaluation/check_gate.out` after its gate, a file the newer hash
-set also covers. `r-*`, then `s-*`, replaced `q-*` as the result.
+set also covers. `r-*`, then `s-*` and `u-*`, replaced `q-*` as the result.
 
-## Cycle-3 run (`p-*`, October 2026), superseded by `r-*` and `s-*`
+## Cycle-3 run (`p-*`, October 2026), superseded by `r-*`, `s-*` and `u-*`
 
 The factory at harness `0c94f94` (cycle 3: `gate.py record`, the kill-guard hook, the evaluator
 guidance, `check_gate.py --finish`), loaded with `--plugin-dir`, n=5 per cell. All 20 builds exited 0,
@@ -509,7 +548,7 @@ The effect on criteria 7–9:
   three stopped after the premortem without a verdict, and one validated with `gold=0`.
 
 **After `k-*`** (harness `cb4d484`…`716f524`, cycle-2 round-2 fixes, then cycle 3 to `0c94f94`;
-measured by the `p-*` run, then `r-*` and `s-*`):
+measured by the `p-*` run, then `r-*`, `s-*` and `u-*`):
 - **Gold by grader.** A case is gold when any of its graders is score-bearing (anything but
   `tool_used` on `Skill`); only a case graded by nothing but `Skill` is a trigger or near-miss
   indicator. Every gold case needs a numeric Δ, and a gate whose data split records gold standards
@@ -531,13 +570,13 @@ measured by the `p-*` run, then `r-*` and `s-*`):
   (see Scoring).
 
 **The transcripts behind the fidelity counts are not published**, nor those behind the h5 and h3
-failure counts and the holdout-leak search below (`k-*`, `p-*`, `r-*` and `s-*` alike). The `k-*` session transcripts under the builds'
+failure counts and the holdout-leak search below (`k-*`, `p-*`, `r-*`, `s-*` and `u-*` alike). The `k-*` session transcripts under the builds'
 isolated HOMEs alone are 2,473 files (about 204 MB), and they record the maintainer's machine paths
 and environment. The scripts that derive these claims are published (`scoring/fidelity.py`, the
 per-check results each scorer writes to `score-report.json`, and the holdout search terms below), so
 a re-run of the matrix reproduces the method on fresh transcripts.
 
-**Earlier v0.3.0 runs** stay in `scores.csv`, superseded by `s-*` (and before it `r-*`, `p-*` and `k-*`).
+**Earlier v0.3.0 runs** stay in `scores.csv`, superseded by `u-*` (and before it `s-*`, `r-*`, `p-*` and `k-*`).
 - **`m-*-factory-v030-*`** was the first candidate. It regressed task-2 Haiku (0.932) because builds
   trusted the stale written policy over the gold standards.
 - **`f-*`** added the "gold standards win conflicts" rule (task-2 Haiku 0.969, task Haiku 0.871).
@@ -582,7 +621,7 @@ a re-run of the matrix reproduces the method on fresh transcripts.
     cell was never scored.
   - `ar-*` (factory development experiments, not a published arm): `ar-e1-1`, `ar-e1-2` and `ar-e2-2`
     were killed; their `-killed` rows are kept, the retries ran under the original run-id.
-  - `h-*`, `i-*`, `j-*`, `k-*`, `p-*`, `q-*`, `r-*` and `s-*`: no retries.
+  - `h-*`, `i-*`, `j-*`, `k-*`, `p-*`, `q-*`, `r-*`, `s-*` and `u-*`: no retries.
 - Factory arms ran unattended; builds sometimes skip steps and say so in their own reports.
 
 ## Results — July 2026 (v0.1/v0.2, task only)
@@ -625,7 +664,7 @@ Each run executes in an **isolated HOME** under `$BENCH_RUNS_ROOT` (default:
 never touch the maintainer's real config or credentials. That is containment, not an OS sandbox:
 builders run on the host filesystem with `--dangerously-skip-permissions`, so a builder could read
 outside its run directory. Holdouts and answer keys are never copied into the run directory, and every
-builder transcript, session log and build directory of the October runs, `k-*`, `p-*`, `q-*`, `r-*` and `s-*` included, was searched for holdout paths
+builder transcript, session log and build directory of the October runs, `k-*`, `p-*`, `q-*`, `r-*`, `s-*` and `u-*` included, was searched for holdout paths
 (`task-2/holdout`, `task/holdout`, `answer-key.json`, `request-h*.md`): none found. (One `p-*` build, task Haiku 5,
 named its own gold-derived key `work/evaluation/answer-key.json`; its contents differ from both holdout keys.)
 `SCORE_ONLY=1` re-scores an existing run.
