@@ -305,6 +305,22 @@ factory has not changed since.
 
 The changes from `p-*` to `s-*` are listed under the `s-*` run below.
 
+### After `u-*` (harness `f684797`..`e8df77d`, not re-benchmarked)
+
+The final review's fixes change how invalid input is rejected, not how a valid build runs, so `u-*` was
+not rerun (user decision). Offline tests, CI on Windows and macOS, and a live kill-guard smoke cover them:
+- **Revised panel scores are range-checked** (`0f52f52`): a synthesis receipt must keep each revised
+  score on the rubric scale and back an extreme score with evidence, as first-round scores must.
+- **Listing plus kill in one call is blocked** (`8f53dc1`), so a PID list renamed or redirected through a
+  file no longer slips past the guard. A kill of literal PIDs still passes. The guard is a tripwire for
+  honest mistakes, not a sandbox; `run_owned.py` and the written rule are the contract.
+- **The Claude Code hooks fail open** (`295fc2c`, `onFailure: continue`), so a hook that cannot start on
+  Windows without Git Bash no longer blocks every tool call.
+- **Docs** (`e8df77d`): the version goes in `metadata.version` across SKILL.md and the references, the
+  Windows note says the factory (not Claude Code) needs Git Bash, and the executor echo is labelled a
+  format check.
+- **Benchmark** (`af8cfcb`): the task-2 executor's whole process group is killed on timeout.
+
 ## Release run on `82ec859` (`s-*`, October 2026), superseded by `u-*`
 
 This run used the factory at harness `82ec859`, loaded with `--plugin-dir`, with n=5 per cell. All 20
