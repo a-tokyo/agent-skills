@@ -28,6 +28,10 @@ Per build (a run dir from arms/run-arm.sh):
   consensus         the label consensus.json records there (check_gate.py --consensus), and `allowed`, the
                     terminal verdict it allows
   above_consensus   the BENCHMARK.md verdict ranks above the label the consensus allows
+  panel_rounds      panel rounds the factory archived (work/experiments/panel/rounds/<n>/round.json, one per
+                    consensus over a new skill hash; capped at max_panel_rounds); None before that archive
+  panel_spawns      Agent/Task tool calls the builder made for the panel: a description naming a verifier,
+                    the devil's advocate or the panel (session jsonl, subagents included)
   finish_guard_blocks  times the finish guard (hooks/finish_guard.py, an end-of-turn hook) sent the build
                     back: lines in work/experiments/finish-guard.jsonl
 
@@ -54,6 +58,7 @@ KILL_RE = re.compile(
     r"|\bkill\b[^\n;]*\$\(\s*pgrep\b"
 )
 GUARD_MARK = "pattern kills hit unrelated processes"
+PANEL_SPAWN_RE = re.compile(r"verifier|devil'?s[ -]advocate|\bpanel\b", re.IGNORECASE)
 VERDICT_RE = re.compile(r"\b(UNSHIPPED|SHIP[ _]WITH[ _]CAVEATS|ITERATE|BLOCK|SHIP)\b")
 BELOW_TARGET = {"ITERATE", "BLOCK", "UNSHIPPED"}
 SHIPPED_VERDICTS = {"SHIP", "SHIP WITH CAVEATS"}
@@ -93,6 +98,8 @@ class Build:
     allowed: str | None = None
     above_consensus: bool = False
     finish_guard_blocks: int = 0
+    panel_rounds: int | None = None
+    panel_spawns: int = 0
 
 
 def workspace_of(run: Path) -> Path | None:
@@ -147,6 +154,39 @@ def panel_of(ws: Path) -> tuple[list[str], str | None, str | None]:
     return roles, consensus.get("label"), consensus.get("allowed")
 
 
+def panel_rounds(ws: Path) -> int | None:
+    rounds = ws / "work" / "experiments" / "panel" / "rounds"
+    if not rounds.is_dir():
+        return None
+    return sum(1 for p in rounds.iterdir() if p.name.isdigit() and (p / "round.json").is_file())
+
+
+def _session_entries(run: Path):
+    """The `assistant` and `user` entries of every session jsonl under home/.claude/projects/; the
+    `api-request-blob` copies of the same calls are not read."""
+    projects = run / "home" / ".claude" / "projects"
+    for path in sorted(projects.rglob("*.jsonl")) if projects.is_dir() else []:
+        with open(path, errors="replace") as fh:
+            for line in fh:
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                if isinstance(entry, dict) and entry.get("type") in ("assistant", "user"):
+                    yield entry
+
+
+def panel_spawns(run: Path) -> int:
+    count = 0
+    for entry in _session_entries(run):
+        content = (entry.get("message") or {}).get("content")
+        for item in content if entry["type"] == "assistant" and isinstance(content, list) else []:
+            if (isinstance(item, dict) and item.get("type") == "tool_use" and item.get("name") in ("Agent", "Task")
+                    and PANEL_SPAWN_RE.search(str((item.get("input") or {}).get("description") or ""))):
+                count += 1
+    return count
+
+
 def finish_guard_blocks(ws: Path) -> int:
     path = ws / "work" / "experiments" / "finish-guard.jsonl"
     return sum(1 for line in path.read_text(errors="replace").splitlines() if line.strip()) if path.is_file() else 0
@@ -161,28 +201,19 @@ def _text(content: object) -> str:
 def issued_commands(run: Path) -> list[tuple[str, bool]]:
     """(command, blocked by the kill guard) per Bash tool call the builder made. Only `assistant` and
     `user` entries are read; the `api-request-blob` copies of the same calls are not."""
-    projects = run / "home" / ".claude" / "projects"
     calls: list[tuple[str | None, str]] = []
     blocked: set[str] = set()
-    for path in sorted(projects.rglob("*.jsonl")) if projects.is_dir() else []:
-        with open(path, errors="replace") as fh:
-            for line in fh:
-                try:
-                    entry = json.loads(line)
-                except json.JSONDecodeError:
-                    continue
-                if not isinstance(entry, dict) or entry.get("type") not in ("assistant", "user"):
-                    continue
-                content = (entry.get("message") or {}).get("content")
-                for item in content if isinstance(content, list) else []:
-                    if not isinstance(item, dict):
-                        continue
-                    if entry["type"] == "assistant" and item.get("type") == "tool_use":
-                        command = (item.get("input") or {}).get("command")
-                        if isinstance(command, str):
-                            calls.append((item.get("id"), command))
-                    elif item.get("type") == "tool_result" and GUARD_MARK in _text(item.get("content")):
-                        blocked.add(item.get("tool_use_id"))
+    for entry in _session_entries(run):
+        content = (entry.get("message") or {}).get("content")
+        for item in content if isinstance(content, list) else []:
+            if not isinstance(item, dict):
+                continue
+            if entry["type"] == "assistant" and item.get("type") == "tool_use":
+                command = (item.get("input") or {}).get("command")
+                if isinstance(command, str):
+                    calls.append((item.get("id"), command))
+            elif item.get("type") == "tool_result" and GUARD_MARK in _text(item.get("content")):
+                blocked.add(item.get("tool_use_id"))
     found = [(command, call_id is not None and call_id in blocked) for call_id, command in calls]
     return found + cursor_commands(run / "transcript.txt")
 
@@ -262,7 +293,7 @@ def score(run: Path, check_gate: Path) -> Build:
     kills, blocked = kill_commands(run)
     if ws is None:
         return Build(run.name, None, False, False, "no workspace (ws/ or work/)", None, len(kills), kills[:3],
-                     blocked, None, None, False)
+                     blocked, None, None, False, panel_spawns=panel_spawns(run))
     evaluation = ws / "work" / "evaluation"
     artifact = (evaluation / "plugin-eval.json").is_file() or (evaluation / "uplift.json").is_file()
     valid, reason, code = gate(ws, check_gate)
@@ -273,7 +304,8 @@ def score(run: Path, check_gate: Path) -> Build:
     above = verdict in RANK and allowed in RANK and RANK[verdict] > RANK[allowed]
     return Build(run.name, ws.name, artifact, valid, reason, code, len(kills), [k[:160] for k in kills[:3]],
                  blocked, verdict, shipped_label_ok(text, verdict), verdict in SHIPPED_VERDICTS and not valid,
-                 finished(ws, check_gate), roles, label, allowed, above, finish_guard_blocks(ws))
+                 finished(ws, check_gate), roles, label, allowed, above, finish_guard_blocks(ws),
+                 panel_rounds(ws), panel_spawns(run))
 
 
 def summary(builds: list[Build]) -> dict:
@@ -294,17 +326,20 @@ def summary(builds: list[Build]) -> dict:
         "verdict_above_consensus": sum(b.above_consensus for b in builds),
         "builds_sent_back_by_finish_guard": sum(b.finish_guard_blocks > 0 for b in builds),
         "finish_guard_blocks": sum(b.finish_guard_blocks for b in builds),
+        "panel_rounds": sum(b.panel_rounds or 0 for b in builds),
+        "panel_spawns": sum(b.panel_spawns for b in builds),
     }
 
 
 def table(builds: list[Build]) -> str:
     rows = [("run", "artifact", "gate_valid", "kills", "blocked", "verdict", "shipped_ok", "ship_gate", "finished",
-             "receipts", "consensus", "sent_back", "gate reason")]
+             "receipts", "rounds", "spawns", "consensus", "sent_back", "gate reason")]
     rows += [(b.run, "yes" if b.artifact else "no", "yes" if b.gate_valid else "no", str(b.kill_commands),
               str(b.kill_blocked),
               b.verdict or "-", "-" if b.shipped_label_ok is None else ("yes" if b.shipped_label_ok else "NO"),
               "INVALID" if b.shipped_gate_invalid else "-",
               "-" if b.finished is None else ("yes" if b.finished else "no"), str(len(b.panel_receipts)),
+              "-" if b.panel_rounds is None else str(b.panel_rounds), str(b.panel_spawns),
               (b.consensus or "-") + (" ABOVE" if b.above_consensus else ""), str(b.finish_guard_blocks),
               b.gate_reason) for b in builds]
     widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]) - 1)]
@@ -332,7 +367,8 @@ def main(argv: list[str] | None = None) -> int:
           f"finished {totals['finished']}, three role receipts {totals['builds_with_three_receipts']}, "
           f"consensus {totals['builds_with_consensus']}, verdicts above the consensus {totals['verdict_above_consensus']}, "
           f"sent back by the finish guard {totals['finish_guard_blocks']} times in "
-          f"{totals['builds_sent_back_by_finish_guard']} builds")
+          f"{totals['builds_sent_back_by_finish_guard']} builds, panel rounds archived {totals['panel_rounds']}, "
+          f"panel subagent spawns {totals['panel_spawns']}")
     print()
     print(json.dumps({"builds": [asdict(b) for b in builds], "summary": totals}, indent=2))
     return 0

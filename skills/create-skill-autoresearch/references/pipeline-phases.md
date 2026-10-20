@@ -493,8 +493,8 @@ adds the rest, and applies it in every experiment:
 - **Noise threshold.** Keep a change only if `overall_score` beats the best by more than the judge
   noise threshold: the larger of 0.01 absolute minimum and the per-judge variance measured on the
   baseline (re-run the baseline twice to estimate it). Gains inside the noise are discards.
-- **Plateau window.** `rubric.yaml` `plateau_window` (default 5) consecutive discards is a plateau;
-  SKILL.md 4.3 decides whether it is terminal.
+- **Plateau window.** `rubric.yaml` `plateau_window` (default 2) consecutive experiments within the noise
+  threshold is a plateau, and SKILL.md 4.3 ends the loop there.
 - **Baseline failure.** If the metric command fails on experiment 0 (no `METRIC overall_score` line,
   non-zero exit), stop and fix `evaluate.sh` — never start the loop against a broken metric.
 - **Experiment record.** Append one line to `autoresearch.jsonl` per experiment:
@@ -655,7 +655,7 @@ Assess STRUCTURAL QUALITY: correctness, completeness, clarity, spec adherence.
 - You have NOT seen any other evaluator's scores or the building process
 
 ## Input
-- Skill: {{skill_content}}
+- Skill: {{skill_md}} (its SKILL.md only; open a file under {{skill_dir}} by name only when a line you score points to it)
 - Gold standards: {{gold_standards}}
 - Rubric: {{rubric}}
 - Premortem risks: {{premortem_risks}}
@@ -689,7 +689,7 @@ real-world usability, edge cases, integration quality, developer experience.
 - Would an agent struggle to follow these instructions?
 
 ## Input
-- Skill: {{skill_content}}
+- Skill: {{skill_md}} (its SKILL.md only; open a file under {{skill_dir}} by name only when a line you score points to it)
 - Gold standards: {{gold_standards}}
 - Rubric: {{rubric}}
 - Premortem risks: {{premortem_risks}}
@@ -736,7 +736,7 @@ Write "ESCALATE: <reason>" if you identify a concern that:
 - You can describe a specific failure scenario others cannot rebut
 
 ## Input
-- Skill: {{skill_content}}
+- Skill: {{skill_md}} (its SKILL.md only; open a file under {{skill_dir}} by name only when a line you score points to it)
 - Gold standards: {{gold_standards}}
 - Rubric: {{rubric}}
 - Premortem risks: {{premortem_risks}}

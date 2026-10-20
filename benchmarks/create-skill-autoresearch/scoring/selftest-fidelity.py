@@ -13,11 +13,13 @@ Fixtures (scoring/fixtures/fidelity/):
   stale-ship        SHIP WITH CAVEATS with a GATE VALID line, but the skill was edited after the gate (stale)
   guard-blocked     session shaped like the kill-guard smoke run: a pkill and a pgrep|xargs kill the guard
                     blocked (one result as a string, one as text blocks; an api-request-blob copy of a
-                    call), a killall that ran, and an owned stop
+                    call), a killall that ran, an owned stop, and two panel Agent/Task spawns beside a
+                    research one
   cursor-blocked    a cursor-agent stream-json transcript (HOST=cursor): a hook-rejected pkill, a killall
                     that ran, an ls
   panel-above       plugin-ok plus a rubric, three role receipts and a SHIP WITH CAVEATS consensus written by
-                    check_gate.py, a SHIP verdict (above the consensus) and one finish-guard send-back
+                    check_gate.py, a SHIP verdict (above the consensus), one finish-guard send-back and one
+                    archived panel round (rounds/1/round.json; rounds/notes/ is not a round)
   panel-finished    the same with a SHIP WITH CAVEATS verdict carrying both lines: --finish passes
 """
 
@@ -96,6 +98,7 @@ expect("guard-blocked: two blocked attempts counted apart", guard.kill_blocked =
 expect("guard-blocked: only the killall that ran is a kill command", guard.kill_commands == 1
        and guard.kill_examples == ["killall python3"])
 expect("manual-kill: calls without ids are never blocked", kill.kill_blocked == 0)
+expect("guard-blocked: two panel spawns counted, the research spawn not", guard.panel_spawns == 2)
 
 cursor = builds["cursor-blocked"]
 expect("cursor-blocked: a hook-rejected pkill in a cursor-agent transcript is blocked", cursor.kill_blocked == 1)
@@ -107,6 +110,8 @@ expect("panel-above: consensus SHIP WITH CAVEATS allows SHIP WITH CAVEATS",
        (above.consensus, above.allowed) == ("SHIP WITH CAVEATS", "SHIP WITH CAVEATS"))
 expect("panel-above: SHIP above the consensus is flagged and unfinished", above.above_consensus and above.finished is False)
 expect("panel-above: one finish-guard send-back counted", above.finish_guard_blocks == 1)
+expect("panel-above: one archived panel round; none archived elsewhere",
+       above.panel_rounds == 1 and done.panel_rounds is None and ok.panel_rounds is None)
 expect("panel-finished: the allowed verdict with both lines finishes", done.finished is True and not done.above_consensus)
 expect("plugin-ok: SHIP WITH CAVEATS without a panel consensus is unfinished", ok.finished is False and ok.consensus is None)
 
@@ -118,7 +123,7 @@ expect("summary counts", totals == {"builds": 12, "artifact_at_canonical_path": 
                                     "shipped_with_gate_invalid": 1, "finished": 1,
                                     "builds_with_three_receipts": 2, "builds_with_consensus": 2,
                                     "verdict_above_consensus": 1, "builds_sent_back_by_finish_guard": 2,
-                                    "finish_guard_blocks": 2})
+                                    "finish_guard_blocks": 2, "panel_rounds": 1, "panel_spawns": 2})
 expect("verdict: SHIP_WITH_CAVEATS spelling normalised", fidelity.verdict_of("Verdict: SHIP_WITH_CAVEATS") == "SHIP WITH CAVEATS")
 expect("verdict: none stated", fidelity.verdict_of("# notes\nno decision yet") is None)
 expect("shipped: 'never shipped' is negated", fidelity.shipped_label_ok("BLOCK. It was never shipped.", "BLOCK") is True)

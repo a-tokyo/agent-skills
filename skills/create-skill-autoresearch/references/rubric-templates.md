@@ -21,10 +21,13 @@ dimensions:
     weight: <0.0-1.0>       # must sum to 1.0 across all dimensions
     scale: "1-10"            # scoring scale
     criteria: <string>       # what this dimension measures
+    sections: [<heading>]    # optional, one-line flow list: SKILL.md heading prefixes it judges (absent: all);
+                             # with post_panel_recheck: scoped (verdict-rules.json) a later panel round
+                             # re-scores it only when the skill change touches one of them
   # 5-10 dimensions total
 target_score: <0.0-1.0>     # normalized target (0.85 = 85%)
 max_iterations: <int>        # experiment budget (default: 20)
-plateau_window: <int>        # consecutive failures before plateau alert (default: 5)
+plateau_window: <int>        # consecutive experiments within noise that end the loop (default: 2)
 ```
 
 Weights MUST sum to 1.0. The `overall_score` METRIC is computed as:
@@ -94,7 +97,7 @@ dimensions:
     criteria: "Works across projects without hardcoded names or project-specific assumptions."
 target_score: 0.85
 max_iterations: 20
-plateau_window: 5
+plateau_window: 2
 ```
 
 ### Domain-Workflow Skill (e.g., product documentation, report aggregation)
@@ -136,7 +139,7 @@ dimensions:
     criteria: "Output serves equally well as the human-written gold standard reference."
 target_score: 0.85
 max_iterations: 25
-plateau_window: 5
+plateau_window: 2
 ```
 
 ### Pipeline Skill (e.g., data generator, content pipeline)
@@ -178,7 +181,7 @@ dimensions:
     criteria: "Reasonable resource usage. No unnecessary API calls or processing."
 target_score: 0.85
 max_iterations: 20
-plateau_window: 5
+plateau_window: 2
 ```
 
 ---

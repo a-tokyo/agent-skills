@@ -11,6 +11,7 @@ from __future__ import annotations
 import json
 import locale
 import os
+import shutil
 import signal
 import subprocess
 import sys
@@ -158,8 +159,8 @@ def _path_without_claude() -> str:
     return os.pathsep.join(dirs or ["/usr/bin", "/bin"])
 
 
-def _script(name: str) -> list[str]:
-    return [sys.executable, "-B", str(SCRIPTS / name)]
+def _script(name: str, scripts: Path = SCRIPTS) -> list[str]:
+    return [sys.executable, "-B", str(scripts / name)]
 
 
 def _alive(pid: int) -> bool:
@@ -187,6 +188,8 @@ def _until(predicate, timeout: float = 30) -> bool:
 
 
 class TempWorkspace(unittest.TestCase):
+    scripts = SCRIPTS  # a test may point this at a copy of the skill with other verdict-rules.json values
+
     def setUp(self) -> None:
         # Windows cannot delete a file a just-stopped process still holds; a leftover temp dir is harmless.
         self._tmp = tempfile.TemporaryDirectory(**({"ignore_cleanup_errors": True} if WINDOWS else {}))
@@ -242,7 +245,7 @@ class TempWorkspace(unittest.TestCase):
         full = _env(self.bin, FAKE_ARGV_LOG=str(self.argv_log), **env)
         if no_claude:
             full["PATH"] = _path_without_claude()
-        return subprocess.run([*_script(name), "--workspace", str(ws or self.ws), *args], capture_output=True,
+        return subprocess.run([*_script(name, self.scripts), "--workspace", str(ws or self.ws), *args], capture_output=True,
                               encoding="utf-8", errors="replace", timeout=timeout, env=full)
 
     def evaluation(self, name: str) -> dict:
@@ -1789,6 +1792,81 @@ class PanelTest(TempWorkspace):
         self.assertIn("PANEL CONSENSUS: ESCALATE (allows UNSHIPPED); overall=n/a", line)
         self.assertIn("deadlocked: correctness", line)
 
+    ITERATE_PANEL = {"verifier-a": (5, 5), "verifier-b": (5, 6), "devils-advocate": (5, 5)}
+
+    def fix_and_regate(self, n: int) -> None:
+        (self.ws / "output" / "demo" / "SKILL.md").write_text(f"---\nname: demo\ndescription: Fix {n}.\n---\n# Demo\n")
+        self.gate()
+
+    def finish(self, text: str) -> dict:
+        (self.ws / "BENCHMARK.md").write_text(text)
+        return json.loads(self.run_script("check_gate.py", "--finish", "--json").stdout)
+
+    def test_a_round_is_a_consensus_over_a_new_skill_and_the_cap_ends_the_build(self) -> None:
+        self.gate()
+        lines = []
+        for n in (1, 2, 3):
+            if n > 1:
+                self.fix_and_regate(n)
+            line = self.run_panel(self.ITERATE_PANEL)
+            self.assertIn("PANEL CONSENSUS: ITERATE (allows UNSHIPPED)", line)
+            consensus = json.loads((self.ws / "work" / "experiments" / "panel" / "consensus.json").read_text())
+            self.assertEqual((consensus["panel_round"], consensus["max_panel_rounds"]), (n, 3))
+            lines.append(line)
+        self.assertEqual(self.run_panel(self.ITERATE_PANEL), lines[-1], "a re-run on the same skill is the same round")
+        rounds = self.ws / "work" / "experiments" / "panel" / "rounds"
+        self.assertEqual(sorted(p.name for p in rounds.iterdir()), ["1", "2", "3"])
+        record = json.loads((rounds / "2" / "round.json").read_text())
+        self.assertEqual((record["round"], record["label"], record["line"]), (2, "ITERATE", lines[1]))
+        self.assertEqual(set(record["files"]), {"SKILL.md"})
+        self.assertIn("Fix 2.", (rounds / "2" / "SKILL.md").read_text())
+        self.assertEqual(sorted(p.name for p in (rounds / "3").iterdir()),
+                         ["SKILL.md", "devils-advocate.json", "round.json", "verifier-a.json", "verifier-b.json"])
+        self.fix_and_regate(4)
+        for out in (self.run_script("check_gate.py", "--panel"), self.receipt("verifier-a", 9, 9), self.consensus()):
+            self.assertEqual(out.returncode, 1, out.stdout)
+            self.assertIn("PANEL ROUNDS EXHAUSTED: the panel ran its 3 rounds", out.stdout)
+            self.assertIn(f"write `Verdict: UNSHIPPED` in BENCHMARK.md beside the last round's line: {lines[-1]}",
+                          out.stdout)
+        gate_line = self.run_script("check_gate.py").stdout.strip()
+        data = self.finish(f"Verdict: UNSHIPPED\n\n{gate_line}\n")
+        self.assertFalse(data["finished"])
+        self.assertIn("lacks the last round's PANEL CONSENSUS line", data["reason"])
+        self.assertIn("needs the panel's consensus on this skill: the panel ran its 3 rounds", self.finish(f"Verdict: SHIP WITH CAVEATS\n\n{gate_line}\n{lines[-1]}\n")
+                      ["reason"], "no SHIP on a skill the capped panel never scored")
+        self.assertEqual(self.finish(f"Verdict: UNSHIPPED\n\n{gate_line}\n{lines[-1]}\n"),
+                         {"finished": True, "verdict": "UNSHIPPED", "reason": "ok"})
+
+    def test_full_recheck_is_the_default(self) -> None:
+        rules = json.loads((SCRIPTS.parent / "references" / "verdict-rules.json").read_text())
+        self.assertEqual((rules["post_panel_recheck"], rules["scoped_max_changed_lines"]), ("full", 40))
+        self.gate()
+        self.run_panel(self.ITERATE_PANEL)
+        self.fix_and_regate(2)
+        out = self.run_script("check_gate.py", "--panel")
+        self.assertIn("PANEL ROUND 2: full: each role scores every dimension (post_panel_recheck is full)", out.stdout)
+        partial = self.root / "partial.json"
+        partial.write_text(json.dumps({"scores": {"clarity": {"score": 9, "confidence": 0.9, "evidence": "q"}}}))
+        out = self.run_script("check_gate.py", "--panel-receipt", "verifier-a", str(partial))
+        self.assertIn("scores must cover exactly the rubric's dimensions ['clarity', 'correctness']", out.stdout)
+        self.assertEqual(self.receipt("verifier-a", 9, 9).returncode, 0)
+        receipt = json.loads((self.ws / "work" / "experiments" / "panel" / "verifier-a.json").read_text())
+        self.assertNotIn("recheck", receipt, "full receipts keep today's shape")
+
+    def test_a_ship_on_the_last_round_still_ships(self) -> None:
+        self.gate()
+        for n in (1, 2):
+            if n > 1:
+                self.fix_and_regate(n)
+            self.run_panel(self.ITERATE_PANEL)
+        self.fix_and_regate(3)
+        line = self.run_panel({"verifier-a": (9, 9), "verifier-b": (9, 8), "devils-advocate": (8, 8)})
+        self.assertIn("PANEL CONSENSUS: SHIP (allows SHIP)", line)
+        self.assertEqual(json.loads((self.ws / "work" / "experiments" / "panel" / "rounds" / "3" / "round.json")
+                                    .read_text())["line"], line)
+        gate_line = self.run_script("check_gate.py").stdout.strip()
+        self.assertTrue(self.finish(f"Verdict: SHIP\n\n{gate_line}\n{line}\n")["finished"])
+
     def test_the_thresholds_come_from_verdict_rules(self) -> None:
         rules = json.loads((SCRIPTS.parent / "references" / "verdict-rules.json").read_text())
         self.assertEqual((rules["caveat_margin"], rules["block_below"]), (0.10, 3))
@@ -1797,6 +1875,229 @@ class PanelTest(TempWorkspace):
         line = self.run_panel({"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (8, 8)})
         self.assertIn("PANEL CONSENSUS: SHIP WITH CAVEATS (allows SHIP WITH CAVEATS); overall=0.867 target=0.95",
                       line, "rubric.yaml's target_score, minus caveat_margin, sets the band")
+
+
+class FastPathTest(TempWorkspace):
+    def fast_path(self) -> str:
+        out = self.run_script("check_gate.py", "--fast-path")
+        self.assertEqual(out.returncode, 0 if out.stdout.startswith("FAST PATH:") else 1, out.stdout + out.stderr)
+        return out.stdout.strip()
+
+    def log(self, *experiments: dict, where: str = "work/experiments") -> None:
+        path = self.ws / where / "autoresearch.jsonl"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("".join(json.dumps(e) + "\n" for e in experiments))
+
+    def build(self, cases: list[str]) -> None:
+        self.make_build(cases)
+        self.write_rubric(target=0.85)
+
+    def test_a_baseline_at_target_with_uplift_everywhere_skips_phase_4(self) -> None:
+        self.build(["gold-01", "trigger-1"])
+        self.assertIn("NO FAST PATH: the gate does not validate", self.fast_path())
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        self.assertIn("NO FAST PATH: no experiment 0 in autoresearch.jsonl", self.fast_path())
+        self.log({"experiment": 0, "commit": "", "metric": 0.84, "status": "baseline"})
+        self.assertEqual(self.fast_path(), "NO FAST PATH: baseline overall_score 0.840 is below target_score 0.85")
+        self.log({"type": "validation_check", "experiment": 3}, {"experiment": 0, "metric": 0.85}, where=".")
+        self.assertEqual(self.fast_path(), "FAST PATH: baseline overall_score 0.850 >= target_score 0.85 and every "
+                                           "gold delta > 0 (mean +0.500); skip the Phase 4 loop (4.1-4.6) and "
+                                           "continue at 5.1", "the root log wins; a validation check is no experiment")
+        self.log({"experiment": 0, "metric": 0.9}, {"experiment": 1, "metric": 0.92}, where=".")
+        self.assertIn("NO FAST PATH: Phase 4 already logged 1 experiment(s)", self.fast_path())
+
+    def test_a_gold_delta_at_or_below_zero_needs_phase_4(self) -> None:
+        self.build(["gold-01", "trigout-2"])
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        self.log({"experiment": 0, "metric": 0.95})
+        self.assertEqual(self.fast_path(), "NO FAST PATH: gold delta<=0 on trigout-2")
+
+    def test_a_skill_changed_since_the_baseline_commit_needs_phase_4(self) -> None:
+        self.build(["gold-01"])
+        git = ["git", "-C", str(self.ws), "-c", "user.name=t", "-c", "user.email=t@t", "-c", "commit.gpgsign=false"]
+        subprocess.run([*git, "init", "-q"], check=True)
+        subprocess.run([*git, "add", "output"], check=True)
+        subprocess.run([*git, "commit", "-q", "-m", "baseline"], check=True)
+        commit = subprocess.run([*git, "rev-parse", "HEAD"], check=True, capture_output=True, text=True).stdout.strip()
+        self.log({"experiment": 0, "commit": commit, "metric": 0.9})
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        self.assertTrue(self.fast_path().startswith("FAST PATH:"))
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Edited.\n---\n")
+        self.assertEqual(self.run_script("gate.py", "--model", "m").returncode, 0)
+        self.assertEqual(self.fast_path(), f"NO FAST PATH: output/demo/ changed since experiment 0 (commit {commit})")
+
+
+SECTIONED_SKILL = textwrap.dedent("""\
+    ---
+    name: demo
+    description: Demo.
+    ---
+    # Demo
+    intro
+    ## Workflow
+    step one
+    step two
+    ```
+    ## Examples inside a fence is not a heading
+    ```
+    ## Examples
+    example one
+    ## Hard constraints
+    never X
+    """)
+
+
+class ScopedRecheckTest(TempWorkspace):
+    """post_panel_recheck: scoped, on a copy of the skill whose verdict-rules.json says so."""
+
+    def setUp(self) -> None:
+        super().setUp()
+        skill = self.root / "skill"
+        for part in ("scripts", "references"):
+            shutil.copytree(SCRIPTS.parent / part, skill / part, ignore=shutil.ignore_patterns("tests", "__pycache__"))
+        rules = json.loads((skill / "references" / "verdict-rules.json").read_text(encoding="utf-8"))
+        (skill / "references" / "verdict-rules.json").write_text(json.dumps({**rules, "post_panel_recheck": "scoped"}))
+        self.scripts = skill / "scripts"
+        self.make_build(["gold-01", "trigger-1"])
+        self.skill_md = self.ws / "output" / "demo" / "SKILL.md"
+        self.skill_md.write_text(SECTIONED_SKILL)
+        self.write_sectioned_rubric()
+        self.gate()
+
+    def write_sectioned_rubric(self, target: float = 0.85, correctness: str = "[Workflow]") -> None:
+        (self.ws / "work" / "evaluation" / "rubric.yaml").write_text(textwrap.dedent(f"""\
+            dimensions:
+              - name: correctness
+                weight: 0.6
+                sections: {correctness}
+              - name: clarity
+                weight: 0.4
+                sections: ["Examples"]
+            target_score: {target}
+            """))
+
+    def gate(self) -> None:
+        out = self.run_script("gate.py", "--model", "m")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+
+    def edit(self, old: str, new: str) -> None:
+        text = self.skill_md.read_text()
+        self.assertIn(old, text)
+        self.skill_md.write_text(text.replace(old, new, 1))
+        self.gate()
+
+    def panel_line(self) -> str:
+        out = self.run_script("check_gate.py", "--panel")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        return out.stdout.strip().splitlines()[-1]
+
+    def clarity_receipt(self, role: str, clarity: float) -> subprocess.CompletedProcess:
+        path = self.root / f"{role}-scoped.json"
+        path.write_text(json.dumps({"scores": {"clarity": {"score": clarity, "confidence": 0.9, "evidence": "q"}},
+                                    "pass_recommendation": "ITERATE"}))
+        return self.run_script("check_gate.py", "--panel-receipt", role, str(path))
+
+    def receipt_file(self, role: str, round_: int | None = None) -> Path:
+        panel_dir = self.ws / "work" / "experiments" / "panel"
+        return (panel_dir / "rounds" / str(round_) if round_ else panel_dir) / f"{role}.json"
+
+    ROUND_1 = {"verifier-a": (5, 5), "verifier-b": (6, 5), "devils-advocate": (5, 5)}
+
+    def test_a_scoped_round_rescores_only_the_touched_dimensions_and_carries_the_rest(self) -> None:
+        self.assertIn("PANEL ROUND 1: full: each role scores every dimension (the first panel round)", self.panel_line())
+        self.run_panel(self.ROUND_1)
+        round_1_sha = gate_common.skill_sha256(self.ws, "demo")
+        self.edit("example one", "example one, with the edge case")
+        self.assertEqual(self.panel_line(), "PANEL ROUND 2: scoped re-check: each role scores only clarity; "
+                                            "correctness carry forward from round 1")
+        out = self.receipt("verifier-a", 9, 9)
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("score exactly ['clarity']; correctness carry forward from round 1; got ['clarity', 'correctness']",
+                      out.stdout)
+        for role in ("verifier-a", "verifier-b", "devils-advocate"):
+            out = self.clarity_receipt(role, 9)
+            self.assertEqual(out.returncode, 0, out.stdout)
+        receipt = json.loads(self.receipt_file("verifier-b").read_text())
+        self.assertEqual(receipt["scores"]["correctness"],
+                         {"score": 6, "confidence": 0.9, "evidence": "verbatim quote", "carried_from_sha256": round_1_sha})
+        self.assertEqual(receipt["skill_sha256"], gate_common.skill_sha256(self.ws, "demo"), "bound to the new skill")
+        self.assertEqual(receipt["recheck"], {"mode": "scoped", "rescored": ["clarity"], "carried": ["correctness"],
+                                              "from_round": 1, "from_skill_sha256": round_1_sha})
+        archived = self.receipt_file("verifier-a", 1)
+        original = archived.read_text()
+        archived.write_text(original.replace('"score": 5', '"score": 7', 1))
+        self.assertIn("verifier-a's carried scores differ from round 1's archived receipt",
+                      self.run_script("check_gate.py", "--consensus").stdout)
+        archived.write_text(original)
+        current = self.receipt_file("devils-advocate")
+        data = json.loads(current.read_text())
+        data["scores"]["correctness"]["score"] = 9
+        current.write_text(json.dumps(data))
+        self.assertIn("devils-advocate's carried scores differ", self.run_script("check_gate.py", "--consensus").stdout)
+        self.assertEqual(self.clarity_receipt("devils-advocate", 9).returncode, 0)
+        out = self.run_script("check_gate.py", "--consensus")
+        self.assertEqual(out.returncode, 0, out.stdout)
+        self.assertIn("PANEL CONSENSUS: ITERATE (allows UNSHIPPED); overall=0.680",
+                      out.stdout, "the label comes from the merged scores: correctness 5.33 carried, clarity 9")
+        consensus = json.loads((self.ws / "work" / "experiments" / "panel" / "consensus.json").read_text())
+        self.assertEqual((consensus["panel_round"], consensus["recheck"]["mode"]), (2, "scoped"))
+        record = json.loads((self.ws / "work" / "experiments" / "panel" / "rounds" / "2" / "round.json").read_text())
+        self.assertEqual(record["recheck"]["carried"], ["correctness"])
+
+    def test_a_carried_dispute_is_not_reopened(self) -> None:
+        for role, scores in (("verifier-a", (9, 5)), ("verifier-b", (9, 5)), ("devils-advocate", (6, 5))):
+            self.assertEqual(self.receipt(role, *scores).returncode, 0)
+        for role, revised in (("verifier-a", 9), ("verifier-b", 8), ("devils-advocate", 6)):
+            self.assertEqual(self.receipt(role, 0, 0, synthesis={"correctness": {"revised": revised}}).returncode, 0)
+        self.assertEqual(self.run_script("check_gate.py", "--consensus").returncode, 0)
+        self.edit("example one", "example one, clearer")
+        for role in ("verifier-a", "verifier-b", "devils-advocate"):
+            self.assertEqual(self.clarity_receipt(role, 8).returncode, 0)
+        out = self.run_script("check_gate.py", "--consensus")
+        self.assertEqual(out.returncode, 0, "correctness 9/8/6 is carried from round 1's synthesis, not disputed again")
+        consensus = json.loads((self.ws / "work" / "experiments" / "panel" / "consensus.json").read_text())
+        self.assertEqual((consensus["disputed"], consensus["rounds"]), ([], 1))
+        self.assertIn("devils-advocate 6", consensus["dissent"]["correctness"])
+
+    def test_large_frontmatter_constraint_and_other_file_changes_fall_back_to_full(self) -> None:
+        self.run_panel(self.ROUND_1)
+        extra = self.ws / "output" / "demo" / "references" / "extra.md"
+        cases = (
+            (lambda: self.edit("description: Demo.", "description: Demo, sharper."), "the frontmatter changed"),
+            (lambda: self.edit("never X", "never Y"),
+             "the change touches a section under ['constraint'] (scoped_full_headings)"),
+            (lambda: self.edit("example one\n", "example one\n" + "more\n" * 41),
+             "41 changed lines since round 1 (scoped_max_changed_lines 40)"),
+            (lambda: (extra.parent.mkdir(), extra.write_text("x"), self.gate()),
+             "files other than SKILL.md changed since round 1 (references/extra.md)"),
+            (lambda: (self.edit("step one", "step 1"), self.edit("example one", "example 1")),
+             "the change touches every dimension"),
+            (lambda: self.edit("intro", "introduction"), "the change touches no section a dimension maps to"),
+            (lambda: (self.write_sectioned_rubric(target=0.8), self.edit("example one", "example 1")),
+             "the rubric changed since round 1"),
+        )
+        for change, why in cases:
+            with self.subTest(why=why):
+                change()
+                self.assertEqual(self.panel_line(), f"PANEL ROUND 2: full: each role scores every dimension ({why})")
+                out = self.clarity_receipt("verifier-a", 9)
+                self.assertIn("scores must cover exactly the rubric's dimensions", out.stdout)
+                shutil.rmtree(extra.parent, ignore_errors=True)
+                self.skill_md.write_text(SECTIONED_SKILL)
+                self.write_sectioned_rubric()
+                self.gate()
+        self.assertTrue(self.panel_line().startswith("PANEL ROUND 1: full"), "back on round 1's skill")
+
+    def test_a_fenced_line_and_a_dimension_without_sections(self) -> None:
+        self.run_panel(self.ROUND_1)
+        self.edit("## Examples inside a fence", "## Examples, still inside a fence")
+        self.assertEqual(self.panel_line(), "PANEL ROUND 2: scoped re-check: each role scores only correctness; "
+                                            "clarity carry forward from round 1", "the fence sits under Workflow")
+        self.skill_md.write_text(SECTIONED_SKILL)
+        self.write_sectioned_rubric(correctness="Workflow")
+        self.gate()
+        out = self.run_script("check_gate.py", "--panel")
+        self.assertIn("sections must be a one-line flow list", out.stdout + out.stderr)
 
 
 class CheckGateTest(TempWorkspace):

@@ -32,7 +32,9 @@ cases only, then every Skill indicator's pass count. On failure it prints `GATE 
 The panel (SKILL.md 5.2-5.3, scripts/panel.py) runs on a valid gate only: --panel checks it before the
 verifiers start; each verifier, after scoring, writes its role receipt with --panel-receipt ROLE SCORES_JSON
 (--synthesis for the synthesis round); --consensus computes the verdict the three receipts allow, by the
-thresholds in references/verdict-rules.json, and prints `PANEL CONSENSUS: ...`.
+thresholds in references/verdict-rules.json, and prints `PANEL CONSENSUS: ...`. Each consensus over a skill
+other than the last one's is a new panel round (panel.py); past `max_panel_rounds` the three refuse to start
+one with `PANEL ROUNDS EXHAUSTED: ...`, and the build ends UNSHIPPED on the last round's consensus.
 
 --finish checks the build's end state instead (SKILL.md 5.1): BENCHMARK.md at the build root has a
 `Verdict: <label>` line naming SHIP, SHIP WITH CAVEATS or UNSHIPPED, and no `gate` job is running. A SHIP or
@@ -42,10 +44,17 @@ and `PANEL CONSENSUS:` lines (whitespace aside); a plain SHIP has no gold delta<
 at SHIP WITH CAVEATS). An UNSHIPPED verdict follows a gate attempt (a `gate` step in
 work/evaluation/gate-attempts.jsonl: a run that started, or a GateError the gate step raised), and carries
 those two lines too whenever the gate validates and a current consensus exists, so the reason stands beside
-the label. It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
+the label; when the panel ran all its rounds and the skill changed since, it carries the last round's line.
+It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
+
+--fast-path decides the Phase 4 fast path (SKILL.md 3.5): the 3.5 baseline (experiment 0 in
+autoresearch.jsonl, at the workspace root or under work/experiments/) meets rubric.yaml's target_score, no
+later experiment is logged, output/<skill>/ is unchanged since experiment 0's commit (when git can tell), and
+the gate validates with at least one gold case and every gold delta > 0 (trigger and near-miss failures
+already invalidate it). It prints `FAST PATH: ...` (skip the Phase 4 loop) or `NO FAST PATH: <reason>`.
 
     check_gate.py [--workspace DIR] [--skill NAME] [--json]
-                  [--panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish]
+                  [--panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish | --fast-path]
 
 Tested on macOS, Linux and Windows. Exit codes: 0 valid (--finish: finished), 1 invalid (unfinished), 2 usage error.
 """
@@ -56,6 +65,7 @@ import argparse
 import json
 import locale
 import re
+import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
@@ -70,6 +80,7 @@ from gate_common import (  # noqa: E402
 )
 
 BENCHMARK = Path("BENCHMARK.md")
+EXPERIMENT_LOGS = (Path("autoresearch.jsonl"), Path("work") / "experiments" / "autoresearch.jsonl")
 TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
 VERDICT_LINE = re.compile(r"(?im)^[#>*_\s-]*verdict[*_\s]*[:—–-][*_\s`]*"
                           r"(UNSHIPPED|SHIP[ _]+WITH[ _]+CAVEATS|ITERATE|BLOCK|ESCALATE|SHIP)\b")
@@ -383,6 +394,11 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
     if verdict == "UNSHIPPED" and not _gate_attempted(workspace):
         return False, verdict, (f"UNSHIPPED needs a gate attempt: no gate run or gate-step error is logged in "
                                 f"{GATE_ATTEMPTS}; run 3.6 and 5.0 (a build that does not ship still runs the gate)")
+    last = panel.exhausted(workspace)
+    if last and verdict == "UNSHIPPED" and _spaced(last.get("line") or "") not in _spaced(text):
+        return False, verdict, (f"the panel ran its {panel.rules()['max_panel_rounds']} rounds; {BENCHMARK} lacks the "
+                                f"last round's PANEL CONSENSUS line beside UNSHIPPED; copy it in verbatim: "
+                                f"{last.get('line')}")
     gate = validate(workspace, skill)
     if not gate.valid:
         if verdict == "UNSHIPPED":
@@ -394,7 +410,7 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
     if verdict == "SHIP" and gate.non_positive:
         return False, verdict, (f"gold delta<=0 on {', '.join(gate.non_positive)} caps the verdict at SHIP WITH "
                                 "CAVEATS (5.4); write that, with why the case cannot benefit")
-    consensus, why = panel.recorded(workspace, skill_sha256(workspace, gate.skill))
+    consensus, why = panel.recorded(workspace, gate.skill, skill_sha256(workspace, gate.skill))
     if consensus is None:
         if verdict == "UNSHIPPED":
             return True, verdict, "ok"
@@ -406,6 +422,61 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
         return False, verdict, (f"{BENCHMARK} lacks the panel's current PANEL CONSENSUS line beside the {verdict} "
                                 f"verdict; copy it in verbatim: {consensus.line()}")
     return True, verdict, "ok"
+
+
+def _experiments(workspace: Path) -> list[dict] | None:
+    """The experiment records (not validation checks) of the first autoresearch.jsonl found, or None."""
+    log = next((workspace / p for p in EXPERIMENT_LOGS if (workspace / p).is_file()), None)
+    if log is None:
+        return None
+    found = []
+    for line in log.read_text(encoding="utf-8", errors="replace").splitlines():
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict) and "experiment" in entry and entry.get("type") in (None, "experiment"):
+            found.append(entry)
+    return found
+
+
+def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
+    """(skip the Phase 4 loop, why): the 3.5 baseline meets target_score and the first gate shows uplift
+    on every gold case."""
+    gate = validate(workspace, skill)
+    if not gate.valid:
+        return False, f"the gate does not validate ({gate.line()})"
+    if not gate.gold_cases:
+        return False, "the gate has no gold case"
+    if gate.non_positive:
+        return False, f"gold delta<=0 on {', '.join(gate.non_positive)}"
+    experiments = _experiments(workspace)
+    zero = [e for e in experiments or [] if e.get("experiment") == 0]
+    if not zero:
+        return False, "no experiment 0 in autoresearch.jsonl (3.5 logs the baseline there)"
+    later = [e for e in experiments if e.get("experiment") != 0]
+    if later:
+        return False, f"Phase 4 already logged {len(later)} experiment(s); the fast path is for the 3.5 baseline"
+    metric = zero[-1].get("metric")
+    if not isinstance(metric, (int, float)) or isinstance(metric, bool):
+        return False, f"experiment 0 has no numeric metric ({metric!r})"
+    try:
+        target = panel.read_rubric(workspace).target_score
+    except GateError as exc:
+        return False, str(exc)
+    if metric + 1e-9 < target:
+        return False, f"baseline overall_score {metric:.3f} is below target_score {target:.2f}"
+    commit = zero[-1].get("commit")
+    if isinstance(commit, str) and commit.strip():
+        try:
+            diff = subprocess.run(["git", "-C", str(workspace), "diff", "--quiet", commit.strip(), "--",
+                                   f"output/{gate.skill}"], capture_output=True, timeout=60)
+        except (OSError, subprocess.TimeoutExpired):
+            diff = None
+        if diff is not None and diff.returncode == 1:
+            return False, f"output/{gate.skill}/ changed since experiment 0 (commit {commit.strip()})"
+    return True, (f"baseline overall_score {metric:.3f} >= target_score {target:.2f} and every gold delta > 0 "
+                  f"(mean {gate.mean_delta:+.3f}); skip the Phase 4 loop (4.1-4.6) and continue at 5.1")
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -422,12 +493,19 @@ def main(argv: list[str] | None = None) -> int:
                       help="5.3: compute the panel's verdict from the three role receipts")
     step.add_argument("--finish", action="store_true",
                       help="check the build's end state (BENCHMARK.md verdict, no live gate) instead of the gate")
+    step.add_argument("--fast-path", action="store_true",
+                      help="3.5: may the build skip the Phase 4 loop (baseline at target, uplift on every gold case)")
     parser.add_argument("--synthesis", action="store_true",
                         help="with --panel-receipt: the synthesis round's revised_scores (5.3)")
     args = parser.parse_args(argv)
     if args.synthesis and not args.panel_receipt:
         parser.error("--synthesis goes with --panel-receipt")
     workspace = args.workspace.resolve()
+    if args.fast_path:
+        skip, reason = fast_path(workspace, args.skill)
+        print(json.dumps({"fast_path": skip, "reason": reason}) if args.json else
+              (f"FAST PATH: {reason}" if skip else f"NO FAST PATH: {reason}"))
+        return 0 if skip else 1
     if args.finish:
         done, label, reason = finish(workspace, args.skill)
         line = f"BUILD FINISHED: verdict {label}" if done else f"BUILD UNFINISHED: {reason}"
@@ -449,8 +527,19 @@ def main(argv: list[str] | None = None) -> int:
             path, result = panel.write_consensus(workspace, verdict.skill, skill_sha)
             print(result.line())
         elif args.panel:
+            n = panel.check_round(workspace, skill_sha)
+            try:
+                scope, why = panel.recheck_scope(workspace, verdict.skill, skill_sha, panel.read_rubric(workspace))
+            except GateError as exc:
+                scope, why = None, str(exc)
+            print(f"PANEL ROUND {n}: " + (f"scoped re-check: each role scores only {', '.join(scope.rescored)}; "
+                                          f"{', '.join(scope.carried)} carry forward from round {scope.from_round}"
+                                          if scope else f"full: each role scores every dimension ({why})"))
             print(f"panel: after scoring, each verifier runs `check_gate.py --panel-receipt <role> <scores.json>` "
                   f"({', '.join(panel.ROLES)}); then `check_gate.py --consensus` (5.3)", file=sys.stderr)
+    except panel.RoundsExhausted as exc:
+        print(f"PANEL ROUNDS EXHAUSTED: {exc}")
+        return 1
     except GateError as exc:
         print(f"PANEL INCOMPLETE: {exc}")
         return 1
