@@ -13,7 +13,7 @@ npx skills add mattpocock/skills --skill writing-for-agents
 
 ## Hard constraints
 
-Their single source is the pre-flight checklist in SKILL.md 3.3: the platform rules, plus `license` and the
+Their single source is the pre-flight checklist in phase-3.md 3.3: the platform rules, plus `license` and the
 version as `metadata: {version}` (a top-level `version` only where a registry reads it). They apply with or
 without companions, and the self-test and the Phase 5 panel assert them. The authoring rules no companion states are in
 [authoring-rules.md](authoring-rules.md), which 3.3 reads on every build; this file holds only what the

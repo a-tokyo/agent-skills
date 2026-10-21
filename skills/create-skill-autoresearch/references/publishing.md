@@ -42,7 +42,7 @@ Build-workspace material — research notes, experiment journals, handoffs, craf
 
 ## Frontmatter
 
-`name` and `description` are required by the platform. Beyond those, carry (SKILL.md 3.3):
+`name` and `description` are required by the platform. Beyond those, carry (phase-3.md 3.3):
 
 ```yaml
 license: MIT          # or whatever applies

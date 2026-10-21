@@ -102,6 +102,23 @@ class FinishGuardTest(unittest.TestCase):
         self.assertEqual(self.hook(cursor_stop(self.ws, status="aborted")), {}, "a user abort ends the turn")
         self.assertEqual(self.hook(cursor_stop(self.ws, status="error")), {})
 
+    def test_a_subagent_stop_never_holds_the_turn(self) -> None:
+        """Phase workers and panel members end on SubagentStop (Claude Code) / subagentStop (Cursor)."""
+        claude = stop(self.ws) | {"hook_event_name": "SubagentStop", "agent_id": "a1", "agent_type": "general-purpose"}
+        self.assertEqual(self.hook(claude), {}, "Claude Code SubagentStop on an unfinished build")
+        self.assertEqual(self.hook(stop(self.ws) | {"agent_id": "a1"}), {}, "a stop inside a subagent")
+        cursor = cursor_stop(self.ws) | {"hook_event_name": "subagentStop"}
+        self.assertEqual(self.hook(cursor), {}, "Cursor subagentStop on an unfinished build")
+        self.assertFalse((self.ws / "work" / "experiments" / "finish-guard.jsonl").exists(), "nothing logged")
+        main = stop(self.ws) | {"agent_type": "factory"}
+        self.assertEqual(self.hook(main)["decision"], "block", "a main session run with --agent is still guarded")
+
+    def test_no_hook_config_registers_a_subagent_stop(self) -> None:
+        claude = json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]
+        self.assertNotIn("SubagentStop", claude)
+        cursor = json.loads((SKILL / "hooks" / "cursor-hooks.json").read_text())["hooks"]
+        self.assertNotIn("subagentStop", cursor)
+
     def test_unreadable_input_or_a_guard_error_ends_the_turn(self) -> None:
         self.assertEqual(self.hook("not json"), {})
         self.assertEqual(self.hook([1, 2]), {})
@@ -147,12 +164,16 @@ class OpenCodeFinishGuardTest(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def idle(self, times: int) -> list[str]:
-        """The prompts the plugin sends over `times` session.idle events of one session."""
+    def idle(self, times: int, session: str = "{ data: { id: \"s1\" } }") -> list[str]:
+        """The prompts the plugin sends over `times` session.idle events of one session; `session` is the JS
+        expression `client.session.get` resolves to (or a `throw` statement)."""
         out = subprocess.run([shutil.which("node"), "--input-type=module", "-e", textwrap.dedent(f"""
             import {{ FinishGuard }} from {json.dumps(self.PLUGIN)};
             const prompts = [];
-            const client = {{ session: {{ prompt: async (req) => {{ prompts.push(req.body.parts[0].text); }} }} }};
+            const client = {{ session: {{
+              prompt: async (req) => {{ prompts.push(req.body.parts[0].text); }},
+              get: async () => {{ {session if session.startswith("throw") else "return " + session}; }},
+            }} }};
             const hooks = await FinishGuard({{ client, directory: {json.dumps(str(self.ws))} }});
             for (let i = 0; i < {times}; i++) {{
               await hooks.event({{ event: {{ type: "session.idle", properties: {{ sessionID: "s1" }} }} }});
@@ -168,6 +189,10 @@ class OpenCodeFinishGuardTest(unittest.TestCase):
         self.assertEqual(len(prompts), 1, "the second idle ends the turn whatever the guard says")
         self.assertIn("BUILD UNFINISHED: no BENCHMARK.md", prompts[0])
         self.assertEqual(len(self.idle(3)), 2, "a later turn is checked again")
+
+    def test_a_subagent_child_session_gets_no_prompt(self) -> None:
+        self.assertEqual(self.idle(1, '{ data: { id: "s1", parentID: "p0" } }'), [], "a worker's child session")
+        self.assertEqual(len(self.idle(1, 'throw new Error("no such session")')), 1, "lookup failed: top-level")
 
     def test_a_finished_build_gets_no_prompt(self) -> None:
         FinishGuardTest.finish(self.ws)

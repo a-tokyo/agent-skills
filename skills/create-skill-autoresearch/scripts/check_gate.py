@@ -23,7 +23,7 @@ Only a case whose sole graders are `tool_used` on `Skill` is a should-trigger in
 near miss). Every gold case needs a numeric delta, and when data-split.yaml records gold standards
 (`all_cases`, `training`, `validation` or `test`) at least one case must be gold.
 
-Every Skill indicator gates too (SKILL.md 5.0): a should-trigger grader must pass in every with-arm run
+Every Skill indicator gates too (phase-5.md 5.0): a should-trigger grader must pass in every with-arm run
 and a near miss (`max: 0`) in every run of both arms; otherwise the gate is invalid (a description defect,
 back to 4.6). On success it prints `GATE VALID: ...` with the mean delta and the delta<=0 list over gold
 cases only, then every Skill indicator's pass count. On failure it prints `GATE INVALID: <reason>`.
@@ -47,7 +47,7 @@ those two lines too whenever the gate validates and a current consensus exists, 
 the label; when the panel ran all its rounds and the skill changed since, it carries the last round's line.
 It prints `BUILD FINISHED: verdict <label>` or `BUILD UNFINISHED: <reason>`.
 
---fast-path decides the Phase 4 fast path (SKILL.md 3.5): the 3.5 baseline (experiment 0 in
+--fast-path decides the Phase 4 fast path (phase-3.md 3.5): the 3.5 baseline (experiment 0 in
 autoresearch.jsonl, at the workspace root or under work/experiments/) meets rubric.yaml's target_score, no
 later experiment is logged, output/<skill>/ is unchanged since experiment 0's commit (when git can tell), and
 the gate validates with at least one gold case and every gold delta > 0 (trigger and near-miss failures

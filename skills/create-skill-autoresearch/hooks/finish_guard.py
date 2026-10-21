@@ -14,7 +14,13 @@ error of its own. Contracts (references/hosts.md):
   Cursor              stop, stdin {"hook_event_name": "stop", "status", "loop_count", "workspace_roots"}.
                       Back once: {"followup_message": ...} when status is "completed" and loop_count is 0;
                       else {}. The plugin config also sets loop_limit 1.
-  OpenCode            hooks/opencode-finish-guard.js sends the Claude Code shape on session.idle.
+  OpenCode            hooks/opencode-finish-guard.js sends the Claude Code shape on session.idle of a
+                      top-level session (a subagent's child session has a parentID and is skipped).
+
+Only the main session's end of turn counts: phase workers, researchers and panel members (SKILL.md
+"Orchestration") end on Claude Code's SubagentStop and Cursor's subagentStop, which the hook configs never
+register; if one is wired here anyway, or a stop payload carries Claude Code's `agent_id` (set only inside a
+subagent), the turn ends untouched.
 
 hooks/finish-guard runs it with whichever Python 3 the machine has.
 """
@@ -29,6 +35,7 @@ from pathlib import Path
 sys.dont_write_bytecode = True
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 CURSOR_EVENT = "stop"
+SUBAGENT_EVENTS = {"SubagentStop", "subagentStop"}
 LOG = Path("work") / "experiments" / "finish-guard.jsonl"
 
 
@@ -74,6 +81,8 @@ def _log(found: list[tuple[Path, str]], host: str) -> None:
 
 
 def decide(event: dict) -> dict:
+    if event.get("hook_event_name") in SUBAGENT_EVENTS or event.get("agent_id"):
+        return {}
     cursor = event.get("hook_event_name") == CURSOR_EVENT
     if cursor:
         if event.get("status") != "completed" or event.get("loop_count", 0) != 0:

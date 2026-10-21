@@ -1,7 +1,7 @@
 # Hosts
 
 The factory is an Agent Skill: any agent that loads `SKILL.md` runs it. This file names what each host
-calls the pieces the pipeline uses. Wherever SKILL.md says **the host's headless CLI**, use the
+calls the pieces the pipeline uses. Wherever the factory says **the host's headless CLI**, use the
 Headless row for your host. Facts from each host's official docs, read on 2026-10-19
 ([Claude Code](https://code.claude.com/docs/en/skills), [Cursor](https://cursor.com/docs/skills),
 [Codex](https://developers.openai.com/codex/skills), [OpenCode](https://opencode.ai/docs/skills/)); "verified"
@@ -51,9 +51,12 @@ Verified: Cursor and Claude Code.
 
 All four hosts run parallel subagents: Claude Code's Agent tool, Cursor's subagents, Codex subagents (it
 delegates when a skill asks it to), OpenCode's Task tool. The factory names roles, not host types: a
-**read-only researcher** (2.1) and a **general-purpose verifier** per panel role (5.2). Where a host offers
-none (or a run disables them), run each role as a fresh headless session from the table above, one after
-another, giving it only that role's inputs; that keeps the context walls the panel depends on.
+**read-only researcher** (2.1), a **general-purpose phase worker** for Phases 3, 4 and 5.0-5.1 (SKILL.md
+"Orchestration") and a **general-purpose verifier** per panel role (5.2). A subagent cannot spawn subagents on
+Claude Code or Cursor, so researchers and verifiers are always spawned by the main session, never by a worker.
+Where a host offers none (or a run disables them), run each role, phase workers included, as a fresh headless
+session from the table above, one after another, giving it only that role's inputs (a worker: its dispatch prompt);
+that keeps the context walls the panel depends on and the main session's context small.
 
 ## Kill guard
 
@@ -113,6 +116,13 @@ sends the agent back once with the reason, logged to `work/experiments/finish-gu
 in a row, and ends the turn on any error of its own. An interactive build costs one extra reply per stop from Phase 3 on:
 the agent re-ends the turn on its question.
 
+It guards only the main session's turn. A phase worker's, researcher's or panel member's stop never triggers it:
+Claude Code ends a subagent on `SubagentStop` and Cursor on `subagentStop`, events the shipped configs do not
+register, and the script also ignores either event and any payload carrying Claude Code's `agent_id`; the OpenCode
+plugin skips child sessions (a `parentID`). Verified live on Claude Code 2.1.306 (`claude -p --plugin-dir`, a
+Haiku main session spawning one subagent in an unfinished build: one `finish-guard.jsonl` entry, the main
+session's); offline for Cursor and OpenCode; Codex subagent stops untested.
+
 | Host | Ships as | Loop guard | Status |
 |---|---|---|---|
 | Claude Code | `hooks/hooks.json` `Stop` (plugin install, or `claude --plugin-dir <skill-dir>`) | `stop_hook_active`; Claude Code also caps a turn at 8 continuations | verified live (`claude -p --plugin-dir`: sent back once, the next stop ended the turn) |
@@ -140,7 +150,7 @@ script tests in CI (`windows-latest`), not yet by a live build on a Windows host
 ## What needs Claude Code
 
 - **`claude plugin eval`** (3.6 suite, 5.0 plugin path). Elsewhere the gate runs the manual protocol with no
-  `claude` call; `gate.py` picks the path by SKILL.md 3.6's rule: plugin eval only inside Claude Code
+  `claude` call; `gate.py` picks the path by phase-3.md 3.6's rule: plugin eval only inside Claude Code
   (which sets `$CLAUDECODE`), else manual, even where `claude` is installed, since the build targets its own
   host's model. **A Claude Code build never passes `--backend manual`**: `gate.py` picks manual itself where
   plugin eval cannot run or the skill is user-invoked, and refuses it (exit 3) for a model-invoked skill plugin eval

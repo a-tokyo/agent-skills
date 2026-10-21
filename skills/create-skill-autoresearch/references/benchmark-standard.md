@@ -79,7 +79,7 @@ Limits: one task, six skills, two repeats, one model family as executor and judg
 
 ## Manual with/without protocol
 
-`scripts/gate.py` (SKILL.md 5.0) runs this instead of `claude plugin eval` whenever the build runs outside
+`scripts/gate.py` (phase-5.md 5.0) runs this instead of `claude plugin eval` whenever the build runs outside
 Claude Code (`$CLAUDECODE` unset: another host targets its own model), `claude plugin eval --help` does not
 exit 0, the skill is user-invoked (it never fires through the Skill tool, so plugin eval's with-arm measures
 nothing), or `--backend manual --force-manual "<host>: <why>"` asks for it on another host whose shell inherits
@@ -131,7 +131,7 @@ read exactly as plugin eval's Δ:
 }
 ```
 
-`in_sample` is true when the gate cases are also training cases (3-9 gold standards, SKILL.md 4.2).
+`in_sample` is true when the gate cases are also training cases (3-9 gold standards, phase-4.md 4.2).
 
 **The without arm is cached.** It never reads the skill, so a re-gate after a skill edit re-runs only the
 *with* arm. `gate.py` stores each complete without arm in `work/evaluation/baseline-cache/<key>.json`, the key a

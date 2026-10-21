@@ -58,7 +58,7 @@ _GENERATED_DIRS = tuple(f"{d.as_posix()}/" for d in (PLUGIN_DIR / "skills", PLUG
                                                       BASELINE_CACHE))
 
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
-# SKILL.md 4.2: from this many gold standards the split holds out a test set; below it, leave-one-out.
+# phase-4.md 4.2: from this many gold standards the split holds out a test set; below it, leave-one-out.
 TEST_SPLIT_MIN = 10
 _GATE_KEYS = ("plugin_eval", "plugin_eval_available")
 _TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
@@ -88,7 +88,7 @@ class DataSplit:
         return list(seen)
 
     def gate_gold(self) -> list[str]:
-        """The gold standards the gate runs (SKILL.md 3.6, 4.2): the test split with 10 or more gold
+        """The gold standards the gate runs (phase-3.md 3.6, phase-4.md 4.2): the test split with 10 or more gold
         standards, every gold standard with 3-9. Raises GateError on a split that breaks that rule."""
         total, test = len(self.all_gold()), self.gold.get("test", [])
         if total >= TEST_SPLIT_MIN and not test:
@@ -287,7 +287,7 @@ def utf8_stdio() -> None:
 
 
 def check_skill_name(skill: object) -> str:
-    """The SKILL.md 3.3 `name` rule, so a skill name can never be a path: a gate deletes and rewrites
+    """The phase-3.md 3.3 `name` rule, so a skill name can never be a path: a gate deletes and rewrites
     work/evaluation/plugin/skills/<name>/."""
     if not isinstance(skill, str) or len(skill) > 64 or not SKILL_NAME.fullmatch(skill):
         raise GateError(f"skill name {skill!r} is not a skill name (lowercase letters, digits and single hyphens, "

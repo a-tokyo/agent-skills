@@ -898,7 +898,7 @@ class RecordTest(TempWorkspace):
         path = self.ws / "work" / "evaluation" / "data-split.yaml"
         path.write_text("training: [input/a.md, input/b.md]\nvalidation: [input/c.md]\ntest: [input/d.md]\n")
         out = self.run_script("gate.py", "record")
-        self.assertEqual(out.returncode, 3, "4 gold standards have no test split (SKILL.md 4.2)")
+        self.assertEqual(out.returncode, 3, "4 gold standards have no test split (phase-4.md 4.2)")
         self.assertIn("4 gold standards and a test split of 1", out.stderr)
         path.write_text("all_cases: [input/a.md, input/b.md]\ntraining: [input/b.md, input/c.md]\ntest: []\n")
         self.assertEqual(self.run_script("gate.py", "record").returncode, 0)

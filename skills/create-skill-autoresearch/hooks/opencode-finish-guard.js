@@ -5,7 +5,8 @@
 // ~/.config/opencode/plugins/, or set CSA_FINISH_GUARD) a Claude Code Stop event for the session's
 // directory. When the guard answers "block", it prompts the session once with the guard's reason; the next
 // idle of that session ends the turn whatever the guard says, so it never loops. No Python, or any error:
-// the turn ends.
+// the turn ends. A child session (a subagent's: its session has a parentID) is never prompted; when the
+// lookup fails the session is treated as top-level.
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -25,6 +26,12 @@ export const FinishGuard = async ({ client, directory }) => {
       const id = event.properties?.sessionID;
       if (!id) return;
       if (sentBack.delete(id)) return;
+      try {
+        const info = await client.session.get({ path: { id } });
+        if ((info?.data ?? info)?.parentID) return;
+      } catch {
+        // no session info: treat it as the top-level session
+      }
       const input = JSON.stringify({ hook_event_name: "Stop", cwd: directory, stop_hook_active: false });
       for (const [bin, ...args] of PYTHONS) {
         let reply;
