@@ -57,10 +57,10 @@ A subagent cannot spawn subagents, so the main session keeps what needs them: th
 |--------|-------|--------|--------------|
 | Phase 3 | phase-3.md, phase-4.md 4.2, `work/research/00-synthesis.md`, rubric.yaml, manifest.yaml, the `input/` files they name | DESIGN.md, `output/<skill-name>/`, evaluate.sh, data-split.yaml, baseline commit, experiment 0, the 3.6 suite | baseline `overall_score`, `gate.py record` exit, fast-path result |
 | Phase 4 | phase-4.md, rubric.yaml, data-split.yaml, synthesis, tails of `autoresearch.jsonl` / ideas | experiment commits, jsonl, ideas, `results.tsv`, 4.6 decision | best score and commit, experiments run, why the loop ended |
-| Phase 5 | phase-5.md, data-split.yaml, `output/<skill-name>/` | gate artifacts, premortem.md | gate exit code and `GATE VALID:` line, premortem path |
+| Phase 5 | phase-5.md, data-split.yaml, `output/<skill-name>/`; phase-3.md 3.6 only if the suite needs a fix | gate artifacts, premortem.md | gate exit code and `GATE VALID:` line, premortem path |
 
-Before each dispatch, write `work/handoffs/state.yaml` (4.4). Dispatch with this prompt, filled in, and nothing else
-from this session — no research notes, no conversation:
+Before each dispatch, write `work/handoffs/state.yaml` (the 4.4 schema only: HANDOFF-*.md is for a new session, not a
+worker). Dispatch with this prompt, filled in, and nothing else from this session — no research notes, no conversation:
 
 ```text
 You are the Phase <N> worker of a skill build. Workspace: <abs path>; run every command from it.

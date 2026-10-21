@@ -2,7 +2,7 @@
 
 The Phase 5 worker's file, dispatched by the main session: run the eval gate, then the premortem, and return. Its
 inputs: `work/handoffs/state.yaml`, [operating-rules.md](operating-rules.md), this file, `work/evaluation/data-split.yaml`,
-and `output/<skill-name>/`. The panel (5.2-5.4) is the main session's: it starts from this worker's return.
+and `output/<skill-name>/`; [phase-3.md](phase-3.md) 3.6 only when a gate failure names the suite or `run-case.sh`. The panel (5.2-5.4) is the main session's: it starts from this worker's return.
 
 ## Contents
 - 5.0 Eval Gate (commands, reading the artifact)
