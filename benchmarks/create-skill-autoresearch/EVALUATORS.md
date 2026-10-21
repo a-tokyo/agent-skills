@@ -3,7 +3,7 @@
 Which way of scoring a skill should `create-skill-autoresearch` rely on — for its Phase 4 metric, its
 5.0 eval gate, and its description pass? Four methods scored the same six skills on the same task.
 Research behind the factory's guidance, not a release criterion. The factory states the outcome in
-SKILL.md 3.4, 3.6 and 4.6 and in
+references/phase-3.md 3.4 and 3.6, phase-4.md 4.6, and
 [references/benchmark-standard.md](../../skills/create-skill-autoresearch/references/benchmark-standard.md#choosing-the-evaluator).
 
 ## Method

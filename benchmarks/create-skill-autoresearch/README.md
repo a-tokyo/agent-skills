@@ -513,7 +513,7 @@ the validator `k-*` ran with (harness `6d3b6ab`); the one after it is under **Af
 `check_gate.py` treats a plugin case as a should-trigger case whenever it has a `tool_used` grader on
 `Skill`, and computes the mean Δ and the Δ <= 0 list over the remaining cases only. Task-2 Haiku 2 put
 a `skill-fired` grader on each of its seven gold cases next to their output graders. The factory's own
-worked gold case does the same (`references/pipeline-phases.md`, `holdout-03`: `graders/approval.md`
+worked gold case does the same (`references/phase-3.md`, `holdout-03`: `graders/approval.md`
 and `graders/skill-fired.md`). So the validator reported `gold=0` and `mean gold delta=n/a` for a gate
 whose seven gold cases each ran 3 times per arm, with Δ from +0.389 to +0.500 (mean +0.468). The gate
 measured real uplift. But the summary that should feed the verdict came out empty, and the validator
