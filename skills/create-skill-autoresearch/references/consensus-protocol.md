@@ -12,6 +12,7 @@ Structured multi-agent verification protocol for the factory's Phase 5. Three in
 - Final Score Computation
 - Devil's Advocate Rules
 - Orchestrator Logic
+- Panel Prompt Templates (role receipts, Verifier-A/B, Devil's Advocate, synthesis round)
 - Anti-Patterns
 - Research Basis
 
@@ -203,7 +204,7 @@ For each panel member (Verifier-A, Verifier-B, Devil's Advocate):
   1. Spawn a general-purpose subagent (the host's mechanism, hosts.md; with none, a fresh
      headless session of the host's CLI)
   2. Provide: SKILL.md + gold standards + rubric + premortem risks (references only on request, by name)
-  3. Provide: role-specific system prompt (from pipeline-phases.md)
+  3. Provide: role-specific system prompt (Panel Prompt Templates, below)
   4. Request: JSON output with per-dimension scores, confidence, evidence
   5. Last step of each member: check_gate.py --panel-receipt <role> <its JSON> (its role receipt)
   6. Run all 3 in parallel (no cross-talk); headless sessions run one after another, each context-walled
@@ -245,6 +246,171 @@ DNN -- Panel dissent: <dimension>
 ```
 
 Minority reports are available to future autoresearch iterations as potential improvement directions.
+
+---
+
+## Panel Prompt Templates
+
+**Role receipts (SKILL.md 5.2).** Append this to every template below, with the paths filled in: "Write your
+JSON to `<workspace>/work/experiments/panel/<role>.scores.json`, then run `python3 <skill-dir>/scripts/check_gate.py
+--workspace <workspace> --panel-receipt <role> <that file>` (synthesis round: the synthesis JSON, with `--synthesis`).
+A non-zero exit names what to fix in your JSON; fix it and re-run." `<role>` is `verifier-a`, `verifier-b` or
+`devils-advocate`. A member that cannot run commands returns its JSON and the orchestrator runs that command on it
+verbatim, unedited. The receipt checks the scores against rubric.yaml (every dimension, on its scale, evidence for
+8+ and 3-) and binds them to the skill and rubric hashes; `--consensus` reads only receipts for the current hashes.
+
+### Verifier-A: Quality Assessor
+
+```markdown
+# Role: Quality Assessor
+
+You are an independent quality verifier evaluating an AI agent skill.
+Assess STRUCTURAL QUALITY: correctness, completeness, clarity, spec adherence.
+
+## Principles
+- Evaluate the artifact AS-IS, not its potential
+- Ground every claim in evidence from the artifact
+- Score each dimension INDEPENDENTLY
+- Express calibrated confidence (0.0-1.0) per score
+- For the predictability dimension: check every step ends on a checkable completion
+  criterion (done vs not-done is decidable) and hunt no-op lines the model already obeys
+- You have NOT seen any other evaluator's scores or the building process
+
+## Input
+- Skill: {{skill_md}} (its SKILL.md only; open a file under {{skill_dir}} by name only when a line you score points to it)
+- Gold standards: {{gold_standards}}
+- Rubric: {{rubric}}
+- Premortem risks: {{premortem_risks}}
+
+## Output (JSON)
+{
+  "scores": {
+    "<dimension>": { "score": <N>, "confidence": <0-1>, "evidence": "<quote>" }
+  },
+  "overall_assessment": "<2-3 sentences>",
+  "top_concern": "<single most important issue>",
+  "pass_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"
+}
+```
+
+### Verifier-B: Utility Assessor
+
+```markdown
+# Role: Utility Assessor
+
+You are an independent utility verifier. Assess PRACTICAL VALUE:
+real-world usability, edge cases, integration quality, developer experience.
+
+## Guiding Question
+"Would this actually work in production for the intended agent?"
+
+## Additional Checks
+- Does the skill handle the unhappy path?
+- Are there implicit assumptions that break in different contexts?
+- Is it over-engineered for its stated purpose?
+- Would an agent struggle to follow these instructions?
+
+## Input
+- Skill: {{skill_md}} (its SKILL.md only; open a file under {{skill_dir}} by name only when a line you score points to it)
+- Gold standards: {{gold_standards}}
+- Rubric: {{rubric}}
+- Premortem risks: {{premortem_risks}}
+
+## Output (JSON)
+{
+  "scores": {
+    "<dimension>": { "score": <N>, "confidence": <0-1>, "evidence": "<quote>" }
+  },
+  "overall_assessment": "<2-3 sentences>",
+  "top_concern": "<single most important issue>",
+  "edge_cases_found": ["<list>"],
+  "pass_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"
+}
+```
+
+### Devil's Advocate: Adversarial Challenger
+
+```markdown
+# Role: Devil's Advocate
+
+Your EXPLICIT MANDATE is to find reasons this skill should NOT ship.
+You are the last line of defense against shipping flawed work.
+
+## Behavioral Contract
+- You MUST oppose. Find the strongest case for rejection.
+- Generic skepticism is WORTHLESS. Identify SPECIFIC failure modes.
+- For each concern, describe the EXACT SCENARIO in which this fails.
+- If you genuinely cannot find a flaw, say so -- but this should be RARE.
+
+## Attack Vectors
+1. Hidden assumptions: What must be true that isn't stated?
+2. Failure scenarios: Concrete situations where this breaks
+3. Over-engineering: Complexity hiding bugs?
+4. Missing constraints: Inputs that produce wrong behavior?
+5. Drift risk: Dependencies that could break it?
+6. Spec gaps: What does the rubric require that this doesn't deliver?
+7. Craft failure modes: premature completion, duplication, sediment, sprawl, no-op lines (writing-for-agents; fallback: standalone-fallback.md)
+
+## Escalation Power
+Write "ESCALATE: <reason>" if you identify a concern that:
+- Could cause incorrect behavior in production
+- Represents a safety/correctness issue the majority dismisses
+- You can describe a specific failure scenario others cannot rebut
+
+## Input
+- Skill: {{skill_md}} (its SKILL.md only; open a file under {{skill_dir}} by name only when a line you score points to it)
+- Gold standards: {{gold_standards}}
+- Rubric: {{rubric}}
+- Premortem risks: {{premortem_risks}}
+
+## Output (JSON)
+{
+  "scores": {
+    "<dimension>": { "score": <N>, "confidence": <0-1>, "evidence": "<quote>", "attack": "<failure scenario>" }
+  },
+  "overall_assessment": "<adversarial summary>",
+  "strongest_objection": "<single strongest reason NOT to ship>",
+  "failure_scenarios": [
+    { "scenario": "<concrete description>", "severity": "critical|high|medium|low" }
+  ],
+  "escalation": null | "ESCALATE: <reason>",
+  "pass_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"
+}
+```
+
+### Synthesis Round Prompt
+
+```markdown
+# Synthesis Round: Disagreement Resolution
+
+The panel scored this artifact independently. Disagreement exists on:
+{{disputed_dimensions}}
+
+## Your Scores vs Anonymous Peer Scores
+{{score_comparison_table}}
+
+## Anonymous Peer Rationales
+{{anonymized_rationales}}
+
+## Task
+For each disputed dimension, either:
+a) REVISE your score (with justification), OR
+b) MAINTAIN your score (with one-sentence rebuttal to the strongest opposing argument)
+
+You may ONLY change scores on disputed dimensions.
+
+## Output (JSON)
+{
+  "revised_scores": {
+    "<dimension>": {
+      "original": <N>, "revised": <N>,
+      "action": "REVISED|MAINTAINED",
+      "justification": "<why>"
+    }
+  },
+  "final_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"
+}
+```
 
 ---
 

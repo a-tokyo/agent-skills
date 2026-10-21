@@ -2,9 +2,10 @@
 
 Each verifier writes its role receipt after it scores, with
 `check_gate.py --panel-receipt <role> <scores.json>`: the JSON its panel prompt template outputs
-(references/pipeline-phases.md: `scores` per rubric dimension, `pass_recommendation`, and for the
-Devil's Advocate `escalation`). The receipt, work/experiments/panel/<role>.json, binds those scores to
-the sha256 of output/<skill>/ and of work/evaluation/rubric.yaml. A synthesis round's output
+(references/consensus-protocol.md "Panel Prompt Templates": `scores` per rubric dimension,
+`pass_recommendation`, and for the Devil's Advocate `escalation`). The receipt,
+work/experiments/panel/<role>.json, binds those scores to the sha256 of output/<skill>/ and of
+work/evaluation/rubric.yaml. A synthesis round's output
 (`revised_scores`) goes through `--panel-receipt <role> <file> --synthesis` into <role>.synthesis.json;
 it may change only the dimensions the first round disputed.
 

@@ -20,8 +20,8 @@ This file is the main session's router: it runs Phases 1-2 and the panel; Phases
 
 | Phase | What Happens | Who runs it | Detail |
 |-------|-------------|-------------|--------|
-| 1. Interview | Discover purpose, gold standards, scope | ORCHESTRATOR (main) | below; [references/pipeline-phases.md](references/pipeline-phases.md) |
-| 2. Research | Study domain materials, build dossier, propose rubric | RESEARCHER subagents (2-7), or main inline | below; [references/pipeline-phases.md](references/pipeline-phases.md) |
+| 1. Interview | Discover purpose, gold standards, scope | ORCHESTRATOR (main) | below; [references/phase-1-2.md](references/phase-1-2.md) |
+| 2. Research | Study domain materials, build dossier, propose rubric | RESEARCHER subagents (2-7), or main inline | below; [references/phase-1-2.md](references/phase-1-2.md) |
 | 3. Draft | Design, author SKILL.md with skill-creator, eval script, split, baseline, eval suite | BUILDER: Phase 3 worker | [references/phase-3.md](references/phase-3.md) |
 | 4. Autoresearch | Iterate against gold standards (LLM-as-judge, or an objective real-world metric for procedural skills), then the description pass | BUILDER: Phase 4 worker + autoresearch skill | [references/phase-4.md](references/phase-4.md) |
 | 5. Verify | 5.0 eval gate (with vs without), 5.1 premortem; 5.2-5.4 panel, consensus, ship/iterate | Phase 5 worker; then PANEL (3 subagents) | [references/phase-5.md](references/phase-5.md); 5.2-5.4 below |
@@ -112,14 +112,14 @@ if the last verdict was ITERATE on **verify**), then bump the session number.
 ## Phase 1: Interview
 
 Do not assume -- ask, one topic at a time, and record the answers; the exact question wording and
-follow-ups are in [references/pipeline-phases.md](references/pipeline-phases.md). Minimum 3 gold standards. Fewer is a
+follow-ups are in [references/phase-1-2.md](references/phase-1-2.md). Minimum 3 gold standards. Fewer is a
 risk -- warn the user and offer alternatives: create synthetic examples, or find additional reference materials.
 
 ### 1.6 Confirm and Create Workspace
 
 Summarize all parameters in a table. Ask the user to confirm.
 
-Once confirmed, create the build workspace `builds/<skill-name>/` (the file-by-file layout: pipeline-phases.md "Workspace Layout"): `input/` for
+Once confirmed, create the build workspace `builds/<skill-name>/` (the file-by-file layout: phase-1-2.md "Workspace Layout"): `input/` for
 gold standards and study materials, `work/` for everything generated, `output/<skill-name>/` to ship. If the
 working directory is already dedicated to this build (it holds the brief and inputs), it *is* the workspace:
 create `work/` and `output/<skill-name>/` in place and keep every path below relative to it. The workspace is its
@@ -130,7 +130,7 @@ the human's to correct at phase boundaries: `manifest.yaml`, `evaluation/rubric.
 `evaluation/judges.yaml`, `evaluation/data-split.yaml` (its splits; `gate.py record` owns `plugin_eval`). Only
 `output/<skill-name>/` ships; its uplift benchmark belongs **outside** the skill dir, at `benchmarks/<skill-name>/`.
 
-Do **not** ask the user to hand-author a manifest. Scan whatever is in `input/`, classify each item as a gold standard (exemplar input/output pair or reference artifact) vs a study material, and write your derived index to `work/manifest.yaml` with train/validation/test tags. Present the derived manifest for the user to confirm or correct. See [references/pipeline-phases.md](references/pipeline-phases.md) for intake formats and the manifest schema.
+Do **not** ask the user to hand-author a manifest. Scan whatever is in `input/`, classify each item as a gold standard (exemplar input/output pair or reference artifact) vs a study material, and write your derived index to `work/manifest.yaml` with train/validation/test tags. Present the derived manifest for the user to confirm or correct. See [references/phase-1-2.md](references/phase-1-2.md) for intake formats and the manifest schema.
 
 ---
 
@@ -219,7 +219,7 @@ ORCHESTRATOR dispatches and adjudicates; it scores nothing. Without parallel age
 headless session (hosts.md), in turn; only an orchestrator playing roles itself is "single-context (no independence)". **Grep every verdict-driving
 citation** against the artifact before consensus math; one not found verbatim discards its finding.
 
-See [references/pipeline-phases.md](references/pipeline-phases.md) for panel prompt templates.
+See [references/consensus-protocol.md](references/consensus-protocol.md) "Panel Prompt Templates" for the role prompts.
 
 **If the `tribunal` skill is available, delegate Phase 5 to it** (this pattern, generalized and benchmarked):
 the BUILDER's output is the artifact, the Phase-2.3 rubric the criteria, and its orchestrator is never the
