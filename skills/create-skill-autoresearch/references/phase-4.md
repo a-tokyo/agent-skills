@@ -162,20 +162,12 @@ unreachable `target_score` burns the whole budget and reports "exit criteria not
 Upstream autoresearch keeps `results.tsv` and `run.log` and reverts with `git reset`. The factory
 adds the rest, and applies it in every experiment:
 
-- **Scoped commits.** Stage only in-scope paths (`git add output/<skill-name>`). Never `git add -A` —
-  it sweeps `work/` and session logs into experiment commits.
+- **Scoped commits** and **owned processes**: the Git and Background jobs rules in
+  [operating-rules.md](operating-rules.md).
 - **Repository guard.** Before any `git reset --hard` or `git clean`, assert that
   `git rev-parse --show-toplevel` equals the workspace root, and refuse to revert otherwise. A
   workspace nested in a parent project (a gitignored `builds/`, say) would reset the parent's last
   commit and wipe its uncommitted work; the workspace is its own repository (1.6).
-- **Owned processes.** Start every background job (eval runs, `until` loops) with
-  `scripts/run_owned.py start <name> -- <cmd...>`, and wait on or stop it with `wait <name>` /
-  `stop <name>`: it stops only the process group it recorded, because on a shared machine a
-  name-pattern kill also takes down sibling builds and the user's own processes. Each job runs under
-  a supervisor that holds `work/pids/<name>.lock` while it lives and stops its own child group when
-  `stop` writes `work/pids/<name>.stop`, so start refusal and stop need no `ps` (sandboxes deny it).
-  Only when that supervisor is gone does `stop` signal the group, and only if `ps` confirms the
-  recorded start time; otherwise it refuses. It keeps `work/pids/` out of git.
 - **Clean reverts.** Discard with `git reset --hard HEAD~1 && git clean -fd -- output/<skill-name>`,
   so a reverted experiment leaves no new untracked files behind. The baseline commit (3.5) is
   experiment 0, so `HEAD~1` always exists.

@@ -19,7 +19,7 @@ on it with `--wait` (exit 124: still running — call `--wait` again, never poll
 ```bash
 python3 <skill-dir>/scripts/gate.py --detach --model <model the skill targets> [--in-sample] \
   [--allow-tools Bash Write] [--executor single-call|agentic]
-python3 <skill-dir>/scripts/gate.py --wait    # blocks up to 540 s; repeat on 124, else it exits with the gate's code
+python3 <skill-dir>/scripts/gate.py --wait [--wait-timeout 540]   # blocks (default 540 s); repeat on 124, else the gate's code
 ```
 
 `gate.py` runs as the owned job `gate`, as `run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py …`
@@ -41,19 +41,13 @@ Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, t
 
 ## Gate Runner
 
-`scripts/gate.py` is the only writer of the gate artifact, and it always runs as the owned job `gate`. A
-full gate can take over an hour (default plugin-eval timeout 90 minutes), longer than any agent shell call
-waits, so an agent starts it detached, then blocks on it with `--wait` instead of polling its status:
+`scripts/gate.py` is the only writer of the gate artifact, and it always runs as the owned job `gate`, started and
+waited on with the 5.0 commands: a full gate can take over an hour (default plugin-eval timeout 90 minutes).
 
-```bash
-python3 <skill-dir>/scripts/gate.py --detach --model <model> …       # or: run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py --model <model> …
-python3 <skill-dir>/scripts/gate.py --wait [--wait-timeout 540]      # blocks; exits 124 while it runs (call it again), then with the gate's code
-```
-
-A second start while the job is live is refused with these commands. `--detach` and `--restart` first check
+`--detach` and `--restart` first check
 the suite, the recorded cases, each case's `scaffold_script` and (manual mode) `run-case.sh` in the same call,
 and exit 3 before starting anything — a failed restart leaves the running gate alone. `gate.py --restart …` stops only the
-recorded `gate` group and starts it again, detached; `gate.py --stop` stops it. On TERM the gate stops the
+recorded `gate` group and starts it again, detached. On TERM the gate stops the
 eval runs it started (each in its own process group) before it exits, and leaves `gate.json` unfinished, so
 a stopped gate never validates. Without `--detach`, `gate.py` starts the job and waits for it, which suits a
 human at a terminal; if that call is cut off the job keeps running.
