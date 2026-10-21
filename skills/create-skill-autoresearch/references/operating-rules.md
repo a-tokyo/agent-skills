@@ -7,7 +7,7 @@ A worker reads this file first.
 `<skill-dir>` is the factory skill's base directory, given in the handoff.
 
 **Bundled scripts** run as `python3 <skill-dir>/scripts/<name>.py` (each has `--help`; Python 3.9+ and stdlib on
-macOS, Linux or Windows, where `py -3` replaces `python3` — [hosts.md](hosts.md)).
+macOS, Linux or WSL; native Windows is not supported — [hosts.md](hosts.md)).
 
 **Background jobs** (eval runs, `until` loops) go through `run_owned.py`: start one with
 `run_owned.py start <name> -- <cmd...>`, wait on or stop it with `wait <name>` / `stop <name>`. It signals only the

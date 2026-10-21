@@ -45,8 +45,8 @@ The factory composes sibling skills rather than embedding them, so each stays cu
 | **handoff** | 4.4 | Write `HANDOFF-*.md` by hand |
 | `claude plugin eval` (Claude Code CLI) | 3.6 suite, 5.0 gate | The manual with/without protocol (5.0) |
 
-Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>`. The factory runs on any agent that loads SKILL.md; **[references/hosts.md](references/hosts.md)** gives each host's skill dirs, headless command ("the host's headless CLI"), subagents and hook installs.
-Two hooks (`hooks/`, installed per hosts.md): the kill guard blocks pattern kills (`pkill`, `killall`, `taskkill /IM`, `Stop-Process -Name`, a process listing and a kill in one call), and the finish guard sends a build back once when the main session's turn ends before `check_gate.py --finish` passes (never a worker's or subagent's stop) — live-tested on Claude Code (and Cursor's kill guard), offline-tested on Codex and OpenCode. The kill guard is a best-effort tripwire, not a sandbox: `run_owned.py` and stopping only what you started are the contract.
+Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>`. The factory runs on any agent that loads SKILL.md; **[references/hosts.md](references/hosts.md)** gives each host's skill dirs, headless command ("the host's headless CLI"), subagents and hook installs. It runs on macOS, Linux and WSL; on native Windows, run it inside WSL.
+Two hooks (`hooks/`, installed per hosts.md): the kill guard blocks pattern kills (`pkill`, `killall`, a process listing and a kill in one call), and the finish guard sends a build back once when the main session's turn ends before `check_gate.py --finish` passes (never a worker's or subagent's stop) — live-tested on Claude Code (and Cursor's kill guard), offline-tested on Codex and OpenCode. The kill guard is a best-effort tripwire, not a sandbox: `run_owned.py` and stopping only what you started are the contract.
 
 ## Orchestration
 

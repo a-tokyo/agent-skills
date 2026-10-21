@@ -1,4 +1,4 @@
-"""Offline tests for gate.py: record, the plugin-eval and manual gates, the detached lifecycle, Windows.
+"""Offline tests for gate.py: record, the plugin-eval and manual gates, the detached lifecycle.
 
 Fixtures (fake `claude`, fake adapters, temp workspaces) are in helpers.py. No network, no credentials.
 
@@ -861,42 +861,7 @@ class GateManualTest(TempWorkspace):
         self.assertIn("run-case.sh is missing", out.stdout)
 
 
-class GateWindowsTest(TempWorkspace):
-    """The Windows branches gate.py takes that need no Windows to check."""
-
-    def test_adapter_runs_through_git_bash_on_windows(self) -> None:
-        adapter = (self.ws / "work" / "evaluation" / "run-case.sh").resolve()
-        with mock.patch.object(gate.os, "name", "nt"), mock.patch.object(gate, "_git_bash", return_value="C:/Git/bin/bash.exe"):
-            self.assertEqual(gate._adapter_argv(self.ws), ["C:/Git/bin/bash.exe", adapter.as_posix()])
-        with mock.patch.object(gate.os, "name", "nt"), mock.patch.object(gate, "_git_bash", return_value=None):
-            with self.assertRaisesRegex(gate_common.GateError, "Git for Windows"):
-                gate._adapter_argv(self.ws)
-
-    def test_git_bash_skips_the_wsl_launcher(self) -> None:
-        system32 = self.root / "Windows" / "System32"
-        git = self.root / "Program Files" / "Git" / "bin"
-        for folder in (system32, git):
-            folder.mkdir(parents=True)
-            (folder / "bash.exe").write_text("")
-        env = {"SystemRoot": str(self.root / "Windows"), "CLAUDE_CODE_GIT_BASH_PATH": str(system32 / "bash.exe"),
-               "ProgramFiles": str(self.root / "Program Files"), "PATH": str(self.root / "empty")}
-        with mock.patch.dict(os.environ, env):
-            self.assertEqual(gate._git_bash(), str(git / "bash.exe"))
-
-    def test_the_gate_stops_when_its_stop_file_appears(self) -> None:
-        stop_file = self.root / "gate.stop"
-        with mock.patch.dict(os.environ, {"RUN_OWNED_STOP_FILE": str(stop_file)}):
-            gate._STOP.clear()
-            try:
-                gate._watch_stop_file()
-                self.assertFalse(gate._STOP.wait(0.6))
-                stop_file.write_text("{}")
-                self.assertTrue(gate._STOP.wait(5), "the stop file is the request on Windows")
-            finally:
-                gate._STOP.set()
-                time.sleep(gate.POLL_SECONDS * 2)
-                gate._STOP.clear()
-
+class GateJobTest(TempWorkspace):
     def test_inside_gate_job_needs_the_records_token(self) -> None:
         pids = self.ws / "work" / "pids"
         pids.mkdir(parents=True)

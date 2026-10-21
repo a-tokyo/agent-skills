@@ -328,6 +328,17 @@ The live smoke (`arms/smoke-kill-guard.sh`, Claude Code 2.1.304, haiku) loaded t
 `onFailure` set, blocked a `pkill` and a `killall`, and ran the next command. Replaying the 48 `u-*` synthesis
 receipts through the new range check rejects none of their 105 revised scores.
 
+### Code diet (harness `eb9830d`..`5c8e7ae`, not re-benchmarked)
+
+Native Windows is dropped (Amendment 5, user decision 2026-10-21): the factory runs on macOS, Linux and WSL,
+and on native Windows every script exits early with a pointer to WSL. The Job Object, msvcrt, Git Bash and
+`taskkill` code paths, their tests and the `windows-latest` CI jobs are gone; the gate smoke now runs on
+`ubuntu-latest` and the script tests on `macos-latest`. The kill guard keeps its POSIX rules and drops the
+`taskkill`/`Stop-Process`/`wmic` patterns. Scripts and hooks shrink from 3,616 to 2,781 lines: `run_owned.py`'s
+supervisor forks the command itself instead of starting a wrapper process, and the docstrings point at the
+references instead of restating them. Validator codes, messages and the owned-process guarantees are
+unchanged; 184 offline tests, the gate smoke and the live kill-guard smoke (`arms/smoke-kill-guard.sh`) pass.
+
 ## Release run on `82ec859` (`s-*`, October 2026), superseded by `u-*`
 
 This run used the factory at harness `82ec859`, loaded with `--plugin-dir`, with n=5 per cell. All 20

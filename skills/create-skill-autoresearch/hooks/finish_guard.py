@@ -1,38 +1,28 @@
 #!/usr/bin/env python3
 """End-of-turn hook: a factory build does not end before `check_gate.py --finish` exits 0 (SKILL.md 5.1).
 
-It acts only inside a factory build workspace — a directory holding `work/evaluation/` and
-`output/<skill>/SKILL.md`: the session's directory itself or a `builds/<name>/` under it (SKILL.md 1.6).
-For each such build it runs scripts/check_gate.py's finish check; if one is unfinished, it sends the agent
-back once with the validator's reason, and logs that to work/experiments/finish-guard.jsonl in the build.
-It never sends the agent back twice in a row, and lets the turn end on input it cannot read or on any
-error of its own. Contracts (references/hosts.md):
+In each build workspace (holding work/evaluation/ and output/<skill>/SKILL.md) at the session's directory or
+under its builds/, an unfinished build sends the main session back once with the validator's reason, logged
+to work/experiments/finish-guard.jsonl. Never twice in a row, never for a subagent's stop, and any input it
+cannot read or error of its own ends the turn. Hosts and loop guards: references/hosts.md "Finish guard".
 
-  Claude Code, Codex  Stop, stdin {"hook_event_name": "Stop", "cwd", "stop_hook_active", ...}. Back once:
-                      {"decision": "block", "reason": ...}; else {}. stop_hook_active true (already sent
-                      back by a Stop hook) always ends the turn.
-  Cursor              stop, stdin {"hook_event_name": "stop", "status", "loop_count", "workspace_roots"}.
-                      Back once: {"followup_message": ...} when status is "completed" and loop_count is 0;
-                      else {}. The plugin config also sets loop_limit 1.
-  OpenCode            hooks/opencode-finish-guard.js sends the Claude Code shape on session.idle of a
-                      top-level session (a subagent's child session has a parentID and is skipped).
-
-Only the main session's end of turn counts: phase workers, researchers and panel members (SKILL.md
-"Orchestration") end on Claude Code's SubagentStop and Cursor's subagentStop, which the hook configs never
-register; if one is wired here anyway, or a stop payload carries Claude Code's `agent_id` (set only inside a
-subagent), the turn ends untouched.
-
-hooks/finish-guard runs it with whichever Python 3 the machine has.
+  Claude Code, Codex  Stop {"cwd", "stop_hook_active"}: {"decision": "block", "reason"} or {}.
+  Cursor              stop {"status", "loop_count", "workspace_roots"}: {"followup_message"} or {}.
 """
 
 from __future__ import annotations
 
 import json
+import os
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.dont_write_bytecode = True
+if os.name == "nt":  # the host gets its "allow" answer, so no shell call or turn is held
+    print("finish guard: native Windows is not supported; run the factory inside WSL", file=sys.stderr)
+    print("{}")
+    sys.exit(0)
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 CURSOR_EVENT = "stop"
 SUBAGENT_EVENTS = {"SubagentStop", "subagentStop"}

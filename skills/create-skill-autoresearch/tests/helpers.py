@@ -19,7 +19,6 @@ SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
 sys.path.insert(0, str(SCRIPTS))
 import run_owned  # noqa: E402
 
-WINDOWS = os.name == "nt"
 PY = sys.executable
 
 
@@ -34,7 +33,7 @@ TREE = py("import subprocess, sys, time\n"
           "child = subprocess.Popen([sys.executable, '-c', 'import time; time.sleep(300)'])\n"
           "print('child', child.pid, flush=True)\ntime.sleep(300)")
 IGNORES_TERM = py("import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(300)")
-DETACHED = {} if WINDOWS else {"start_new_session": True}
+DETACHED = {"start_new_session": True}
 
 FAKE_CLAUDE = textwrap.dedent('''\
     #!/usr/bin/env python3
@@ -145,7 +144,7 @@ def _env(bin_dir: Path, **extra: str) -> dict[str, str]:
 
 def _path_without_claude() -> str:
     dirs = [d for d in os.environ["PATH"].split(os.pathsep)
-            if d and not any(os.path.exists(os.path.join(d, "claude" + ext)) for ext in ("", ".cmd", ".exe", ".bat"))]
+            if d and not os.path.exists(os.path.join(d, "claude"))]
     return os.pathsep.join(dirs or ["/usr/bin", "/bin"])
 
 
@@ -153,14 +152,22 @@ def _script(name: str, scripts: Path = SCRIPTS) -> list[str]:
     return [sys.executable, "-B", str(scripts / name)]
 
 
+def as_native_windows(script: Path) -> subprocess.CompletedProcess:
+    """Run `script` with os.name set to "nt", as on native Windows (stdlib modules that check os.name at
+    import are loaded first)."""
+    code = f"import os, pathlib, runpy, shutil, subprocess, sys, tempfile; os.name = 'nt'; sys.argv = [{str(script)!r}]; runpy.run_path(sys.argv[0], run_name='__main__')"
+    return subprocess.run([sys.executable, "-B", "-c", code], input="{}", capture_output=True, text=True, timeout=30,
+                          cwd=script.parent)
+
+
+NATIVE_WINDOWS = "native Windows is not supported; run the factory inside WSL"
+
+
 def _alive(pid: int) -> bool:
     return run_owned._pid_alive(pid)
 
 
 def _group_alive(pgid: int) -> bool:
-    """macOS/Linux: any member of the group; Windows (no groups): the leader."""
-    if WINDOWS:
-        return run_owned._pid_alive(pgid)
     try:
         os.killpg(pgid, 0)
     except (ProcessLookupError, PermissionError):
@@ -181,18 +188,15 @@ class TempWorkspace(unittest.TestCase):
     scripts = SCRIPTS  # a test may point this at a copy of the skill with other verdict-rules.json values
 
     def setUp(self) -> None:
-        # Windows cannot delete a file a just-stopped process still holds; a leftover temp dir is harmless.
-        self._tmp = tempfile.TemporaryDirectory(**({"ignore_cleanup_errors": True} if WINDOWS else {}))
+        self._tmp = tempfile.TemporaryDirectory()
         self.root = Path(self._tmp.name)
         self.ws = self.root / "ws"
         self.ws.mkdir()
         self.bin = self.root / "bin"
         self.bin.mkdir()
-        fake = self.bin / ("claude.py" if WINDOWS else "claude")
+        fake = self.bin / "claude"
         fake.write_text(FAKE_CLAUDE, encoding="utf-8")
         fake.chmod(0o755)
-        if WINDOWS:
-            (self.bin / "claude.cmd").write_text(f'@"{PY}" "%~dp0claude.py" %*\r\n')
         self.argv_log = self.root / "claude-argv.jsonl"
 
     def tearDown(self) -> None:

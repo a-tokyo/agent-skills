@@ -22,8 +22,7 @@ from pathlib import Path
 SKILL = Path(__file__).resolve().parents[1]
 HOOK = SKILL / "hooks" / "finish_guard.py"
 LAUNCHER = SKILL / "hooks" / "finish-guard"
-WINDOWS = os.name == "nt"
-SH = shutil.which("sh") if WINDOWS else "/bin/sh"
+SH = "/bin/sh"
 ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
 
 
@@ -44,6 +43,12 @@ class FinishGuardTest(unittest.TestCase):
 
     def tearDown(self) -> None:
         self._tmp.cleanup()
+
+    def test_native_windows_lets_the_call_through_with_one_message(self) -> None:
+        code = f"import os, pathlib, runpy, shutil, subprocess, tempfile; os.name = 'nt'; runpy.run_path({str(HOOK)!r}, run_name='__main__')"
+        out = subprocess.run([sys.executable, "-B", "-c", code], input="{}", capture_output=True, text=True, timeout=30)
+        self.assertEqual((out.returncode, out.stdout.strip()), (0, '{}'))
+        self.assertIn("native Windows is not supported; run the factory inside WSL", out.stderr)
 
     @staticmethod
     def build(ws: Path) -> Path:
@@ -140,7 +145,6 @@ class FinishGuardTest(unittest.TestCase):
         cmd = [SH, "-c", cursor["command"].replace("${CURSOR_PLUGIN_ROOT}", str(SKILL))]
         self.assertIn("BUILD UNFINISHED", self.hook(cursor_stop(self.ws), cmd)["followup_message"])
 
-    @unittest.skipIf(WINDOWS, "symlinks need privileges on Windows")
     def test_without_any_python_the_turn_ends(self) -> None:
         bin_dir = self.root / "bin"
         bin_dir.mkdir()

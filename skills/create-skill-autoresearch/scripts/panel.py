@@ -1,37 +1,11 @@
-"""Panel role receipts and the consensus they derive (SKILL.md 5.2-5.4), for check_gate.py.
+"""Panel role receipts, rounds and the consensus they derive (SKILL.md 5.2-5.4), for check_gate.py.
 
-Each verifier writes its role receipt after it scores, with
-`check_gate.py --panel-receipt <role> <scores.json>`: the JSON its panel prompt template outputs
-(references/consensus-protocol.md "Panel Prompt Templates": `scores` per rubric dimension,
-`pass_recommendation`, and for the Devil's Advocate `escalation`). The receipt,
-work/experiments/panel/<role>.json, binds those scores to the sha256 of output/<skill>/ and of
-work/evaluation/rubric.yaml. A synthesis round's output
-(`revised_scores`) goes through `--panel-receipt <role> <file> --synthesis` into <role>.synthesis.json;
-it may change only the dimensions the first round disputed.
-
-`check_gate.py --consensus` computes the panel's verdict from the three current receipts, by the
-thresholds in references/verdict-rules.json (their one home), and writes
-work/experiments/panel/consensus.json with the label it allows BENCHMARK.md to state. check_gate.py
---finish recomputes it and rejects a verdict above that label.
-
-Each consensus is also archived as a panel round, work/experiments/panel/rounds/<n>/: round.json (the
-skill and rubric hashes, the label and its line, a sha256 per file of output/<skill>/), a copy of SKILL.md
-and the three final receipts. A round is one consensus over a skill hash other than the last round's; a
-re-run on the same skill (after synthesis, or a rubric fix) updates that round. Past `max_panel_rounds`
-(verdict-rules.json) no new round starts: the build ends UNSHIPPED with the last round's consensus line.
-
-rubric.yaml is read by a small stdlib reader of the references/rubric-templates.md schema:
-`target_score:` (default from verdict-rules.json), and a `dimensions:` block list whose items carry
-`name:`, `weight:`, `scale:` ("1-10" when absent) and optionally `sections:`, a one-line flow list of
-SKILL.md heading prefixes the dimension judges (absent: the whole skill).
-
-`post_panel_recheck` in verdict-rules.json picks how a panel round after a skill change re-scores.
-`full`: every role scores every dimension. `scoped`: the script diffs SKILL.md against the last round's
-archived copy and each role re-scores only the dimensions whose sections the change touches; the rest
-carry the last round's final scores forward, tagged with that round's skill hash, and --consensus
-re-checks them against the archive. A change to any other file, to the frontmatter, to a section under
-`scoped_full_headings`, of more than `scoped_max_changed_lines` lines, or after a rubric change, re-scores
-in full. --panel prints which.
+A receipt (work/experiments/panel/<role>.json, <role>.synthesis.json) binds a verifier's scores to the skill and
+rubric hashes; each consensus is archived as a round under work/experiments/panel/rounds/<n>/ with a copy of
+SKILL.md and the final receipts. The thresholds, max_panel_rounds and post_panel_recheck live in
+references/verdict-rules.json; the protocol in references/consensus-protocol.md; rubric.yaml's schema (read here
+by a small stdlib reader: target_score, and dimensions with name, weight, scale, sections) in
+references/rubric-templates.md.
 """
 
 from __future__ import annotations
@@ -42,11 +16,10 @@ import json
 import re
 import shutil
 from dataclasses import asdict, dataclass, field
-from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-from gate_common import EVAL_DIR, GateError, _flow_items, _hashed, _strip_comment, _unquote, check_skill_name, file_sha256, \
-    skill_sha256, write_json
+from gate_common import EVAL_DIR, GateError, _flow_items, _hashed, _strip_comment, _unquote, check_skill_name, \
+    file_sha256, is_number, now, read_json, skill_sha256, write_json
 
 RUBRIC = EVAL_DIR / "rubric.yaml"
 PANEL_DIR = PurePosixPath("work") / "experiments" / "panel"
@@ -56,7 +29,8 @@ RULES_PATH = Path(__file__).resolve().parent.parent / "references" / "verdict-ru
 DA = "devils-advocate"
 ROLES = ("verifier-a", "verifier-b", DA)
 RANK = {"UNSHIPPED": 0, "SHIP WITH CAVEATS": 1, "SHIP": 2}
-_LABEL = re.compile(r"[ _]+")
+_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
+_FENCE = re.compile(r"^\s{0,3}(```|~~~)")
 
 
 def rules() -> dict:
@@ -65,11 +39,6 @@ def rules() -> dict:
 
 class RoundsExhausted(GateError):
     """A new panel round past `max_panel_rounds`: the build ends UNSHIPPED on the last round's consensus."""
-
-
-def label(text: object) -> str | None:
-    """`SHIP_WITH_CAVEATS`, `ship with caveats` and the like as one spelling, or None."""
-    return _LABEL.sub(" ", text.strip().upper()) if isinstance(text, str) and text.strip() else None
 
 
 @dataclass
@@ -107,16 +76,14 @@ def read_rubric(workspace: Path) -> Rubric:
                     target = float(_unquote(value))
                 except ValueError as exc:
                     raise GateError(f"{RUBRIC}: target_score {value.strip()!r} is not a number") from exc
-            continue
-        if not in_dims:
-            continue
-        item = line.strip()
-        if item.startswith("- "):
-            items.append({})
-            item = item[2:]
-        key, sep, value = item.partition(":")
-        if sep and items:
-            items[-1][key.strip()] = value.strip() if key.strip() == "sections" else _unquote(value)
+        elif in_dims:
+            item = line.strip()
+            if item.startswith("- "):
+                items.append({})
+                item = item[2:]
+            key, sep, value = item.partition(":")
+            if sep and items:
+                items[-1][key.strip()] = value.strip() if key.strip() == "sections" else _unquote(value)
     dims = []
     for item in items:
         name = item.get("name")
@@ -145,29 +112,17 @@ def _receipt_path(workspace: Path, role: str, synthesis: bool) -> Path:
     return workspace / PANEL_DIR / f"{role}{'.synthesis' if synthesis else ''}.json"
 
 
-def _read(path: Path) -> dict | None:
-    try:
-        data = json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
-    return data if isinstance(data, dict) else None
-
-
-def _number(value: object) -> bool:
-    return isinstance(value, (int, float)) and not isinstance(value, bool)
-
-
 def _check_score(name: str, score: object, quote: object, d: Dimension, what: str = "score") -> None:
     """The rubric scale, and evidence for a score at either extreme (verdict-rules.json)."""
     evidence = rules()["evidence_required"]
-    if not _number(score) or not d.low <= score <= d.high:
+    if not is_number(score) or not d.low <= score <= d.high:
         raise GateError(f"{name}: {what} {score!r} is not on the rubric scale {d.low:g}-{d.high:g}")
-    needs = score >= evidence["score_at_least"] or score <= evidence["score_at_most"]
-    if needs and not (isinstance(quote, str) and quote.strip()):
+    if (score >= evidence["score_at_least"] or score <= evidence["score_at_most"]) and not (
+            isinstance(quote, str) and quote.strip()):
         raise GateError(f"{name}: a {what} of {score:g} needs evidence (a verbatim quote or the failing line)")
 
 
-def _scores(raw: dict, rubric: Rubric, scope: "Scope | None" = None) -> dict[str, dict]:
+def _scores(raw: object, rubric: Rubric, scope: Scope | None = None) -> dict[str, dict]:
     dims = {d.name: d for d in rubric.dimensions if scope is None or d.name in scope.rescored}
     if not isinstance(raw, dict) or set(raw) != set(dims):
         got = sorted(raw) if isinstance(raw, dict) else raw
@@ -177,25 +132,23 @@ def _scores(raw: dict, rubric: Rubric, scope: "Scope | None" = None) -> dict[str
         raise GateError(f"scores must cover exactly the rubric's dimensions {sorted(dims)}; got {got}")
     out = {}
     for name, entry in raw.items():
-        score = entry.get("score") if isinstance(entry, dict) else None
-        conf = entry.get("confidence") if isinstance(entry, dict) else None
-        quote = entry.get("evidence") if isinstance(entry, dict) else None
+        entry = entry if isinstance(entry, dict) else {}
+        score, conf, quote = entry.get("score"), entry.get("confidence"), entry.get("evidence")
         _check_score(name, score, quote, dims[name])
-        if not _number(conf) or not 0 <= conf <= 1:
+        if not is_number(conf) or not 0 <= conf <= 1:
             raise GateError(f"{name}: confidence {conf!r} is not in 0..1")
         out[name] = {"score": score, "confidence": conf, "evidence": quote if isinstance(quote, str) else ""}
     return out
 
 
 def _synthesis_scores(raw: dict, first: dict, disputed: list[str], rubric: Rubric) -> dict[str, dict]:
-    """A revised score meets the first round's rules: on the scale, and at an extreme backed by evidence,
-    its own `evidence`, else the first round's, else its `justification`."""
+    """A revised score meets the first round's rules, its evidence being its own `evidence`, else the first
+    round's, else its `justification`."""
     dims = {d.name: d for d in rubric.dimensions}
     revised = raw.get("revised_scores")
     if not isinstance(revised, dict):
         raise GateError("a synthesis receipt needs `revised_scores` (the synthesis prompt's output)")
-    outside = sorted(set(revised) - set(disputed))
-    if outside:
+    if outside := sorted(set(revised) - set(disputed)):
         raise GateError(f"synthesis may change only the disputed dimensions {disputed}; got {outside}")
     out = json.loads(json.dumps(first["scores"]))
     for name, entry in revised.items():
@@ -217,18 +170,16 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
     if not synthesis:
         check_round(workspace, skill_sha)
     rubric = read_rubric(workspace)
-    raw = _read(source)
+    raw = read_json(source)
     if raw is None:
         raise GateError(f"{source} is not a JSON object (the panel template's output)")
     receipt = {"role": role, "skill": skill, "skill_sha256": skill_sha, "rubric_sha256": rubric.sha256,
                "round": 2 if synthesis else 1}
     if synthesis:
         current = current_receipts(workspace, skill_sha, rubric.sha256)
-        missing = [r for r in ROLES if r not in current]
-        if missing:
+        if missing := [r for r in ROLES if r not in current]:
             raise GateError(f"a synthesis receipt needs every first-round receipt for this skill; missing {missing}")
-        disputed = disputes(current, rubric)
-        if not disputed:
+        if not (disputed := disputes(current, rubric)):
             raise GateError("the first round disputed nothing; there is no synthesis round")
         receipt["scores"] = _synthesis_scores(raw, current[role], disputed, rubric)
         recommendation = raw.get("final_recommendation") or current[role]["recommendation"]
@@ -241,9 +192,10 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
             receipt["scores"] = {d.name: merged[d.name] for d in rubric.dimensions}
             receipt["recheck"] = scope.summary()
         recommendation, escalate = raw.get("pass_recommendation"), raw.get("escalation")
-    receipt["recommendation"] = label(recommendation)
+    receipt["recommendation"] = (re.sub(r"[ _]+", " ", recommendation.strip().upper())
+                                 if isinstance(recommendation, str) and recommendation.strip() else None)
     receipt["escalate"] = escalate if isinstance(escalate, str) and escalate.strip() else None
-    receipt["written"] = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    receipt["written"] = now()
     path = _receipt_path(workspace, role, synthesis)
     path.parent.mkdir(parents=True, exist_ok=True)
     if not synthesis:
@@ -253,39 +205,28 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
 
 
 def current_receipts(workspace: Path, skill_sha: str, rubric_sha: str, synthesis: bool = False) -> dict[str, dict]:
-    found = {}
-    for role in ROLES:
-        data = _read(_receipt_path(workspace, role, synthesis))
-        if data and data.get("skill_sha256") == skill_sha and data.get("rubric_sha256") == rubric_sha:
-            found[role] = data
-    return found
+    found = {role: read_json(_receipt_path(workspace, role, synthesis)) for role in ROLES}
+    return {role: data for role, data in found.items()
+            if data and data.get("skill_sha256") == skill_sha and data.get("rubric_sha256") == rubric_sha}
 
 
 def rounds(workspace: Path) -> list[dict]:
     """The archived panel rounds, oldest first; round n lives in rounds/<n>/."""
-    found, n = [], 1
-    while (entry := _read(workspace / ROUNDS_DIR / str(n) / "round.json")) is not None:
+    found = []
+    while (entry := read_json(workspace / ROUNDS_DIR / str(len(found) + 1) / "round.json")) is not None:
         found.append(entry)
-        n += 1
     return found
 
 
-def panel_round(workspace: Path, skill_sha: str) -> int:
-    """The round a consensus on this skill belongs to: the last round when the skill is unchanged since,
-    else the next one."""
-    archive = rounds(workspace)
-    if archive and archive[-1].get("skill_sha256") == skill_sha:
-        return len(archive)
-    return len(archive) + 1
-
-
 def check_round(workspace: Path, skill_sha: str) -> int:
-    """The round number, or RoundsExhausted when a new round would pass `max_panel_rounds`."""
-    n, cap = panel_round(workspace, skill_sha), rules()["max_panel_rounds"]
-    if n > cap:
+    """The round a consensus on this skill belongs to (the last when the skill is unchanged since, else the
+    next), or RoundsExhausted when that would pass `max_panel_rounds`."""
+    archive = rounds(workspace)
+    n = len(archive) if archive and archive[-1].get("skill_sha256") == skill_sha else len(archive) + 1
+    if n > (cap := rules()["max_panel_rounds"]):
         raise RoundsExhausted(f"the panel ran its {cap} rounds (max_panel_rounds) and the skill changed since round "
                               f"{n - 1}; no round {n} starts. End the build UNSHIPPED: write `Verdict: UNSHIPPED` "
-                              f"in BENCHMARK.md beside the last round's line: {rounds(workspace)[-1].get('line')}")
+                              f"in BENCHMARK.md beside the last round's line: {archive[-1].get('line')}")
     return n
 
 
@@ -294,38 +235,16 @@ def exhausted(workspace: Path) -> dict | None:
     archive = rounds(workspace)
     if len(archive) < rules()["max_panel_rounds"]:
         return None
-    last = archive[-1]
     try:
-        current = skill_sha256(workspace, check_skill_name(last.get("skill")))
+        current = skill_sha256(workspace, check_skill_name(archive[-1].get("skill")))
     except GateError:
-        return last
-    return None if current == last.get("skill_sha256") else last
+        return archive[-1]
+    return None if current == archive[-1].get("skill_sha256") else archive[-1]
 
 
 def _skill_files(workspace: Path, skill: str) -> dict[str, str]:
     root = workspace / "output" / skill
-    return {p.relative_to(root).as_posix(): file_sha256(p)
-            for p in sorted(root.rglob("*")) if _hashed(p, root)}
-
-
-def _archive(workspace: Path, skill: str, skill_sha: str, rubric_sha: str, result: "Consensus") -> None:
-    """Write (or, on the same skill, rewrite) the round's record, SKILL.md copy and final receipts."""
-    folder = workspace / ROUNDS_DIR / str(result.panel_round)
-    if folder.exists():
-        shutil.rmtree(folder)
-    folder.mkdir(parents=True)
-    shutil.copyfile(workspace / "output" / skill / "SKILL.md", folder / "SKILL.md")
-    for role, receipt in current_receipts(workspace, skill_sha, rubric_sha, synthesis=bool(result.disputed)).items():
-        write_json(folder / f"{role}.json", receipt)
-    write_json(folder / "round.json", {
-        "round": result.panel_round, "skill": skill, "skill_sha256": skill_sha, "rubric_sha256": rubric_sha,
-        "label": result.label, "allowed": result.allowed, "line": result.line(), "recheck": result.recheck,
-        "files": _skill_files(workspace, skill),
-        "written": datetime.now(timezone.utc).isoformat(timespec="seconds")})
-
-
-_HEADING = re.compile(r"^\s{0,3}(#{1,6})\s+(.*?)\s*#*\s*$")
-_FENCE = re.compile(r"^\s{0,3}(```|~~~)")
+    return {p.relative_to(root).as_posix(): file_sha256(p) for p in sorted(root.rglob("*")) if _hashed(p, root)}
 
 
 @dataclass
@@ -350,8 +269,7 @@ def _sections(lines: list[str]) -> tuple[list[tuple[str, ...]], int]:
     for i, line in enumerate(lines):
         if i > front and _FENCE.match(line):
             fenced = not fenced
-        heading = None if fenced or i <= front else _HEADING.match(line)
-        if heading:
+        if heading := (None if fenced or i <= front else _HEADING.match(line)):
             level = len(heading.group(1))
             stack = [(lvl, text) for lvl, text in stack if lvl < level] + [(level, heading.group(2))]
         chains.append(tuple(text for _, text in stack))
@@ -360,31 +278,28 @@ def _sections(lines: list[str]) -> tuple[list[tuple[str, ...]], int]:
 
 def _changed(old: list[str], new: list[str]) -> tuple[int, list[tuple[str, ...]], bool]:
     """(changed line count, the heading chains of the changed lines, whether the frontmatter changed)."""
-    old_chains, old_front = _sections(old)
-    new_chains, new_front = _sections(new)
+    (old_chains, old_front), (new_chains, new_front) = _sections(old), _sections(new)
     count, chains, front = 0, [], False
     for tag, i1, i2, j1, j2 in difflib.SequenceMatcher(None, old, new, autojunk=False).get_opcodes():
         if tag == "equal":
             continue
         count += (i2 - i1) + (j2 - j1)
         chains += old_chains[i1:i2] + new_chains[j1:j2]
-        front = front or any(i <= old_front for i in range(i1, max(i2, i1 + 1))) \
-            or any(j <= new_front for j in range(j1, max(j2, j1 + 1)))
+        front = front or i1 <= old_front or j1 <= new_front
         if i1 == i2:  # a pure insertion also sits in the old section it lands in
             chains.append(old_chains[i1 - 1] if 0 < i1 <= len(old_chains) else ())
     return count, chains, front
 
 
 def _matches(chain: tuple[str, ...], entries: list[str], anywhere: bool = False) -> bool:
-    """A heading in the chain starts with an entry (a rubric `sections` prefix), or with `anywhere`
-    contains it (scoped_full_headings), case-insensitively."""
-    def hit(heading: str, entry: str) -> bool:
-        return entry in heading if anywhere else heading.startswith(entry)
-    return any(hit(h.strip().lower(), e.strip().lower()) for h in chain for e in entries if e.strip())
+    """A heading in the chain starts with an entry (a rubric `sections` prefix) or, with `anywhere`, contains
+    it (scoped_full_headings); case-insensitive."""
+    return any((e in h if anywhere else h.startswith(e))
+               for h in (h.strip().lower() for h in chain) for e in (e.strip().lower() for e in entries) if e)
 
 
 def recheck_scope(workspace: Path, skill: str, skill_sha: str, rubric: Rubric) -> tuple[Scope | None, str]:
-    """(the scoped re-check this panel round allows, why) or (None, why the round re-scores in full)."""
+    """(the scoped re-check this panel round allows, "ok") or (None, why the round re-scores in full)."""
     r = rules()
     if r.get("post_panel_recheck", "full") != "scoped":
         return None, "post_panel_recheck is full"
@@ -397,15 +312,13 @@ def recheck_scope(workspace: Path, skill: str, skill_sha: str, rubric: Rubric) -
     if prior.get("rubric_sha256") != rubric.sha256:
         return None, f"the rubric changed since round {n}"
     folder = workspace / ROUNDS_DIR / str(n)
-    then, now = prior.get("files") or {}, _skill_files(workspace, skill)
-    changed = sorted(p for p in then.keys() | now.keys() if then.get(p) != now.get(p))
-    if any(p != "SKILL.md" for p in changed):
-        return None, f"files other than SKILL.md changed since round {n} ({', '.join(p for p in changed if p != 'SKILL.md')})"
+    then, current = prior.get("files") or {}, _skill_files(workspace, skill)
+    if others := sorted(p for p in then.keys() | current.keys() if then.get(p) != current.get(p) and p != "SKILL.md"):
+        return None, f"files other than SKILL.md changed since round {n} ({', '.join(others)})"
     if file_sha256(folder / "SKILL.md") != then.get("SKILL.md"):
         return None, f"round {n}'s archived SKILL.md does not match its record"
-    old = (folder / "SKILL.md").read_text(encoding="utf-8").splitlines()
-    new = (workspace / "output" / skill / "SKILL.md").read_text(encoding="utf-8").splitlines()
-    count, chains, front = _changed(old, new)
+    count, chains, front = _changed((folder / "SKILL.md").read_text(encoding="utf-8").splitlines(),
+                                    (workspace / "output" / skill / "SKILL.md").read_text(encoding="utf-8").splitlines())
     if count > r["scoped_max_changed_lines"]:
         return None, f"{count} changed lines since round {n} (scoped_max_changed_lines {r['scoped_max_changed_lines']})"
     if front:
@@ -413,8 +326,7 @@ def recheck_scope(workspace: Path, skill: str, skill_sha: str, rubric: Rubric) -
     if any(_matches(c, r["scoped_full_headings"], anywhere=True) for c in chains):
         return None, f"the change touches a section under {r['scoped_full_headings']} (scoped_full_headings)"
     for role in ROLES:
-        data = _read(folder / f"{role}.json")
-        if not data or data.get("skill_sha256") != prior.get("skill_sha256"):
+        if (read_json(folder / f"{role}.json") or {}).get("skill_sha256") != prior.get("skill_sha256"):
             return None, f"round {n} archived no receipt from {role} for its skill"
     rescored = [d.name for d in rubric.dimensions if not d.sections or any(_matches(c, d.sections) for c in chains)]
     if not rescored:
@@ -427,28 +339,11 @@ def recheck_scope(workspace: Path, skill: str, skill_sha: str, rubric: Rubric) -
 
 def _carried(workspace: Path, role: str, scope: Scope) -> dict:
     """The final scores round `scope.from_round` archived for `role`, for the carried dimensions."""
-    data = _read(workspace / ROUNDS_DIR / str(scope.from_round) / f"{role}.json") or {}
+    data = read_json(workspace / ROUNDS_DIR / str(scope.from_round) / f"{role}.json") or {}
     if data.get("skill_sha256") != scope.from_skill_sha256:
         raise GateError(f"round {scope.from_round}'s archived {role} receipt is not for skill "
                         f"{scope.from_skill_sha256[:12]}; carry-forward refused")
     return {name: {**data["scores"][name], "carried_from_sha256": scope.from_skill_sha256} for name in scope.carried}
-
-
-def check_scope(workspace: Path, skill: str, skill_sha: str, rubric: Rubric, receipts: dict[str, dict]) -> Scope | None:
-    """Every first-round receipt was written under the re-check scope that holds now, and its carried
-    scores are the archived round's, bound to that round's skill hash."""
-    scope, why = recheck_scope(workspace, skill, skill_sha, rubric)
-    expected = scope.summary() if scope else None
-    for role, receipt in receipts.items():
-        if receipt.get("recheck") != expected:
-            raise GateError(f"{role}'s receipt was written under another re-check scope than now "
-                            f"({'scoped: ' + ', '.join(scope.rescored) if scope else 'full: ' + why}); re-submit it")
-        if scope:
-            carried = _carried(workspace, role, scope)
-            if any(receipt["scores"].get(name) != carried[name] for name in scope.carried):
-                raise GateError(f"{role}'s carried scores differ from round {scope.from_round}'s archived "
-                                f"receipt; re-submit it")
-    return scope
 
 
 def _overall(scores: dict[str, float], rubric: Rubric) -> float:
@@ -456,22 +351,18 @@ def _overall(scores: dict[str, float], rubric: Rubric) -> float:
 
 
 def disputes(receipts: dict[str, dict], rubric: Rubric) -> list[str]:
-    """The dimensions a first round sends to synthesis (consensus-protocol.md, Disagreement Detection)."""
+    """The dimensions a first round sends to synthesis (consensus-protocol.md, Disagreement Detection); a
+    carried dimension was settled in the round it was scored in."""
     trig, target = rules()["synthesis_triggers"], rubric.target_score
-    split = False
     overalls = [_overall({n: s["score"] for n, s in r["scores"].items()}, rubric) for r in receipts.values()]
-    if overalls and max(overalls) >= target and min(overalls) < target - trig["pass_fail_margin"]:
-        split = True
+    split = bool(overalls) and max(overalls) >= target and min(overalls) < target - trig["pass_fail_margin"]
     carried = {name for r in receipts.values() for name, s in r["scores"].items() if "carried_from_sha256" in s}
     out = []
-    for d in rubric.dimensions:
-        if d.name in carried:  # settled in the round it was scored in
-            continue
+    for d in (d for d in rubric.dimensions if d.name not in carried):
         scores = [r["scores"][d.name]["score"] for r in receipts.values()]
         confs = [r["scores"][d.name]["confidence"] for r in receipts.values()]
         spread = max(scores) - min(scores)
-        if (spread >= trig["spread_at_least"]
-                or receipts[DA]["scores"][d.name]["score"] <= trig["devils_advocate_at"]
+        if (spread >= trig["spread_at_least"] or receipts[DA]["scores"][d.name]["score"] <= trig["devils_advocate_at"]
                 or (min(confs) < trig["low_confidence_below"] and max(confs) > trig["high_confidence_above"])
                 or (split and spread > 0)):
             out.append(d.name)
@@ -504,8 +395,8 @@ class Consensus:
 
 
 def _resolve(scores: list[float], within: float) -> tuple[float | None, str]:
-    """(consensus score, how): all within `within` -> their mean; else the closest agreeing pair
-    (the lower pair on a tie, the conservative reading) -> its mean; else deadlock (None)."""
+    """(consensus score, how): all within `within` -> their mean; else the closest agreeing pair (the lower
+    pair on a tie, the conservative reading) -> its mean; else deadlock (None)."""
     if max(scores) - min(scores) <= within:
         return sum(scores) / len(scores), "converged"
     pairs = sorted((abs(a - b), (a + b) / 2) for i, a in enumerate(scores) for b in scores[i + 1:]
@@ -514,25 +405,21 @@ def _resolve(scores: list[float], within: float) -> tuple[float | None, str]:
 
 
 def compute(workspace: Path, skill: str, skill_sha: str) -> Consensus:
-    """The consensus of the three current receipts; raises GateError naming what is missing, including
-    a synthesis round the first round calls for, and RoundsExhausted past `max_panel_rounds`."""
+    """The consensus of the three current receipts; raises GateError naming what is missing, including a
+    synthesis round the first round calls for, and RoundsExhausted past `max_panel_rounds`."""
     rubric, r = read_rubric(workspace), rules()
     panel_n = check_round(workspace, skill_sha)
     first = current_receipts(workspace, skill_sha, rubric.sha256)
-    missing = [role for role in ROLES if role not in first]
-    if missing:
+    if missing := [role for role in ROLES if role not in first]:
         raise GateError(f"no current role receipt from {', '.join(missing)} for this skill and rubric: each "
                         "verifier runs `check_gate.py --panel-receipt <role> <scores.json>` after scoring (5.2)")
-    scope = check_scope(workspace, skill, skill_sha, rubric, first)
-    disputed = disputes(first, rubric)
-    final = first
+    scope = _check_scope(workspace, skill, skill_sha, rubric, first)
+    disputed, final = disputes(first, rubric), first
     if disputed:
-        second = current_receipts(workspace, skill_sha, rubric.sha256, synthesis=True)
-        waiting = [role for role in ROLES if role not in second]
-        if waiting:
+        final = current_receipts(workspace, skill_sha, rubric.sha256, synthesis=True)
+        if waiting := [role for role in ROLES if role not in final]:
             raise GateError(f"SYNTHESIS NEEDED on {', '.join(disputed)}: run one synthesis round (5.3); "
                             f"{', '.join(waiting)} still to submit `--panel-receipt <role> <file> --synthesis`")
-        final = second
     result = Consensus(label="", allowed="", overall=None, target=rubric.target_score, disputed=disputed,
                        rounds=2 if disputed else 1, panel_round=panel_n,
                        recheck=scope.summary() if scope else {"mode": "full"}, max_panel_rounds=r["max_panel_rounds"])
@@ -563,25 +450,51 @@ def compute(workspace: Path, skill: str, skill_sha: str) -> Consensus:
     return result
 
 
-def receipts_digest(workspace: Path) -> str:
+def _check_scope(workspace: Path, skill: str, skill_sha: str, rubric: Rubric, receipts: dict[str, dict]) -> Scope | None:
+    """Every first-round receipt was written under the re-check scope that holds now, and its carried scores
+    are the archived round's, bound to that round's skill hash."""
+    scope, why = recheck_scope(workspace, skill, skill_sha, rubric)
+    for role, receipt in receipts.items():
+        if receipt.get("recheck") != (scope.summary() if scope else None):
+            raise GateError(f"{role}'s receipt was written under another re-check scope than now "
+                            f"({'scoped: ' + ', '.join(scope.rescored) if scope else 'full: ' + why}); re-submit it")
+        if scope:
+            carried = _carried(workspace, role, scope)
+            if any(receipt["scores"].get(name) != carried[name] for name in scope.carried):
+                raise GateError(f"{role}'s carried scores differ from round {scope.from_round}'s archived "
+                                f"receipt; re-submit it")
+    return scope
+
+
+def _receipts_digest(workspace: Path) -> str:
     digest = hashlib.sha256()
     for role in ROLES:
         for synthesis in (False, True):
-            path = _receipt_path(workspace, role, synthesis)
-            digest.update(f"{role}{synthesis}".encode() + (file_sha256(path) or "-").encode())
+            digest.update(f"{role}{synthesis}".encode() + (file_sha256(_receipt_path(workspace, role, synthesis))
+                                                           or "-").encode())
     return digest.hexdigest()
 
 
-def write_consensus(workspace: Path, skill: str, skill_sha: str) -> tuple[Path, Consensus]:
+def write_consensus(workspace: Path, skill: str, skill_sha: str) -> Consensus:
+    """Compute the consensus, write consensus.json, and archive it as this panel round (rewritten on the same
+    skill) with SKILL.md, the final receipts and a sha256 per skill file."""
     result = compute(workspace, skill, skill_sha)
     rubric_sha = read_rubric(workspace).sha256
-    path = workspace / CONSENSUS
-    write_json(path, {"skill": skill, "skill_sha256": skill_sha, "rubric_sha256": rubric_sha,
-                      "receipts_sha256": receipts_digest(workspace), "line": result.line(),
-                      **asdict(result),
-                      "written": datetime.now(timezone.utc).isoformat(timespec="seconds")})
-    _archive(workspace, skill, skill_sha, rubric_sha, result)
-    return path, result
+    write_json(workspace / CONSENSUS, {"skill": skill, "skill_sha256": skill_sha, "rubric_sha256": rubric_sha,
+                                       "receipts_sha256": _receipts_digest(workspace), "line": result.line(),
+                                       **asdict(result), "written": now()})
+    folder = workspace / ROUNDS_DIR / str(result.panel_round)
+    if folder.exists():
+        shutil.rmtree(folder)
+    folder.mkdir(parents=True)
+    shutil.copyfile(workspace / "output" / skill / "SKILL.md", folder / "SKILL.md")
+    for role, receipt in current_receipts(workspace, skill_sha, rubric_sha, synthesis=bool(result.disputed)).items():
+        write_json(folder / f"{role}.json", receipt)
+    write_json(folder / "round.json", {
+        "round": result.panel_round, "skill": skill, "skill_sha256": skill_sha, "rubric_sha256": rubric_sha,
+        "label": result.label, "allowed": result.allowed, "line": result.line(), "recheck": result.recheck,
+        "files": _skill_files(workspace, skill), "written": now()})
+    return result
 
 
 def recorded(workspace: Path, skill: str, skill_sha: str) -> tuple[Consensus | None, str]:
@@ -592,11 +505,11 @@ def recorded(workspace: Path, skill: str, skill_sha: str) -> tuple[Consensus | N
         rubric_sha = read_rubric(workspace).sha256
     except GateError as exc:
         return None, str(exc)
-    data = _read(workspace / CONSENSUS)
+    data = read_json(workspace / CONSENSUS)
     if data is None:
         return None, f"no {CONSENSUS.as_posix()}: run `check_gate.py --consensus` (5.3)"
     if (data.get("skill_sha256") != skill_sha or data.get("rubric_sha256") != rubric_sha
-            or data.get("receipts_sha256") != receipts_digest(workspace) or data.get("line") != result.line()):
+            or data.get("receipts_sha256") != _receipts_digest(workspace) or data.get("line") != result.line()):
         return None, (f"{CONSENSUS.as_posix()} is stale (the skill, rubric or a receipt changed since); re-run "
                       "`check_gate.py --consensus`")
     return result, "ok"

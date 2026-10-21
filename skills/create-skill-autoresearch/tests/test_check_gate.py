@@ -8,11 +8,10 @@ Fixtures (fake `claude`, fake adapters, temp workspaces) are in helpers.py. No n
 from __future__ import annotations
 
 import json
-import locale
 import subprocess
 import unittest
 
-from helpers import TempWorkspace, WINDOWS, _until
+from helpers import NATIVE_WINDOWS, SCRIPTS, TempWorkspace, _until, as_native_windows
 import gate_common  # noqa: E402  (on sys.path through helpers)
 
 
@@ -63,13 +62,6 @@ class FinishTest(TempWorkspace):
         self.benchmark("Verdict: UNSHIPPED\n")
         self.assertIn("needs a gate attempt", self.finish()["reason"],
                       "a failed 3.6 record is not a 5.0 gate attempt (round-3 adversary finding 7)")
-
-    @unittest.skipUnless(WINDOWS, "the fallback is the locale's code page, which is UTF-8 here")
-    def test_benchmark_in_the_windows_code_page_is_read(self) -> None:
-        self.make_build(["gold-01"])
-        encoding = locale.getpreferredencoding(False)
-        (self.ws / "BENCHMARK.md").write_bytes("**Verdict \u2014 ITERATE**\n".encode(encoding))
-        self.assertEqual(self.finish()["verdict"], "ITERATE", "the code page's em dash still separates the label")
 
     def test_unshipped_finishes_after_a_gate_that_failed_to_start(self) -> None:
         self.make_build(["gold-01"])

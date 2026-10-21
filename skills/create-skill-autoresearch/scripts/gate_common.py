@@ -1,27 +1,11 @@
-"""Shared helpers for gate.py and check_gate.py: workspace paths, the two YAML keys they read, and
-the hashes that bind a gate run to the skill and cases it ran.
+"""Shared helpers for gate.py, check_gate.py and panel.py: workspace paths, a small stdlib reader and writer for
+the data-split.yaml keys they use, and the hashes that bind a gate run to what it ran.
 
-No PyYAML (the factory bundles stdlib-only scripts), so `read_data_split` is a deliberately small
-reader for a few top-level keys of work/evaluation/data-split.yaml:
-
-    plugin_eval_available: 0          # an integer; anything else is kept as a string
-    plugin_eval: [case-a, "case-b"]   # a one-line flow list, or a block list:
-    plugin_eval:
-      - case-a
-      - "case-b"
-
-Case names are strings (quotes optional, `#` comments stripped; a flow list splits on commas outside
-quotes, so `["a, b.md"]` is one name). Any other shape for
-`plugin_eval` (a mapping, a multi-line flow list, a scalar) is reported as an error rather
-than guessed at. The split keys (`all_cases`, `training`, `validation`, `test`) are read the same
-way: whether any holds a value tells check_gate.py the build has gold standards, and their entries
-are the manual protocol's gate cases. `write_gate_cases` rewrites `plugin_eval` and
-`plugin_eval_available` in place and leaves every other line as it was; `gate.py record` is its
-only caller.
-
-`tree_sha256` hashes a directory's sorted relative paths and file contents, skipping interpreter
-caches (`__pycache__/`, `*.pyc`) and `.DS_Store`, which running a skill's scripts or browsing it in
-Finder creates without changing what ships.
+read_data_split reads only top-level keys, each a one-line flow list (`[a, "b, c.md"]`, split on commas outside
+quotes) or a block list of `- item` lines; quotes are optional and `#` comments stripped. Any other shape is
+reported as an error, never guessed at. write_gate_cases rewrites plugin_eval and plugin_eval_available in place
+and keeps every other line. Hashes skip `__pycache__/`, `*.pyc` and `.DS_Store`, which running or browsing a
+skill creates without changing what ships.
 """
 
 from __future__ import annotations
@@ -32,13 +16,13 @@ import json
 import os
 import re
 import sys
-import time
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from pathlib import Path, PurePosixPath
 
-# POSIX-style relative paths, so messages and records read the same on Windows; `workspace / EVAL_DIR`
-# still yields a native path.
+if os.name == "nt":
+    sys.exit("native Windows is not supported; run the factory inside WSL")
+
 EVAL_DIR = PurePosixPath("work") / "evaluation"
 PLUGIN_ARTIFACT = EVAL_DIR / "plugin-eval.json"
 MANUAL_ARTIFACT = EVAL_DIR / "uplift.json"
@@ -49,22 +33,18 @@ PLUGIN_DIR = EVAL_DIR / "plugin"
 GATE_ATTEMPTS = EVAL_DIR / "gate-attempts.jsonl"
 BASELINE_CACHE = EVAL_DIR / "baseline-cache"
 REQUIRED_RUNS = 3
-# Hashed elsewhere (run-case.sh, data-split.yaml) or written by the gate itself: its records, the skill
-# copy it refreshes into the wrapper plugin before each run, what claude plugin eval writes there, and
-# the manual protocol's cached without-skill arms (check_gate.py validates those against their keys).
+# Not gate inputs: hashed on their own (run-case.sh, data-split.yaml), or written by the gate and claude plugin
+# eval (the records, the skill copy, eval results, the cached without-skill arms check_gate.py re-keys).
 _NOT_INPUTS = {p.as_posix() for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_RECORD, DATA_SPLIT, RUN_CASE,
                                       GATE_ATTEMPTS)}
 _GENERATED_DIRS = tuple(f"{d.as_posix()}/" for d in (PLUGIN_DIR / "skills", PLUGIN_DIR / "evals" / "results",
                                                       BASELINE_CACHE))
-
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
-# phase-4.md 4.2: from this many gold standards the split holds out a test set; below it, leave-one-out.
-TEST_SPLIT_MIN = 10
-_GATE_KEYS = ("plugin_eval", "plugin_eval_available")
+TEST_SPLIT_MIN = 10  # phase-4.md 4.2: from this many gold standards a test set is held out
 _TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
-_INT = re.compile(r"^-?\d+$")
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 BASELINE_KEY = re.compile(r"[0-9a-f]{64}")
+_MANIFEST_INPUT = re.compile(r"""(?:^|[\s{,-])input:\s*["']?([^"',}\s#]+)""")
 
 
 class GateError(Exception):
@@ -76,16 +56,17 @@ class DataSplit:
     plugin_eval: list[str] | None
     plugin_eval_error: str | None
     plugin_eval_available: int | str | None
-    gold_recorded: bool = False
     gold: dict[str, list[str]] = field(default_factory=dict)
     gold_error: str | None = None
 
+    @property
+    def gold_recorded(self) -> bool:
+        """Whether the split names any gold standard (check_gate.py then needs a gold gate case)."""
+        return bool(self.all_gold()) or self.gold_error is not None
+
     def all_gold(self) -> list[str]:
         """Every gold standard the split names, once, in key order."""
-        seen: dict[str, None] = {}
-        for key in GOLD_KEYS:
-            seen.update(dict.fromkeys(self.gold.get(key, [])))
-        return list(seen)
+        return list(dict.fromkeys(e for key in GOLD_KEYS for e in self.gold.get(key, [])))
 
     def gate_gold(self) -> list[str]:
         """The gold standards the gate runs (phase-3.md 3.6, phase-4.md 4.2): the test split with 10 or more gold
@@ -105,8 +86,7 @@ def _strip_comment(line: str) -> str:
     quote = None
     for i, ch in enumerate(line):
         if quote:
-            if ch == quote:
-                quote = None
+            quote = None if ch == quote else quote
         elif ch in "\"'":
             quote = ch
         elif ch == "#" and (i == 0 or line[i - 1].isspace()):
@@ -115,8 +95,8 @@ def _strip_comment(line: str) -> str:
 
 
 def _unquote(token: str) -> str:
-    """A double-quoted token is decoded as JSON (the form write_gate_cases emits, so `\\u00e9` and other
-    escapes round-trip); a single-quoted one has its quotes stripped; anything else is kept as written."""
+    """A double-quoted token decodes as JSON (as write_gate_cases emits it), a single-quoted one loses its quotes;
+    anything else is kept as written."""
     token = token.strip()
     if len(token) >= 2 and token[0] == token[-1] == '"':
         try:
@@ -130,8 +110,8 @@ def _unquote(token: str) -> str:
 
 
 def _flow_items(inner: str) -> list[str] | None:
-    """The comma-separated items of a one-line flow list, splitting only outside quotes (a backslash escapes
-    inside double quotes, as in JSON); None when a quote is left open."""
+    """The comma-separated items of a one-line flow list, split only outside quotes (a backslash escapes inside
+    double quotes); None when a quote is left open."""
     items, buf, quote, escaped = [], [], None, False
     for ch in inner:
         if escaped:
@@ -151,7 +131,7 @@ def _flow_items(inner: str) -> list[str] | None:
     return None if quote else [_unquote(t) for t in items]
 
 
-def _parse_list(value: str, block: list[str], key: str = "plugin_eval") -> tuple[list[str] | None, str | None]:
+def _parse_list(value: str, block: list[str], key: str) -> tuple[list[str] | None, str | None]:
     if value.startswith("["):
         if not value.endswith("]"):
             return None, f"{key} flow list must open and close on one line"
@@ -164,8 +144,7 @@ def _parse_list(value: str, block: list[str], key: str = "plugin_eval") -> tuple
         return None, f"{key} is a scalar ({value!r}), not a list of case names"
     else:
         items = []
-        for raw in block:
-            item = raw.strip()
+        for item in (raw.strip() for raw in block):
             if not item.startswith("- "):
                 return None, f"{key} must be a list of case names; found {item!r}"
             items.append(_unquote(item[2:]))
@@ -176,54 +155,41 @@ def _parse_list(value: str, block: list[str], key: str = "plugin_eval") -> tuple
     return items, None
 
 
+def _top_keys(lines: list[str]) -> dict[str, tuple[int, int, str, list[str]]]:
+    """Each top-level key: (its line, the index after its indented block, its inline value, the block's
+    non-blank lines). `lines` are comment-stripped; trailing blank lines stay outside the block."""
+    found = {}
+    for i, line in enumerate(lines):
+        if match := _TOP_KEY.match(line):
+            end, block = i + 1, []
+            for j in range(i + 1, len(lines)):
+                if lines[j].strip():
+                    if not lines[j][0].isspace():
+                        break
+                    end = j + 1
+                    block.append(lines[j])
+            found.setdefault(match.group(1), (i, end, match.group(2).strip(), block))
+    return found
+
+
 def read_data_split(path: Path) -> DataSplit:
     if not path.is_file():
         raise GateError(f"{path} not found; 3.6 records the gate cases there under plugin_eval")
-    lines = [_strip_comment(line) for line in path.read_text(encoding="utf-8").splitlines()]
-    found: dict[str, tuple[str, list[str]]] = {}
-    for i, line in enumerate(lines):
-        match = _TOP_KEY.match(line)
-        if not match or match.group(1) not in _GATE_KEYS + GOLD_KEYS:
-            continue
-        block = []
-        for nxt in lines[i + 1:]:
-            if not nxt.strip():
-                continue
-            if not nxt[0].isspace():
-                break
-            block.append(nxt)
-        found[match.group(1)] = (match.group(2).strip(), block)
-
-    cases, error = (None, "plugin_eval is not recorded")
-    if "plugin_eval" in found:
-        cases, error = _parse_list(*found["plugin_eval"])
+    found = _top_keys([_strip_comment(line) for line in path.read_text(encoding="utf-8").splitlines()])
+    cases, error = _parse_list(*found["plugin_eval"][2:], "plugin_eval") if "plugin_eval" in found else (
+        None, "plugin_eval is not recorded")
     available: int | str | None = None
     if "plugin_eval_available" in found:
-        raw = _unquote(found["plugin_eval_available"][0])
-        available = int(raw) if _INT.match(raw) else raw
-    recorded = any(value not in ("", "[]") or block for key, (value, block) in found.items() if key in GOLD_KEYS)
-    gold, gold_error = {}, None
-    for key in GOLD_KEYS:
-        if key in found:
-            items, err = _parse_list(*found[key], key=key)
-            if err:
-                gold_error = gold_error or err
-            else:
-                gold[key] = items
-    return DataSplit(plugin_eval=cases, plugin_eval_error=error, plugin_eval_available=available,
-                     gold_recorded=recorded, gold=gold, gold_error=gold_error)
-
-
-def _block_end(lines: list[str], start: int) -> int:
-    """Index after the key at `start` and its indented block (trailing blank lines stay outside)."""
-    end = start + 1
-    for i in range(start + 1, len(lines)):
-        if not lines[i].strip():
-            continue
-        if not lines[i][0].isspace():
-            break
-        end = i + 1
-    return end
+        raw = _unquote(found["plugin_eval_available"][2])
+        available = int(raw) if re.fullmatch(r"-?\d+", raw) else raw
+    split = DataSplit(plugin_eval=cases, plugin_eval_error=error, plugin_eval_available=available)
+    for key in (k for k in GOLD_KEYS if k in found):
+        items, err = _parse_list(*found[key][2:], key)
+        if err:
+            split.gold_error = split.gold_error or err
+        else:
+            split.gold[key] = items
+    return split
 
 
 def write_gate_cases(path: Path, cases: list[str], available: int | str, source: str, why: str) -> None:
@@ -236,16 +202,12 @@ def write_gate_cases(path: Path, cases: list[str], available: int | str, source:
                        + [f"  - {json.dumps(case)}" for case in cases],
     }
     for key, block in new.items():
-        at = next((i for i, line in enumerate(lines)
-                   if (m := _TOP_KEY.match(_strip_comment(line))) and m.group(1) == key), None)
+        at = _top_keys([_strip_comment(line) for line in lines]).get(key)
         if at is None:
             lines += block
         else:
-            lines[at:_block_end(lines, at)] = block
+            lines[at[0]:at[1]] = block
     write_text(path, "\n".join(lines) + "\n")
-
-
-_MANIFEST_INPUT = re.compile(r"""(?:^|[\s{,-])input:\s*["']?([^"',}\s#]+)""")
 
 
 def _case_file(ws: Path, entry: str) -> Path | None:
@@ -258,10 +220,9 @@ def _case_file(ws: Path, entry: str) -> Path | None:
 
 
 def omitted_gold(ws: Path, listed: list[str]) -> list[str]:
-    """Gold standards on disk that the split's lists leave out: every `input:` path in work/manifest.yaml,
-    and every file beside a listed case file that differs from it only in its numbers (listing
-    input/input-01.md covers input/input-02.md, input/input-03.md, ...). Only entries that name a file
-    are checked, so case names that are not files never trip it."""
+    """Gold standards on disk that the split's lists leave out: every `input:` path in work/manifest.yaml, and
+    every file beside a listed case file that differs from it only in its numbers (input/input-01.md covers
+    input/input-02.md, ...). Only entries that name a file are checked."""
     ws = ws.resolve()
     listed_files = {f for entry in listed if (f := _case_file(ws, entry))}
     if not listed_files:
@@ -280,7 +241,7 @@ def omitted_gold(ws: Path, listed: list[str]) -> list[str]:
 
 
 def utf8_stdio() -> None:
-    """Case names and claude's output may be non-ASCII; Windows pipes default to a legacy code page."""
+    """Case names and claude's output may be non-ASCII, whatever the locale's encoding."""
     for stream in (sys.stdout, sys.stderr):
         if hasattr(stream, "reconfigure"):
             stream.reconfigure(encoding="utf-8", errors="replace")
@@ -298,8 +259,7 @@ def check_skill_name(skill: object) -> str:
 def resolve_skill(workspace: Path, skill: str | None) -> str:
     output = workspace / "output"
     if skill is not None:
-        check_skill_name(skill)
-        if not (output / skill / "SKILL.md").is_file():
+        if not (output / check_skill_name(skill) / "SKILL.md").is_file():
             raise GateError(f"no skill at {output / skill / 'SKILL.md'}")
         return skill
     found = sorted(p.parent.name for p in output.glob("*/SKILL.md")) if output.is_dir() else []
@@ -311,11 +271,8 @@ def resolve_skill(workspace: Path, skill: str | None) -> str:
 def model_invoked(skill_md: Path) -> bool:
     """False when the frontmatter sets `disable-model-invocation: true`."""
     text = skill_md.read_text(encoding="utf-8")
-    if not text.startswith("---"):
-        return True
-    end = text.find("\n---", 3)
-    frontmatter = text[3:end] if end != -1 else ""
-    for line in frontmatter.splitlines():
+    end = text.find("\n---", 3) if text.startswith("---") else -1
+    for line in text[3:end].splitlines() if end != -1 else []:
         key, _, value = line.partition(":")
         if key.strip() == "disable-model-invocation":
             return _unquote(_strip_comment(value)).lower() != "true"
@@ -323,11 +280,12 @@ def model_invoked(skill_md: Path) -> bool:
 
 
 def _hashed(path: Path, root: Path) -> bool:
-    rel = path.relative_to(root)
-    return path.is_file() and "__pycache__" not in rel.parts and path.suffix != ".pyc" and path.name != ".DS_Store"
+    return (path.is_file() and "__pycache__" not in path.relative_to(root).parts and path.suffix != ".pyc"
+            and path.name != ".DS_Store")
 
 
 def tree_sha256(root: Path) -> str:
+    """A directory's sorted relative paths and file contents."""
     digest = hashlib.sha256()
     if root.is_dir():
         for path in sorted((p for p in root.rglob("*") if _hashed(p, root)), key=lambda p: p.relative_to(root).as_posix()):
@@ -341,8 +299,8 @@ def skill_sha256(workspace: Path, skill: str) -> str:
 
 
 def cases_sha256(workspace: Path, cases: list[str]) -> str:
-    """The recorded case names, in order, plus each case's suite directory under plugin/evals/ when it
-    has one (manual-protocol gold cases may not)."""
+    """The recorded case names, in order, plus each case's suite directory under plugin/evals/ when it has one
+    (manual-protocol gold cases may not)."""
     digest = hashlib.sha256()
     for case in cases:
         digest.update(case.encode() + b"\0")
@@ -351,44 +309,59 @@ def cases_sha256(workspace: Path, cases: list[str]) -> str:
 
 
 def split_sha256(split: DataSplit) -> str:
-    """The splits as parsed (all_cases, training, validation, test, or the error reading them): a change to
-    which gold standard sits in which split after the gate is stale, while comments and layout are not."""
+    """The splits as parsed: moving a gold standard between splits after the gate makes it stale; comments and
+    layout do not."""
     canonical = {"gold": {key: split.gold.get(key) for key in GOLD_KEYS}, "error": split.gold_error}
     return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
+
+
+def is_number(value: object) -> bool:
+    return isinstance(value, (int, float)) and not isinstance(value, bool)
+
+
+def read_json(path: Path) -> dict | None:
+    """The JSON object in `path`, or None when it is missing, unreadable or not an object."""
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return data if isinstance(data, dict) else None
+
+
+def json_lines(path: Path | None) -> list[dict]:
+    """The JSON objects on the lines of a .jsonl file; other lines, or no file, are skipped."""
+    found = []
+    for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if path and path.is_file() else []:
+        try:
+            entry = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if isinstance(entry, dict):
+            found.append(entry)
+    return found
 
 
 def file_sha256(path: Path) -> str | None:
     return hashlib.sha256(path.read_bytes()).hexdigest() if path.is_file() else None
 
 
-def _gate_input(path: Path, ws: Path) -> bool:
-    rel = path.relative_to(ws).as_posix()
-    if not rel.startswith(f"{EVAL_DIR.as_posix()}/"):
-        return True
-    return not (rel in _NOT_INPUTS or rel.startswith(_GENERATED_DIRS)
-                or path.name.endswith((".tmp", ".prev.json")))
-
-
 def inputs_sha256(workspace: Path) -> dict[str, str]:
-    """sha256 of every file a gate case can resolve to: the gold standards and fixtures under input/, and
-    everything under work/evaluation/ — scorers, rubrics, fixtures, golden files and the wrapper plugin
-    (its manifest, shared mocks and case files). Skipped there: run-case.sh (hashed on its own),
-    data-split.yaml (cases_sha256 covers plugin_eval, split_sha256 the splits), what the gate writes (gate.json, the artifacts,
-    gate-attempts.jsonl, baseline-cache/, *.prev.json, *.tmp), plugin/skills/ (refreshed from output/<skill>/,
-    which the skill hash covers) and plugin/evals/results/ (claude plugin eval's own output)."""
+    """sha256 of every file a gate case can resolve to: input/ and work/evaluation/ (scorers, rubrics, fixtures,
+    golden files, the wrapper plugin), less what _NOT_INPUTS and _GENERATED_DIRS name and *.prev.json, *.tmp."""
     found = {}
     for root in (workspace / "input", workspace / EVAL_DIR):
-        if root.is_dir():
-            for path in root.rglob("*"):
-                if _hashed(path, root) and _gate_input(path, workspace):
-                    found[path.relative_to(workspace).as_posix()] = file_sha256(path)
+        for path in root.rglob("*") if root.is_dir() else []:
+            rel = path.relative_to(workspace).as_posix()
+            generated = rel.startswith(f"{EVAL_DIR.as_posix()}/") and (
+                rel in _NOT_INPUTS or rel.startswith(_GENERATED_DIRS) or path.name.endswith((".tmp", ".prev.json")))
+            if _hashed(path, root) and not generated:
+                found[rel] = file_sha256(path)
     return dict(sorted(found.items()))
 
 
 def baseline_key(workspace: Path, case: str, model: str, executor: str, inputs: dict[str, str] | None = None) -> str:
-    """sha256 of everything a manual-protocol without-skill run depends on: the case, the pinned model and
-    executor, run-case.sh, the case's suite directory and every gate input (inputs_sha256: the gold
-    standards, fixtures, scorers and graders). The skill is not in it: the bare arm never reads it."""
+    """sha256 of everything a manual without-skill run depends on: the case, the pinned model and executor,
+    run-case.sh, the case's suite directory and every gate input. Not the skill: the bare arm never reads it."""
     canonical = {"case": case, "model": model, "executor": executor,
                  "run_case": file_sha256(workspace / RUN_CASE),
                  "suite": tree_sha256(workspace / PLUGIN_DIR / "evals" / case),
@@ -403,56 +376,36 @@ def baseline_path(workspace: Path, key: str) -> Path:
 
 
 def read_baseline(workspace: Path, key: str, runs: int) -> list[float] | None:
-    """The without-skill scores cached under `key` when the entry is well formed, names that key and holds
-    exactly `runs` scores in 0..1; else None."""
-    try:
-        entry = json.loads(baseline_path(workspace, key).read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return None
-    scores = entry.get("runs") if isinstance(entry, dict) else None
-    if (not isinstance(entry, dict) or entry.get("key") != key or not isinstance(scores, list) or len(scores) != runs
-            or not all(isinstance(s, (int, float)) and not isinstance(s, bool) and 0 <= s <= 1 for s in scores)):
+    """The without-skill scores cached under `key` when the entry names that key and holds exactly `runs` scores
+    in 0..1; else None."""
+    entry = read_json(baseline_path(workspace, key)) or {}
+    scores = entry.get("runs")
+    if (entry.get("key") != key or not isinstance(scores, list) or len(scores) != runs
+            or not all(is_number(s) and 0 <= s <= 1 for s in scores)):
         return None
     return [float(s) for s in scores]
 
 
+def now() -> str:
+    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
 def log_attempt(workspace: Path, step: str, error: str | None = None) -> None:
-    """Append one line to work/evaluation/gate-attempts.jsonl: `record` or `gate`, and the GateError that
-    stopped it, if any. check_gate.py --finish reads it: an UNSHIPPED build must have tried the gate."""
+    """Append `record` or `gate`, and the GateError that stopped it, to gate-attempts.jsonl: check_gate.py
+    --finish requires an UNSHIPPED build to have tried the gate."""
     path = workspace / GATE_ATTEMPTS
     path.parent.mkdir(parents=True, exist_ok=True)
-    line = {"at": datetime.now(timezone.utc).isoformat(timespec="seconds"), "step": step, "error": error}
     with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps(line) + "\n")
+        fh.write(json.dumps({"at": now(), "step": step, "error": error}) + "\n")
 
 
 def read_attempts(workspace: Path) -> list[dict]:
-    path = workspace / GATE_ATTEMPTS
-    if not path.is_file():
-        return []
-    attempts = []
-    for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
-        try:
-            entry = json.loads(line)
-        except json.JSONDecodeError:
-            continue
-        if isinstance(entry, dict):
-            attempts.append(entry)
-    return attempts
+    return json_lines(workspace / GATE_ATTEMPTS)
 
 
 def write_text(path: Path, text: str) -> None:
     tmp = path.with_name(path.name + ".tmp")
     tmp.write_text(text, encoding="utf-8")
-    for _ in range(50):
-        try:
-            os.replace(tmp, path)
-            return
-        except PermissionError:
-            # Windows: a reader holding path open blocks the replace for a moment (50 x 20 ms: a second).
-            if os.name != "nt":
-                raise
-            time.sleep(0.02)
     os.replace(tmp, path)
 
 

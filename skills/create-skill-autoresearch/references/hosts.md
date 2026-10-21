@@ -60,22 +60,21 @@ that keeps the context walls the panel depends on and the main session's context
 
 ## Kill guard
 
-`hooks/kill_guard.py` reads either contract and blocks pattern kills: `pkill`, `killall`, `taskkill /IM` or `/FI`,
-`Stop-Process -Name`, and any call holding both a process lister (`pgrep`, `pidof`, `ps`, `Get-Process`, `tasklist`,
-`wmic process`) and a kill, however the PIDs travel (pipe, variable, renamed file). The one exception: every kill
-names literal PIDs and nothing keeps the listing (`ps aux | head; kill 1234` passes; `ps aux > f; kill 4242` and
-`ps aux | head; kill $PID` do not: kill in a call of its own). A redirect counts wherever it is, a heredoc body
-included, so write a file that mentions both words with the editor tool. `fuser -k` and `lsof … | xargs kill` are
-blocked too. `taskkill /PID <n>` and `Stop-Process -Id <n>` pass. It is a best-effort tripwire for honest mistakes, not a sandbox: it sees one call at a time, so a listing
+`hooks/kill_guard.py` reads either contract and blocks pattern kills: `pkill`, `killall`, and any call holding
+both a process lister (`pgrep`, `pidof`, `lsof`, `ps`) and a kill, however the PIDs travel (pipe, variable, renamed
+file). The one exception: every kill names literal PIDs and nothing keeps the listing (`ps aux | head; kill 1234`
+passes; `ps aux > f; kill 4242` and `ps aux | head; kill $PID` do not: kill in a call of its own). A redirect counts
+wherever it is, a heredoc body included, so write a file that mentions both words with the editor tool. `fuser -k`
+and `lsof … | xargs kill` are blocked too. It is a best-effort tripwire for honest mistakes, not a sandbox: it sees one call at a time, so a listing
 saved in one call and killed in the next passes. `run_owned.py` and the rule (stop only what you started, by its
 recorded PID) are the contract. The hook configs run it through `hooks/kill-guard`, which picks `python3`,
-`python` or `py -3`; with none, or when the hook fails (`"onFailure": "continue"` on Claude Code), it lets the
+then `python`; with none, or when the hook fails (`"onFailure": "continue"` on Claude Code), it lets the
 call through.
 
 | Host | Ships as | Install | Status |
 |---|---|---|---|
-| Claude Code | `hooks/hooks.json` (`PreToolUse`, matcher `Bash\|PowerShell`: Claude Code on Windows runs shell commands through its PowerShell tool) | plugin install, or `claude --plugin-dir <skill-dir>` | verified live (`claude -p --plugin-dir`: blocked a `killall`, ran the next command) |
-| Cursor | `.cursor-plugin/plugin.json` → `hooks/cursor-hooks.json` (`beforeShellExecution`) | plugin install (not on native Windows, below); or for an `npx skills` install add the hook to `.cursor/hooks.json` (below) | verified live as a plugin (`cursor-agent --plugin-dir <skill-dir>`: `${CURSOR_PLUGIN_ROOT}` expanded, a `killall` was rejected, the next command ran) and as a project hook |
+| Claude Code | `hooks/hooks.json` (`PreToolUse`, matcher `Bash`) | plugin install, or `claude --plugin-dir <skill-dir>` | verified live (`claude -p --plugin-dir`: blocked a `killall`, ran the next command) |
+| Cursor | `.cursor-plugin/plugin.json` → `hooks/cursor-hooks.json` (`beforeShellExecution`) | plugin install; or for an `npx skills` install add the hook to `.cursor/hooks.json` (below) | verified live as a plugin (`cursor-agent --plugin-dir <skill-dir>`: `${CURSOR_PLUGIN_ROOT}` expanded, a `killall` was rejected, the next command ran) and as a project hook |
 | Codex | the same script on `PreToolUse` | add to `~/.codex/hooks.json` or `<repo>/.codex/hooks.json` (below), then trust it in `/hooks`: Codex skips an untrusted hook | contract tested offline; untested in Codex |
 | OpenCode | `hooks/opencode-kill-guard.js` (`tool.execute.before`) | symlink it into `.opencode/plugins/` or `~/.config/opencode/plugins/` | plugin tested with node; untested in OpenCode |
 
@@ -87,21 +86,13 @@ Cursor, for a skill installed at `<skill-dir>` (a project hook runs from the pro
   { "command": "sh <skill-dir>/hooks/kill-guard", "timeout": 10 } ] } }
 ```
 
-**The Cursor plugin hook is unsupported on native Windows.** Cursor runs hook commands through PowerShell
-there (Cursor's forum; untested here), where `sh` is usually not on PATH, its hooks file has no per-OS
-command, and a hook that cannot start fails open (Cursor's hooks doc: exit codes other than 0 and 2 allow the
-action), so the guard would silently not run. Add the project hook above instead, with
-`py -3 <skill-dir>\hooks\kill_guard.py` as its command.
-
-Codex (`commandWindows` is its Windows override; for a vetted headless run, `codex exec
---dangerously-bypass-hook-trust` runs enabled hooks without the `/hooks` trust step), with the finish guard:
+Codex (for a vetted headless run, `codex exec --dangerously-bypass-hook-trust` runs enabled hooks without the
+`/hooks` trust step), with the finish guard:
 
 ```json
 { "hooks": { "PreToolUse": [ { "matcher": "Bash", "hooks": [
-  { "type": "command", "command": "sh <skill-dir>/hooks/kill-guard",
-    "commandWindows": "py -3 <skill-dir>\\hooks\\kill_guard.py", "timeout": 10 } ] } ],
-  "Stop": [ { "hooks": [ { "type": "command", "command": "sh <skill-dir>/hooks/finish-guard",
-    "commandWindows": "py -3 <skill-dir>\\hooks\\finish_guard.py", "timeout": 30 } ] } ] } }
+  { "type": "command", "command": "sh <skill-dir>/hooks/kill-guard", "timeout": 10 } ] } ],
+  "Stop": [ { "hooks": [ { "type": "command", "command": "sh <skill-dir>/hooks/finish-guard", "timeout": 30 } ] } ] } }
 ```
 
 For an `npx skills` install on Cursor, the project hook above gains
@@ -132,20 +123,10 @@ session's); offline for Cursor and OpenCode; Codex subagent stops untested.
 
 ## Operating systems
 
-The bundled scripts need Python 3.9+ and its standard library, nothing else, on macOS, Linux and Windows. Run
-them as `python3 <script>` on macOS and Linux and `py -3 <script>` on Windows (`python` where that is the
-Python 3 on PATH). `run_owned.py` owns a job through its process group on macOS and Linux and through a Job
-Object on Windows; either way `stop` ends only that job. Windows has no TERM: the job is asked to stop through
-the file named in `$RUN_OWNED_STOP_FILE` (`gate.py` honours it) and ended after the grace period.
-
-On Windows the manual gate runs `work/evaluation/run-case.sh` with Git for Windows' bash
-(`CLAUDE_CODE_GIT_BASH_PATH`, else `bash` on PATH, else the default install; WSL's `bash.exe` is never used),
-so install [Git for Windows](https://git-scm.com/download/win) and write `run-case.sh` and `evaluate.sh` for that
-bash. Claude Code itself does not need it (without Git Bash it runs shell commands and shell-form hooks in
-PowerShell), so check: without it `gate.py` stops with "manual mode on Windows runs work/evaluation/run-case.sh
-with Git for Windows' bash, and none was found", and the hooks' `sh` launchers cannot start, so both guards fail
-open (`"onFailure": "continue"`) with a `hook error` notice in the transcript. Verified: macOS and Linux locally and in CI; Windows by the
-script tests in CI (`windows-latest`), not yet by a live build on a Windows host.
+The bundled scripts need Python 3.9+ and its standard library, nothing else, on macOS, Linux or WSL; run them
+as `python3 <script>`. Native Windows is not supported: run the factory inside WSL (every script exits early
+there with that message). `run_owned.py` owns a job through its process group, and `stop` ends only that group.
+Verified: macOS and Linux locally and in CI.
 
 ## What needs Claude Code
 

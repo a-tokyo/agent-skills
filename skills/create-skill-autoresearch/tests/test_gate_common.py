@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import unittest
 
-from helpers import TempWorkspace
+from helpers import NATIVE_WINDOWS, SCRIPTS, TempWorkspace, as_native_windows
 import gate_common  # noqa: E402  (on sys.path through helpers)
 
 
@@ -68,6 +68,15 @@ class TreeHashTest(TempWorkspace):
         (self.ws / "a" / "x.md").write_text("one")
         (self.ws / "a" / "x.md").rename(self.ws / "a" / "y.md")
         self.assertNotEqual(gate_common.tree_sha256(self.ws), first, "a rename changes the hash")
+
+
+
+class NativeWindowsTest(TempWorkspace):
+    def test_gate_and_check_gate_exit_early_with_one_message(self) -> None:
+        for script in ("gate.py", "check_gate.py"):
+            with self.subTest(script=script):
+                out = as_native_windows(SCRIPTS / script)
+                self.assertEqual((out.returncode, out.stderr.strip()), (1, NATIVE_WINDOWS))
 
 
 if __name__ == "__main__":

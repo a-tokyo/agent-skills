@@ -1,9 +1,9 @@
 {
-  "description": "create-skill-autoresearch: the kill guard blocks pattern kills (pkill, killall, pgrep-fed kill, taskkill /IM, Stop-Process -Name) in Bash and PowerShell calls, so stop owned jobs with scripts/run_owned.py; the finish guard sends a factory build back once when the main session's turn ends (never a worker's or subagent's) while scripts/check_gate.py --finish fails",
+  "description": "create-skill-autoresearch: the kill guard blocks pattern kills (pkill, killall, pgrep-fed kill) in Bash calls, so stop owned jobs with scripts/run_owned.py; the finish guard sends a factory build back once when the main session's turn ends (never a worker's or subagent's) while scripts/check_gate.py --finish fails",
   "hooks": {
     "PreToolUse": [
       {
-        "matcher": "Bash|PowerShell",
+        "matcher": "Bash",
         "hooks": [
           {
             "type": "command",

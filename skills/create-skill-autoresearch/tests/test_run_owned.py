@@ -9,14 +9,13 @@ from __future__ import annotations
 
 import json
 import os
-import signal
 import subprocess
 import time
 import unittest
 from pathlib import Path
 
-from helpers import (DETACHED, IGNORES_TERM, SLEEP, TREE, TRUE, TempWorkspace, WINDOWS, _alive, _env,
-                     _group_alive, _script, _until, py)
+from helpers import (DETACHED, IGNORES_TERM, NATIVE_WINDOWS, SCRIPTS, SLEEP, TREE, TRUE, TempWorkspace, _alive, _env,
+                     _group_alive, _script, _until, as_native_windows, py)
 import run_owned  # noqa: E402  (on sys.path through helpers)
 
 
@@ -124,32 +123,16 @@ class RunOwnedTest(TempWorkspace):
             stranger.wait()
 
     def test_a_command_that_ends_after_a_stop_request_records_no_exit_status(self) -> None:
-        """The race behind the flaky ps-denied test: the group TERM can end the command before it reaches the
-        wrapper, which then recorded an exit status and turned "stopped" into "exited"."""
-        rc_file, go, stop = (self.root / n for n in ("job.rc", "job.go", "job.stop"))
-        go.write_text("")
-        stop.write_text('{"grace": 5}')
-        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(143)")]),
-                         143)
-        self.assertFalse(rc_file.exists(), "a stopped job's status is the stop, not an exit code")
-        stop.unlink()
-        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(7)")]), 7)
-        self.assertEqual(rc_file.read_text().strip(), "7", "without a stop request the exit status is recorded")
+        """The race behind the flaky ps-denied test: the group TERM can end the command before the supervisor
+        acts on the stop request, which then recorded an exit status and turned "stopped" into "exited"."""
+        stop = self.ws / "work" / "pids" / "job.stop"
+        self.start("job", *py(f"open({str(stop)!r}, 'w').write('{{}}'); raise SystemExit(143)"))
+        self.assertEqual(self.run_script("run_owned.py", "wait", "job", "--timeout", "10").returncode, 125)
+        self.assertFalse((self.ws / "work" / "pids" / "job.rc").exists(), "a stopped job's status is the stop")
+        self.start("job", *py("raise SystemExit(7)"))
+        self.assertEqual(self.run_script("run_owned.py", "wait", "job", "--timeout", "10").returncode, 7,
+                         "without a stop request the exit status is recorded")
 
-    def test_a_command_that_ends_after_a_stop_request_records_no_exit_status(self) -> None:
-        """The race behind the flaky ps-denied test: the group TERM can end the command before it reaches the
-        wrapper, which then recorded an exit status and turned "stopped" into "exited"."""
-        rc_file, go, stop = (self.root / n for n in ("job.rc", "job.go", "job.stop"))
-        go.write_text("")
-        stop.write_text('{"grace": 5}')
-        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(143)")]),
-                         143)
-        self.assertFalse(rc_file.exists(), "a stopped job's status is the stop, not an exit code")
-        stop.unlink()
-        self.assertEqual(run_owned._wrap([str(rc_file), "job", "token", str(go), str(stop), *py("raise SystemExit(7)")]), 7)
-        self.assertEqual(rc_file.read_text().strip(), "7", "without a stop request the exit status is recorded")
-
-    @unittest.skipIf(WINDOWS, "`ps` plays no part on Windows (GetProcessTimes)")
     def test_works_end_to_end_with_ps_denied(self) -> None:
         denied = self.root / "denied-ps"
         denied.mkdir()
@@ -210,7 +193,6 @@ class RunOwnedTest(TempWorkspace):
             stranger.kill()
             stranger.wait()
 
-    @unittest.skipIf(WINDOWS, "`ps` plays no part on Windows (GetProcessTimes); the forged record covers it")
     def test_start_refuses_when_the_supervisor_died_and_ps_is_denied(self) -> None:
         denied = self.root / "denied-ps"
         denied.mkdir()
@@ -254,7 +236,7 @@ class RunOwnedTest(TempWorkspace):
             if self.record("orphan")["lstart"] is None:
                 self.skipTest("the signal fallback needs `ps` to confirm the leader")
             supervisor = self.record("orphan")["supervisor"]
-            os.kill(supervisor, signal.SIGTERM if WINDOWS else 9)
+            os.kill(supervisor, 9)
             self.assertTrue(_until(lambda: not _alive(supervisor)))
             path = self.ws / "work" / "pids" / "orphan.json"
             path.write_text(json.dumps(self.record("orphan") | {"pgid": stranger.pid}))
@@ -279,6 +261,10 @@ class RunOwnedTest(TempWorkspace):
         self.assertEqual(self.record("race")["pid"], winners[0]["pid"], "the record is the winner's")
         self.assertEqual(self.run_script("run_owned.py", "stop", "race").returncode, 0)
         self.assertFalse(_group_alive(winners[0]["pgid"]))
+
+    def test_native_windows_exits_early_with_one_message(self) -> None:
+        out = as_native_windows(SCRIPTS / "run_owned.py")
+        self.assertEqual((out.returncode, out.stderr.strip()), (1, NATIVE_WINDOWS))
 
     def test_refuses_to_start_a_running_name_twice(self) -> None:
         self.start("once", *SLEEP)
