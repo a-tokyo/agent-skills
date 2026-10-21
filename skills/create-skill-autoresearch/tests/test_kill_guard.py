@@ -4,7 +4,7 @@ the OpenCode plugin and the hook configs.
 Each case feeds the hook the JSON a host sends on stdin and checks its answer: Claude Code and Codex
 exit 2 to block the call (reason on stderr) and 0 to let it through; Cursor always gets JSON.
 
-    python3 -B -m unittest discover -s <skill>/scripts/tests -v
+    python3 -B -m unittest discover -s <skill>/tests -v
 """
 
 from __future__ import annotations
@@ -19,7 +19,7 @@ import textwrap
 import unittest
 from pathlib import Path
 
-SKILL = Path(__file__).resolve().parents[2]
+SKILL = Path(__file__).resolve().parents[1]
 HOOK = SKILL / "hooks" / "kill_guard.py"
 LAUNCHER = SKILL / "hooks" / "kill-guard"
 WINDOWS = os.name == "nt"
