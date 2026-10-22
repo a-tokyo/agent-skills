@@ -409,14 +409,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.consensus:
             print(panel.write_consensus(workspace, verdict.skill, skill_sha).line())
         elif args.panel:
-            n = panel.check_round(workspace, skill_sha)
-            try:
-                scope, why = panel.recheck_scope(workspace, verdict.skill, skill_sha, panel.read_rubric(workspace))
-            except GateError as exc:
-                scope, why = None, str(exc)
-            print(f"PANEL ROUND {n}: " + (f"scoped re-check: each role scores only {', '.join(scope.rescored)}; "
-                                          f"{', '.join(scope.carried)} carry forward from round {scope.from_round}"
-                                          if scope else f"full: each role scores every dimension ({why})"))
+            print(f"PANEL ROUND {panel.check_round(workspace, skill_sha)}: each role scores every dimension")
             print(f"panel: after scoring, each verifier runs `check_gate.py --panel-receipt <role> <scores.json>` "
                   f"({', '.join(panel.ROLES)}); then `check_gate.py --consensus` (5.3)", file=sys.stderr)
     except panel.RoundsExhausted as exc:

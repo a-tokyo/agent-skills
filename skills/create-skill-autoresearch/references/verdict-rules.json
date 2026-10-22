@@ -1,14 +1,11 @@
 {
-  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py reads this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash); post_panel_recheck (full | scoped) and the scoped_* keys set how a round after a skill change re-scores (panel.py).",
+  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py reads this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash); each round re-scores every dimension.",
   "default_target_score": 0.85,
   "caveat_margin": 0.10,
   "block_below": 3,
   "block_majority": 2,
   "agree_within": 1,
   "max_panel_rounds": 3,
-  "post_panel_recheck": "full",
-  "scoped_max_changed_lines": 40,
-  "scoped_full_headings": ["constraint"],
   "synthesis_triggers": {
     "spread_at_least": 2,
     "devils_advocate_at": 1,

@@ -21,9 +21,6 @@ dimensions:
     weight: <0.0-1.0>       # must sum to 1.0 across all dimensions
     scale: "1-10"            # scoring scale
     criteria: <string>       # what this dimension measures
-    sections: [<heading>]    # optional, one-line flow list: SKILL.md heading prefixes it judges (absent: all);
-                             # with post_panel_recheck: scoped (verdict-rules.json) a later panel round
-                             # re-scores it only when the skill change touches one of them
   # 5-10 dimensions total
 target_score: <0.0-1.0>     # normalized target (0.85 = 85%)
 max_iterations: <int>        # experiment budget (default: 20)

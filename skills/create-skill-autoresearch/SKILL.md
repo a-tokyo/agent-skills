@@ -242,7 +242,7 @@ that) -- feed panel feedback to autoresearch; **BLOCK** (`block_majority` member
 address the blocking concern first; **ESCALATE** -- the user decides. ITERATE, BLOCK and ESCALATE allow only `UNSHIPPED`.
 
 A 5.0 gate gold-standard case with Δ <= 0 caps the verdict at SHIP WITH CAVEATS until a re-run shows Δ > 0
-(`--finish` enforces it); record why that case cannot benefit. Any skill change after the panel re-runs 5.2 (`--panel` names what each role re-scores).
+(`--finish` enforces it); record why that case cannot benefit. Any skill change after the panel re-runs 5.2 in full.
 
 If ITERATE: turn each member's top concern and every Devil's Advocate failure scenario into an
 improvement hypothesis in `autoresearch.ideas.md`, log the panel scores and rationales in

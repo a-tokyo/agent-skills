@@ -224,10 +224,8 @@ For each panel member (Verifier-A, Verifier-B, Devil's Advocate):
 4. The PANEL CONSENSUS line names the label and the verdict it allows
 5. If SHIP → output final skill
 6. If ITERATE → structure feedback → return to autoresearch; the fixed skill's panel is a new round,
-   and past max_panel_rounds (verdict-rules.json, 3) check_gate.py refuses one: UNSHIPPED on the last consensus.
-   check_gate.py --panel names the round's re-check: full (every role, every dimension; the default
-   post_panel_recheck) or, with post_panel_recheck: scoped, only the dimensions whose rubric `sections` the
-   SKILL.md diff touches, the rest carried forward from the last round and re-checked against its archive
+   where every role scores every dimension again, and past max_panel_rounds (verdict-rules.json, 3)
+   check_gate.py refuses one: UNSHIPPED on the last consensus
 7. If BLOCK → highlight blocking dimension → user review
 8. If DA escalation or deadlock → surface to user
 ```
