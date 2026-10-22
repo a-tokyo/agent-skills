@@ -46,7 +46,7 @@ The factory composes sibling skills rather than embedding them, so each stays cu
 | `claude plugin eval` (Claude Code CLI) | 3.6 suite, 5.0 gate | The manual with/without protocol (5.0) |
 
 Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>`. The factory runs on any agent that loads SKILL.md; **[references/hosts.md](references/hosts.md)** gives each host's skill dirs, headless command ("the host's headless CLI"), subagents and hook installs. It runs on macOS, Linux and WSL; on native Windows, run it inside WSL.
-Two hooks (`hooks/`, installed per hosts.md): the kill guard blocks pattern kills (`pkill`, `killall`, a process listing and a kill in one call), and the finish guard sends a build back once when the main session's turn ends before `check_gate.py --finish` passes (never a worker's or subagent's stop) — live-tested on Claude Code (and Cursor's kill guard), offline-tested on Codex and OpenCode. The kill guard is a best-effort tripwire, not a sandbox: `run_owned.py` and stopping only what you started are the contract.
+Three hooks (`hooks/`, installed per hosts.md): the kill guard blocks pattern kills (`pkill`, `killall`, a process listing and a kill in one call); the subagent guard denies a background subagent dispatch inside a build; the finish guard sends a build back once when the main session's turn ends before `check_gate.py --finish` passes (never a worker's or subagent's stop) — live-tested on Claude Code (and Cursor's kill guard), offline-tested on Codex and OpenCode. The kill guard is a best-effort tripwire, not a sandbox: `run_owned.py` and stopping only what you started are the contract.
 
 ## Orchestration
 
@@ -69,8 +69,8 @@ Skill dir: <abs skill-dir>. Read, in order: work/handoffs/state.yaml, <skill-dir
 Write every output to disk; reply with a summary of at most 15 lines (what you did, files, numbers, next step).
 ```
 
-Wait for the worker before going on (foreground: on Claude Code `run_in_background: false`); a turn that ends while a
-worker runs costs a finish-guard reply. Read its summary, not its files — open a file only when a decision needs it.
+Dispatch every worker and panel role in the **foreground** and wait for it (Claude Code: `run_in_background: false`; the
+subagent guard denies a background one); for parallel roles, put several Agent calls in one message. Read a worker's summary, not its files — open a file only when a decision needs it.
 A worker that returns with `questions:` in state.yaml gets them asked, the answers recorded, and a fresh worker.
 **Hosts without subagents** run each worker as a fresh headless session with the same prompt (hosts.md), in turn.
 

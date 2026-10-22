@@ -334,25 +334,25 @@ def run_configured(command: str, variable: str, payload: dict) -> subprocess.Com
 class HooksJsonTest(unittest.TestCase):
     def test_bash_pretooluse_hook_runs_the_guard_from_the_plugin_root(self) -> None:
         config = json.loads((SKILL / "hooks" / "hooks.json").read_text())
-        [entry] = config["hooks"]["PreToolUse"]
-        self.assertEqual(entry["matcher"], "Bash")
+        [entry] = [e for e in config["hooks"]["PreToolUse"] if e["matcher"] == "Bash"]
         [hook] = entry["hooks"]
         self.assertEqual(hook["type"], "command")
         self.assertEqual(hook["command"], 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/kill-guard"',
                          "one shell-form string, no args: portable across CLI versions and hosts")
         self.assertNotIn("args", hook)
 
-    def test_both_claude_hooks_fail_open(self) -> None:
+    def test_every_claude_hook_fails_open(self) -> None:
         """Claude Code hooks doc: a failing shell-form PreToolUse hook with `onFailure` unset can block the
         tool call; "continue" lets it through (v2.1.295+)."""
         config = json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]
         for event in ("PreToolUse", "Stop"):
-            with self.subTest(event=event):
-                [entry] = config[event]
-                self.assertEqual([h.get("onFailure") for h in entry["hooks"]], ["continue"])
+            for entry in config[event]:
+                with self.subTest(event=event, matcher=entry.get("matcher")):
+                    self.assertEqual([h.get("onFailure") for h in entry["hooks"]], ["continue"])
 
     def test_configured_claude_command_executes_and_blocks(self) -> None:
-        [hook] = json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"][0]["hooks"]
+        [hook] = [e for e in json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
+                  if e["matcher"] == "Bash"][0]["hooks"]
         blocked = run_configured(hook["command"], "CLAUDE_PLUGIN_ROOT", bash("pkill -f gate.py"))
         self.assertEqual(blocked.returncode, 2, blocked.stderr)
         self.assertIn("pattern kills hit unrelated processes", blocked.stderr)

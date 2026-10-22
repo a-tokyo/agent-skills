@@ -77,7 +77,9 @@ The plugin install of `create-skill-autoresearch` (and `all-skills`) also adds t
 a `PreToolUse` hook ([`hooks/kill_guard.py`](skills/create-skill-autoresearch/hooks/kill_guard.py), run by
 `hooks/kill-guard` with `python3` or `python`). While the plugin is enabled it blocks Bash calls
 containing `pkill`, `killall` or a pgrep-fed `kill` in every session, because a name-pattern kill also stops
-sibling builds and your own processes; `kill <pid>` still works. An `npx skills` install copies the hook file but never runs it.
+sibling builds and your own processes; `kill <pid>` still works. It also adds the subagent guard and the finish
+guard, which act only inside a factory build: the first denies a background subagent dispatch, the second sends an
+unfinished build back when its turn ends ([hosts.md](skills/create-skill-autoresearch/references/hosts.md)). An `npx skills` install copies the hook files but never runs them.
 
 `create-skill-autoresearch` runs on any agent that loads `SKILL.md` — Claude Code, Cursor, Codex,
 OpenCode (`npx skills add a-tokyo/agent-skills --skill create-skill-autoresearch -a <host>`), on macOS,

@@ -12,6 +12,7 @@ marks what the factory's own tests or benchmark ran.
 - Headless runs, judges and executors
 - Subagents
 - Kill guard
+- Subagent guard
 - Finish guard
 - Operating systems
 - What needs Claude Code
@@ -96,7 +97,26 @@ Codex (for a vetted headless run, `codex exec --dangerously-bypass-hook-trust` r
 ```
 
 For an `npx skills` install on Cursor, the project hook above gains
-`"stop": [ { "command": "sh <skill-dir>/hooks/finish-guard", "timeout": 30, "loop_limit": 1 } ]`.
+`"stop": [ { "command": "sh <skill-dir>/hooks/finish-guard", "timeout": 30, "loop_limit": 1 } ]` and
+`"preToolUse": [ { "command": "sh <skill-dir>/hooks/finish-guard --subagent", "matcher": "Task|CallDynamicTool", "timeout": 10 } ]`.
+
+## Subagent guard
+
+`hooks/finish_guard.py --subagent` (through the same launcher) runs before each subagent dispatch. Only in a factory
+build past Phase 1 — the session's directory, or a `builds/<name>/` under it, holding `work/manifest.yaml` or
+`work/evaluation/` (looser than the finish guard's test, because Phase 2 researchers and the Phase 3 worker are
+dispatched before `output/<skill>/SKILL.md` exists) — it denies a subagent that would run in the background, with
+the rule: dispatch phase workers and panel roles in the foreground, and for parallel roles put several Agent calls in
+one message (they run in parallel and the turn waits for all). Why: headless `claude -p` stops background tasks 10
+minutes after the last turn, so a main session that dispatches a worker in the background and ends its turn to wait
+abandons the build (3 of 20 Haiku task-2 builds in the 2026-10-22 matrix). Input it cannot read, or an error of its
+own, lets the subagent start.
+
+| Host | Ships as | Denies | Status |
+|---|---|---|---|
+| Claude Code | `hooks/hooks.json` `PreToolUse`, matcher `Agent\|Task` (exit 2, reason on stderr) | `Agent` unless `run_in_background: false` (the Agent tool defaults to the background: 98 of the matrix's 220 background dispatches omitted the flag); a legacy `Task` only with `run_in_background: true` | verified live on Claude Code 2.1.306 (`claude -p --plugin-dir`, Haiku, a fake build holding `work/manifest.yaml`): `run_in_background: true` and an absent flag both denied, each retry with `false` ran |
+| Cursor | `hooks/cursor-hooks.json` `preToolUse`, matcher `Task\|CallDynamicTool` (`{"permission": "deny", ...}`) | a Task call with `run_in_background: true` (Cursor's Task runs in the foreground unless asked; its transcripts record `CallDynamicTool {toolName: Task, arguments, run_in_background}`, so both places are read) | contract from the hooks doc (read 2026-10-22), offline-tested; the payload shape is unverified live |
+| Codex, OpenCode | not shipped | — | not checked whether their subagent tools run in the background; the foreground rule in SKILL.md still applies |
 
 ## Finish guard
 

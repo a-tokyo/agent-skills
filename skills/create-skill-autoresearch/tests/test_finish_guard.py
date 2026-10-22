@@ -1,5 +1,5 @@
-"""Offline tests for hooks/finish_guard.py (the end-of-turn finish guard), its launcher hooks/finish-guard,
-the OpenCode plugin and the hook configs.
+"""Offline tests for hooks/finish_guard.py (the end-of-turn finish guard, and with --subagent the subagent
+guard), its launcher hooks/finish-guard, the OpenCode plugin and the hook configs.
 
 Each case feeds the hook the JSON a host sends at the end of a turn and checks its answer: Claude Code and
 Codex get {"decision": "block", "reason"} once, Cursor {"followup_message"} once, and {} otherwise.
@@ -153,6 +153,119 @@ class FinishGuardTest(unittest.TestCase):
                              text=True, timeout=30, env={**os.environ, "PATH": str(bin_dir)})
         self.assertEqual((out.returncode, json.loads(out.stdout)), (0, {}))
         self.assertIn("no Python 3.9+ found", out.stderr)
+
+
+def agent(cwd: Path, background: object = "absent", tool: str = "Agent") -> dict:
+    tool_input = {"description": "Phase 3 worker", "subagent_type": "general-purpose", "prompt": "p"}
+    if background != "absent":
+        tool_input["run_in_background"] = background
+    return {"session_id": "s", "hook_event_name": "PreToolUse", "cwd": str(cwd), "tool_name": tool,
+            "tool_input": tool_input, "tool_use_id": "t"}
+
+
+def cursor_task(root: Path, background: object = None, wrapped: bool = False) -> dict:
+    args = {"description": "Research", "subagent_type": "explore", "prompt": "p"}
+    if wrapped:  # the shape Cursor's transcripts record: CallDynamicTool {toolName: Task, arguments, run_in_background}
+        tool, tool_input = "CallDynamicTool", {"namespace": "cursor", "toolName": "Task", "arguments": args}
+    else:
+        tool, tool_input = "Task", args
+    if background is not None:
+        tool_input["run_in_background"] = background
+    return {"hook_event_name": "preToolUse", "tool_name": tool, "tool_input": tool_input, "cwd": str(root),
+            "workspace_roots": [str(root)]}
+
+
+class SubagentGuardTest(unittest.TestCase):
+    """finish_guard.py --subagent: a background subagent is denied inside a build (D1: a headless session stops
+    background subagents 10 minutes after its last turn), allowed in the foreground and outside a build."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self._tmp.name)
+        self.ws = self.root / "ws"
+        (self.ws / "work").mkdir(parents=True)
+        (self.ws / "work" / "manifest.yaml").write_text("gold_standards: []\n")
+
+    def tearDown(self) -> None:
+        self._tmp.cleanup()
+
+    def guard(self, payload: object, cmd: list[str] | None = None) -> subprocess.CompletedProcess:
+        data = payload if isinstance(payload, str) else json.dumps(payload)
+        return subprocess.run(cmd or [sys.executable, "-B", str(HOOK), "--subagent"], input=data, capture_output=True,
+                              text=True, timeout=60, env=ENV)
+
+    def test_a_background_agent_is_denied_in_a_build_from_phase_1_on(self) -> None:
+        for background in (True, "absent"):
+            with self.subTest(run_in_background=background):
+                out = self.guard(agent(self.ws, background))
+                self.assertEqual(out.returncode, 2, "Claude Code's Agent tool defaults to the background")
+                self.assertIn("dispatch phase workers and panel roles in the foreground (run_in_background: false)",
+                              out.stderr)
+                self.assertIn("several Agent calls in one message", out.stderr)
+        nested = self.root / "project" / "builds" / "demo" / "work" / "evaluation"
+        nested.mkdir(parents=True)
+        self.assertEqual(self.guard(agent(self.root / "project", True)).returncode, 2, "a build under builds/")
+
+    def test_a_foreground_agent_is_allowed(self) -> None:
+        out = self.guard(agent(self.ws, False))
+        self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "", ""))
+        self.assertEqual(self.guard(agent(self.ws, "absent", tool="Task")).returncode, 0,
+                         "a legacy Task tool runs in the foreground unless asked")
+        self.assertEqual(self.guard(agent(self.ws, True, tool="Task")).returncode, 2)
+        self.assertEqual(self.guard(agent(self.ws, True, tool="Bash")).returncode, 0, "not a subagent tool")
+
+    def test_outside_a_build_workspace_anything_goes(self) -> None:
+        plain = self.root / "plain"
+        plain.mkdir()
+        self.assertEqual(self.guard(agent(plain, True)).returncode, 0)
+        self.assertEqual(self.guard(agent(plain)).returncode, 0)
+
+    def test_cursor_denies_only_an_explicit_background_task(self) -> None:
+        for wrapped in (False, True):
+            with self.subTest(wrapped=wrapped):
+                deny = json.loads(self.guard(cursor_task(self.ws, True, wrapped)).stdout)
+                self.assertEqual(deny["permission"], "deny")
+                self.assertIn("run_in_background: false", deny["agent_message"])
+                for background in (None, False):
+                    self.assertEqual(json.loads(self.guard(cursor_task(self.ws, background, wrapped)).stdout),
+                                     {"permission": "allow"})
+        wrapped = cursor_task(self.ws, wrapped=True)
+        wrapped["tool_input"]["arguments"]["run_in_background"] = True
+        self.assertEqual(json.loads(self.guard(wrapped).stdout)["permission"], "deny", "the flag inside arguments")
+        plain = self.root / "plain"
+        plain.mkdir()
+        self.assertEqual(json.loads(self.guard(cursor_task(plain, True)).stdout), {"permission": "allow"})
+
+    def test_unreadable_input_fails_open(self) -> None:
+        for payload in ("not json", "[1, 2]", "", json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                                                            "tool_input": {}, "cwd": 7})):
+            with self.subTest(payload=payload):
+                out = self.guard(payload)
+                self.assertEqual(out.returncode, 0, out.stderr)
+                self.assertIn(json.loads(out.stdout or "{}"), ({}, {"permission": "allow"}))
+
+    def test_configured_commands_run_from_the_plugin_root(self) -> None:
+        [entry] = [e for e in json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]["PreToolUse"]
+                   if e["matcher"] == "Agent|Task"]
+        [hook] = entry["hooks"]
+        self.assertEqual(hook["command"], 'sh "${CLAUDE_PLUGIN_ROOT}/hooks/finish-guard" --subagent')
+        out = self.guard(agent(self.ws), [SH, "-c", hook["command"].replace("${CLAUDE_PLUGIN_ROOT}", str(SKILL))])
+        self.assertEqual(out.returncode, 2, out.stderr)
+        manifest = json.loads((SKILL / ".cursor-plugin" / "plugin.json").read_text())
+        [cursor] = json.loads((SKILL / manifest["hooks"]).read_text())["hooks"]["preToolUse"]
+        self.assertEqual(cursor["matcher"], "Task|CallDynamicTool")
+        cmd = [SH, "-c", cursor["command"].replace("${CURSOR_PLUGIN_ROOT}", str(SKILL))]
+        self.assertEqual(json.loads(self.guard(cursor_task(self.ws, True), cmd).stdout)["permission"], "deny")
+
+    def test_without_any_python_the_subagent_starts(self) -> None:
+        bin_dir = self.root / "bin"
+        bin_dir.mkdir()
+        (bin_dir / "cat").symlink_to(shutil.which("cat"))
+        env = {**os.environ, "PATH": str(bin_dir)}
+        for payload, reply in ((agent(self.ws, True), {}), (cursor_task(self.ws, True), {"permission": "allow"})):
+            out = subprocess.run([SH, LAUNCHER.as_posix(), "--subagent"], input=json.dumps(payload),
+                                 capture_output=True, text=True, timeout=30, env=env)
+            self.assertEqual((out.returncode, json.loads(out.stdout)), (0, reply))
 
 
 @unittest.skipUnless(shutil.which("node"), "node not installed")

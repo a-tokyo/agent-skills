@@ -7,6 +7,13 @@
         "timeout": 10
       }
     ],
+    "preToolUse": [
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/finish-guard\" --subagent",
+        "matcher": "Task|CallDynamicTool",
+        "timeout": 10
+      }
+    ],
     "stop": [
       {
         "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/finish-guard\"",
