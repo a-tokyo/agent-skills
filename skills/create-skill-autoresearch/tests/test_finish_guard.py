@@ -145,6 +145,37 @@ class FinishGuardTest(unittest.TestCase):
         cmd = [SH, "-c", cursor["command"].replace("${CURSOR_PLUGIN_ROOT}", str(SKILL))]
         self.assertIn("BUILD UNFINISHED", self.hook(cursor_stop(self.ws), cmd)["followup_message"])
 
+    def test_the_send_backs_stop_at_max_finish_sendbacks(self) -> None:
+        rules = json.loads((SKILL / "references" / "verdict-rules.json").read_text())
+        self.assertEqual(rules["max_finish_sendbacks"], 3)
+        other = self.build(self.root / "other")
+        log = self.ws / "work" / "experiments" / "finish-guard.jsonl"
+        for n in range(1, 4):
+            self.assertEqual(self.hook(stop(self.ws))["decision"], "block", f"send-back {n}")
+            self.assertEqual(self.hook(stop(self.ws, active=True)), {}, "the stop after a send-back ends the turn")
+        out = subprocess.run([sys.executable, "-B", str(HOOK)], input=json.dumps(stop(self.ws)), capture_output=True,
+                             text=True, timeout=60, env=ENV)
+        self.assertEqual((out.returncode, json.loads(out.stdout)), (0, {}), "the fourth stop ends the build")
+        self.assertIn(f"{self.ws} was sent back 3 times (max_finish_sendbacks 3); the build ends unfinished", out.stderr)
+        self.assertEqual(len(log.read_text().splitlines()), 3, "the allowed stop is not logged as a send-back")
+        self.assertEqual(self.hook(cursor_stop(self.ws)), {}, "the cap holds on every host")
+        self.assertEqual(self.hook(stop(other))["decision"], "block", "the count is per build workspace")
+        finish = subprocess.run([sys.executable, "-B", str(SKILL / "scripts" / "check_gate.py"), "--finish",
+                                 "--workspace", str(self.ws)], capture_output=True, text=True, timeout=60, env=ENV)
+        self.assertNotEqual(finish.returncode, 0, "check_gate.py --finish still fails the unfinished build")
+
+    def test_phases_1_and_2_neither_send_back_nor_count(self) -> None:
+        """Before output/<skill>/SKILL.md exists the build is interviewing or researching: no send-back, no count."""
+        early = self.root / "early"
+        (early / "work" / "evaluation").mkdir(parents=True)
+        (early / "work" / "manifest.yaml").write_text("gold_standards: []\n")
+        for _ in range(5):
+            self.assertEqual(self.hook(stop(early)), {})
+        self.assertFalse((early / "work" / "experiments" / "finish-guard.jsonl").exists())
+        (early / "output" / "demo").mkdir(parents=True)
+        (early / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n")
+        self.assertEqual(self.hook(stop(early))["decision"], "block", "Phase 3 on: the full allowance")
+
     def test_without_any_python_the_turn_ends(self) -> None:
         bin_dir = self.root / "bin"
         bin_dir.mkdir()

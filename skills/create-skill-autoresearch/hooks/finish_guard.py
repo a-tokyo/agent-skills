@@ -2,9 +2,10 @@
 """End-of-turn hook: a factory build does not end before `check_gate.py --finish` exits 0 (SKILL.md 5.1).
 
 In each build workspace (holding work/evaluation/ and output/<skill>/SKILL.md) at the session's directory or
-under its builds/, an unfinished build sends the main session back once with the validator's reason, logged
-to work/experiments/finish-guard.jsonl. Never twice in a row, never for a subagent's stop, and any input it
-cannot read or error of its own ends the turn. Hosts and loop guards: references/hosts.md "Finish guard".
+under its builds/, an unfinished build sends the main session back with the validator's reason, logged to
+work/experiments/finish-guard.jsonl. Never twice in a row, at most `max_finish_sendbacks` times per build
+(verdict-rules.json; the log is the count), never for a subagent's stop, and any input it cannot read or error
+of its own ends the turn. Hosts and loop guards: references/hosts.md "Finish guard".
 
   Claude Code, Codex  Stop {"cwd", "stop_hook_active"}: {"decision": "block", "reason"} or {}.
   Cursor              stop {"status", "loop_count", "workspace_roots"}: {"followup_message"} or {}.
@@ -31,6 +32,7 @@ if os.name == "nt":  # the host gets its "allow" answer, so no shell call or tur
     print('{"permission": "allow"}' if "--subagent" in sys.argv[1:] else "{}")
     sys.exit(0)
 SCRIPTS = Path(__file__).resolve().parent.parent / "scripts"
+RULES = SCRIPTS.parent / "references" / "verdict-rules.json"
 CURSOR_EVENT = "stop"
 CURSOR_PRE_TOOL = "preToolUse"
 ALLOW = {"permission": "allow"}
@@ -74,6 +76,25 @@ def message(found: list[tuple[Path, str]]) -> str:
     return "\n".join(lines)
 
 
+def sendbacks(ws: Path) -> int:
+    path = ws / LOG
+    return sum(1 for line in path.read_text(encoding="utf-8", errors="replace").splitlines() if line.strip()) \
+        if path.is_file() else 0
+
+
+def capped(found: list[tuple[Path, str]]) -> list[tuple[Path, str]]:
+    """The builds still under `max_finish_sendbacks`; each build at the cap ends unfinished, in one stderr line."""
+    cap = json.loads(RULES.read_text(encoding="utf-8")).get("max_finish_sendbacks", 3)
+    out = []
+    for ws, reason in found:
+        if (n := sendbacks(ws)) < cap:
+            out.append((ws, reason))
+        else:
+            print(f"finish guard: {ws} was sent back {n} times (max_finish_sendbacks {cap}); the build ends "
+                  f"unfinished: {reason}", file=sys.stderr)
+    return out
+
+
 def _log(found: list[tuple[Path, str]], host: str) -> None:
     for ws, reason in found:
         try:
@@ -98,7 +119,7 @@ def decide(event: dict) -> dict:
         if event.get("stop_hook_active") is not False:
             return {}
         roots = [Path(event["cwd"])] if isinstance(event.get("cwd"), str) else []
-    found = unfinished(roots)
+    found = capped(unfinished(roots))
     if not found:
         return {}
     _log(found, "cursor" if cursor else "stop")

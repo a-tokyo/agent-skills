@@ -1,11 +1,12 @@
 {
-  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py reads this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash); each round re-scores every dimension.",
+  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py reads this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash); each round re-scores every dimension. hooks/finish_guard.py reads max_finish_sendbacks: the finish guard's send-backs per build, after which a stop ends it unfinished.",
   "default_target_score": 0.85,
   "caveat_margin": 0.10,
   "block_below": 3,
   "block_majority": 2,
   "agree_within": 1,
   "max_panel_rounds": 3,
+  "max_finish_sendbacks": 3,
   "synthesis_triggers": {
     "spread_at_least": 2,
     "devils_advocate_at": 1,

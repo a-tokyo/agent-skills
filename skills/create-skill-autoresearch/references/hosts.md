@@ -123,9 +123,13 @@ own, lets the subagent start.
 `hooks/finish_guard.py` runs at the end of each turn, through `hooks/finish-guard` (the same Python pick as the kill
 guard; with none, the turn ends). Only in a factory build — the session's directory, or a `builds/<name>/` under it,
 holding `work/evaluation/` and `output/<skill>/SKILL.md` — it runs `check_gate.py --finish`, and when that fails it
-sends the agent back once with the reason, logged to `work/experiments/finish-guard.jsonl`. It never sends it back twice
-in a row, and ends the turn on any error of its own. An interactive build costs one extra reply per stop from Phase 3 on:
-the agent re-ends the turn on its question.
+sends the agent back with the reason, logged to `work/experiments/finish-guard.jsonl`. It never sends it back twice
+in a row, and ends the turn on any error of its own. That log is also its count: after `max_finish_sendbacks`
+(verdict-rules.json, 3) send-backs to a build, the next stop ends the turn with one stderr line saying the build ends
+unfinished (`check_gate.py --finish` still fails it), which bounds an alternating stop/continue loop (one Haiku
+build was sent back 30 times). Phases 1-2 are never sent back or counted (no `output/<skill>/SKILL.md` yet); from
+Phase 3 an interactive build costs one extra reply per stop, the agent re-ending the turn on its question, and after
+the cap those stops end quietly.
 
 It guards only the main session's turn. A phase worker's, researcher's or panel member's stop never triggers it:
 Claude Code ends a subagent on `SubagentStop` and Cursor on `subagentStop`, events the shipped configs do not
@@ -136,7 +140,7 @@ session's); offline for Cursor and OpenCode; Codex subagent stops untested.
 
 | Host | Ships as | Loop guard | Status |
 |---|---|---|---|
-| Claude Code | `hooks/hooks.json` `Stop` (plugin install, or `claude --plugin-dir <skill-dir>`) | `stop_hook_active`; Claude Code also caps a turn at 8 continuations | verified live (`claude -p --plugin-dir`: sent back once, the next stop ended the turn) |
+| Claude Code | `hooks/hooks.json` `Stop` (plugin install, or `claude --plugin-dir <skill-dir>`) | `stop_hook_active`; Claude Code also caps a turn at 8 continuations; `max_finish_sendbacks` per build (every host) | verified live (`claude -p --plugin-dir`: sent back once, the next stop ended the turn) |
 | Cursor | `hooks/cursor-hooks.json` `stop` (`followup_message`) | `loop_count`, and `loop_limit: 1` | contract tested offline; `cursor-agent -p` (2026.10.18) runs no `stop` hook, so a headless Cursor build is not covered |
 | Codex | the same script on `Stop` (`{"decision": "block"}`), installed like the kill guard below | `stop_hook_active` | contract tested offline; untested in Codex |
 | OpenCode | `hooks/opencode-finish-guard.js` on `session.idle`, which prompts the session once (`client.session.prompt`) | once per idle | plugin tested with node; untested in OpenCode |
