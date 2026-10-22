@@ -52,12 +52,10 @@ Verified: Cursor and Claude Code.
 
 All four hosts run parallel subagents: Claude Code's Agent tool, Cursor's subagents, Codex subagents (it
 delegates when a skill asks it to), OpenCode's Task tool. The factory names roles, not host types: a
-**read-only researcher** (2.1), a **general-purpose phase worker** for Phases 3, 4 and 5.0-5.1 (SKILL.md
-"Orchestration") and a **general-purpose verifier** per panel role (5.2). A subagent cannot spawn subagents on
-Claude Code or Cursor, so researchers and verifiers are always spawned by the main session, never by a worker.
-Where a host offers none (or a run disables them), run each role, phase workers included, as a fresh headless
-session from the table above, one after another, giving it only that role's inputs (a worker: its dispatch prompt);
-that keeps the context walls the panel depends on and the main session's context small.
+**read-only researcher** (2.1) and a **general-purpose verifier** per panel role (5.2); the main session runs
+every phase itself and spawns both. Where a host offers none (or a run disables them), run each role as a fresh
+headless session from the table above, one after another, giving it only that role's inputs; that keeps the
+context walls the panel depends on.
 
 ## Kill guard
 
@@ -104,11 +102,11 @@ For an `npx skills` install on Cursor, the project hook above gains
 
 `hooks/finish_guard.py --subagent` (through the same launcher) runs before each subagent dispatch. Only in a factory
 build past Phase 1 — the session's directory, or a `builds/<name>/` under it, holding `work/manifest.yaml` or
-`work/evaluation/` (looser than the finish guard's test, because Phase 2 researchers and the Phase 3 worker are
+`work/evaluation/` (looser than the finish guard's test, because Phase 2 researchers are
 dispatched before `output/<skill>/SKILL.md` exists) — it denies a subagent that would run in the background, with
-the rule: dispatch phase workers and panel roles in the foreground, and for parallel roles put several Agent calls in
+the rule: dispatch researchers and panel roles in the foreground, and for parallel roles put several Agent calls in
 one message (they run in parallel and the turn waits for all). Why: headless `claude -p` stops background tasks 10
-minutes after the last turn, so a main session that dispatches a worker in the background and ends its turn to wait
+minutes after the last turn, so a main session that dispatches a subagent in the background and ends its turn to wait
 abandons the build (3 of 20 Haiku task-2 builds in the 2026-10-22 matrix). Input it cannot read, or an error of its
 own, lets the subagent start.
 
@@ -131,7 +129,7 @@ build was sent back 30 times). Phases 1-2 are never sent back or counted (no `ou
 Phase 3 an interactive build costs one extra reply per stop, the agent re-ending the turn on its question, and after
 the cap those stops end quietly.
 
-It guards only the main session's turn. A phase worker's, researcher's or panel member's stop never triggers it:
+It guards only the main session's turn. A researcher's or panel member's stop never triggers it:
 Claude Code ends a subagent on `SubagentStop` and Cursor on `subagentStop`, events the shipped configs do not
 register, and the script also ignores either event and any payload carrying Claude Code's `agent_id`; the OpenCode
 plugin skips child sessions (a `parentID`). Verified live on Claude Code 2.1.306 (`claude -p --plugin-dir`, a

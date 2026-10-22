@@ -1,10 +1,9 @@
 # Phase 3: Draft
 
-The Phase 3 worker's file, dispatched by the main session: design, author the draft, build the evaluation, record
-the split, measure the baseline, scaffold the eval suite. Its inputs: `work/handoffs/state.yaml`,
-[operating-rules.md](operating-rules.md), this file, section 4.2 of [phase-4.md](phase-4.md) (the split, recorded
-here before the 3.5 baseline), `work/research/00-synthesis.md`, `work/evaluation/rubric.yaml`, `work/manifest.yaml`,
-and the files under `input/` those name.
+Read on entering Phase 3: design, author the draft, build the evaluation, record the split, measure the baseline,
+scaffold the eval suite. Its inputs: section 4.2 of [phase-4.md](phase-4.md) (the split, recorded here before the
+3.5 baseline), `work/research/00-synthesis.md`, `work/evaluation/rubric.yaml`, `work/manifest.yaml`, and the files
+under `input/` those name.
 
 ## Contents
 - 3.1 Design Document (DESIGN.md template)

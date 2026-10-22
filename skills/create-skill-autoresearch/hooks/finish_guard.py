@@ -36,7 +36,7 @@ RULES = SCRIPTS.parent / "references" / "verdict-rules.json"
 CURSOR_EVENT = "stop"
 CURSOR_PRE_TOOL = "preToolUse"
 ALLOW = {"permission": "allow"}
-FOREGROUND = ("Blocked by create-skill-autoresearch's subagent guard: dispatch phase workers and panel roles in the "
+FOREGROUND = ("Blocked by create-skill-autoresearch's subagent guard: dispatch researchers and panel roles in the "
               "foreground (run_in_background: false) and wait for them; for parallel roles, put several Agent calls "
               "in one message. A headless session stops background subagents 10 minutes after its last turn, "
               "which abandons the build.")

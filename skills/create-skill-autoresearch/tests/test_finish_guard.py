@@ -108,7 +108,7 @@ class FinishGuardTest(unittest.TestCase):
         self.assertEqual(self.hook(cursor_stop(self.ws, status="error")), {})
 
     def test_a_subagent_stop_never_holds_the_turn(self) -> None:
-        """Phase workers and panel members end on SubagentStop (Claude Code) / subagentStop (Cursor)."""
+        """Researchers and panel members end on SubagentStop (Claude Code) / subagentStop (Cursor)."""
         claude = stop(self.ws) | {"hook_event_name": "SubagentStop", "agent_id": "a1", "agent_type": "general-purpose"}
         self.assertEqual(self.hook(claude), {}, "Claude Code SubagentStop on an unfinished build")
         self.assertEqual(self.hook(stop(self.ws) | {"agent_id": "a1"}), {}, "a stop inside a subagent")
@@ -187,7 +187,7 @@ class FinishGuardTest(unittest.TestCase):
 
 
 def agent(cwd: Path, background: object = "absent", tool: str = "Agent") -> dict:
-    tool_input = {"description": "Phase 3 worker", "subagent_type": "general-purpose", "prompt": "p"}
+    tool_input = {"description": "Verifier-A", "subagent_type": "general-purpose", "prompt": "p"}
     if background != "absent":
         tool_input["run_in_background"] = background
     return {"session_id": "s", "hook_event_name": "PreToolUse", "cwd": str(cwd), "tool_name": tool,
@@ -230,7 +230,7 @@ class SubagentGuardTest(unittest.TestCase):
             with self.subTest(run_in_background=background):
                 out = self.guard(agent(self.ws, background))
                 self.assertEqual(out.returncode, 2, "Claude Code's Agent tool defaults to the background")
-                self.assertIn("dispatch phase workers and panel roles in the foreground (run_in_background: false)",
+                self.assertIn("dispatch researchers and panel roles in the foreground (run_in_background: false)",
                               out.stderr)
                 self.assertIn("several Agent calls in one message", out.stderr)
         nested = self.root / "project" / "builds" / "demo" / "work" / "evaluation"
@@ -339,7 +339,7 @@ class OpenCodeFinishGuardTest(unittest.TestCase):
         self.assertEqual(len(self.idle(3)), 2, "a later turn is checked again")
 
     def test_a_subagent_child_session_gets_no_prompt(self) -> None:
-        self.assertEqual(self.idle(1, '{ data: { id: "s1", parentID: "p0" } }'), [], "a worker's child session")
+        self.assertEqual(self.idle(1, '{ data: { id: "s1", parentID: "p0" } }'), [], "a subagent's child session")
         self.assertEqual(len(self.idle(1, 'throw new Error("no such session")')), 1, "lookup failed: top-level")
 
     def test_a_finished_build_gets_no_prompt(self) -> None:

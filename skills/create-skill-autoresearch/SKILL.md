@@ -15,20 +15,20 @@ description: >-
 
 # Create Skill via Autoresearch Factory
 
-This file is the main session's router: it runs Phases 1-2 and the panel; Phases 3, 4 and 5.0-5.1 run in fresh
-**phase workers** that read only their own reference file (Orchestration, below).
+This file is the main session's router: the main session runs every phase itself. On entering a phase, read that
+phase's reference file (the Detail column) and not before: one phase's detail in context at a time.
 
 | Phase | What Happens | Who runs it | Detail |
 |-------|-------------|-------------|--------|
 | 1. Interview | Discover purpose, gold standards, scope | ORCHESTRATOR (main) | below; [references/phase-1-2.md](references/phase-1-2.md) |
 | 2. Research | Study domain materials, build dossier, propose rubric | RESEARCHER subagents (2-7), or main inline | below; [references/phase-1-2.md](references/phase-1-2.md) |
-| 3. Draft | Design, author SKILL.md with skill-creator, eval script, split, baseline, eval suite | BUILDER: Phase 3 worker | [references/phase-3.md](references/phase-3.md) |
-| 4. Autoresearch | Iterate against gold standards (LLM-as-judge, or an objective real-world metric for procedural skills), then the description pass | BUILDER: Phase 4 worker + autoresearch skill | [references/phase-4.md](references/phase-4.md) |
-| 5. Verify | 5.0 eval gate (with vs without), 5.1 premortem; 5.2-5.4 panel, consensus, ship/iterate | Phase 5 worker; then PANEL (3 subagents) | [references/phase-5.md](references/phase-5.md); 5.2-5.4 below |
+| 3. Draft | Design, author SKILL.md with skill-creator, eval script (`evaluate.sh`), split, baseline, eval suite | BUILDER (main session) | [references/phase-3.md](references/phase-3.md) |
+| 4. Autoresearch | Iterate against gold standards (LLM-as-judge, or an objective real-world metric for procedural skills), then the description pass | BUILDER (main session) + autoresearch skill | [references/phase-4.md](references/phase-4.md) |
+| 5. Verify | 5.0 eval gate (with vs without), 5.1 premortem; 5.2-5.4 panel, consensus, ship/iterate | main session; then PANEL (3 subagents) | [references/phase-5.md](references/phase-5.md); 5.2-5.4 below |
 
 Key constraint: BUILDER and PANEL never share context. Panel receives only the skill output, gold standards, and rubric -- no bias from the building process.
 
-Every session of a build, this one and each worker, follows **[references/operating-rules.md](references/operating-rules.md)**
+Every session of a build, the first and each resume, follows **[references/operating-rules.md](references/operating-rules.md)**
 (paths, bundled scripts, `run_owned.py` background jobs, unattended runs, credentials, git staging). Read it before Phase 1.
 
 ## Companion skills
@@ -46,33 +46,16 @@ The factory composes sibling skills rather than embedding them, so each stays cu
 | `claude plugin eval` (Claude Code CLI) | 3.6 suite, 5.0 gate | The manual with/without protocol (5.0) |
 
 Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>`. The factory runs on any agent that loads SKILL.md; **[references/hosts.md](references/hosts.md)** gives each host's skill dirs, headless command ("the host's headless CLI"), subagents and hook installs. It runs on macOS, Linux and WSL; on native Windows, run it inside WSL.
-Three hooks (`hooks/`, installed per hosts.md): the kill guard blocks pattern kills (`pkill`, `killall`, a process listing and a kill in one call); the subagent guard denies a background subagent dispatch inside a build; the finish guard sends a build back when the main session's turn ends before `check_gate.py --finish` passes (never a worker's or subagent's stop; at most `max_finish_sendbacks` times, then the build ends unfinished) — live-tested on Claude Code (and Cursor's kill guard), offline-tested on Codex and OpenCode. The kill guard is a best-effort tripwire, not a sandbox: `run_owned.py` and stopping only what you started are the contract.
+Three hooks (`hooks/`, installed per hosts.md): the kill guard blocks pattern kills (`pkill`, `killall`, a process listing and a kill in one call); the subagent guard denies a background subagent dispatch inside a build; the finish guard sends a build back when the main session's turn ends before `check_gate.py --finish` passes (never a subagent's stop; at most `max_finish_sendbacks` times, then the build ends unfinished) — live-tested on Claude Code (and Cursor's kill guard), offline-tested on Codex and OpenCode. The kill guard is a best-effort tripwire, not a sandbox: `run_owned.py` and stopping only what you started are the contract.
 
-## Orchestration
+## Subagents
 
-A subagent cannot spawn subagents, so the main session keeps what needs them: the Phase 2 researchers and the three
-5.2 panel members. The context-heavy, self-contained phases each run in **one fresh worker** that sees only its handoff:
+Only the Phase 2 researchers and the three 5.2 panel members run as subagents. Dispatch each in the **foreground**
+and wait for it (Claude Code: `run_in_background: false`; the subagent guard denies a background one); for parallel
+roles, put several Agent calls in one message. **Hosts without subagents** run each role as a fresh headless session
+(hosts.md), in turn.
 
-| Worker | Reads (besides `state.yaml` and operating-rules.md) | Writes | Returns with |
-|--------|-------|--------|--------------|
-| Phase 3 | phase-3.md, phase-4.md 4.2, `work/research/00-synthesis.md`, rubric.yaml, manifest.yaml, the `input/` files they name | DESIGN.md, `output/<skill-name>/`, evaluate.sh, data-split.yaml, baseline commit, experiment 0, the 3.6 suite | baseline `overall_score`, `gate.py record` exit, fast-path result |
-| Phase 4 | phase-4.md, rubric.yaml, data-split.yaml, synthesis, tails of `autoresearch.jsonl` / ideas | experiment commits, jsonl, ideas, `results.tsv`, 4.6 decision | best score and commit, experiments run, why the loop ended |
-| Phase 5 | phase-5.md, data-split.yaml, `output/<skill-name>/`; phase-3.md 3.6 only if the suite needs a fix | gate artifacts, premortem.md | gate exit code and `GATE VALID:` line, premortem path |
-
-Before each dispatch, write `work/handoffs/state.yaml` (the 4.4 schema only: HANDOFF-*.md is for a new session, not a
-worker). Dispatch with this prompt, filled in, and nothing else from this session — no research notes, no conversation:
-
-```text
-You are the Phase <N> worker of a skill build. Workspace: <abs path>; run every command from it.
-Skill dir: <abs skill-dir>. Read, in order: work/handoffs/state.yaml, <skill-dir>/references/operating-rules.md,
-<skill-dir>/references/phase-<N>.md, then: <the Reads list above>. Task: <phase step(s), e.g. "3.1-3.6" or "4.6 only">.
-Write every output to disk; reply with a summary of at most 15 lines (what you did, files, numbers, next step).
-```
-
-Dispatch every worker and panel role in the **foreground** and wait for it (Claude Code: `run_in_background: false`; the
-subagent guard denies a background one); for parallel roles, put several Agent calls in one message. Read a worker's summary, not its files — open a file only when a decision needs it.
-A worker that returns with `questions:` in state.yaml gets them asked, the answers recorded, and a fresh worker.
-**Hosts without subagents** run each worker as a fresh headless session with the same prompt (hosts.md), in turn.
+## Handoff and Resume
 
 ### 4.4 Monitor and Handoff
 
@@ -84,7 +67,6 @@ On any phase transition, when context or the session's budget runs low, or on re
 phase: autoresearch       # current phase (interview|research|draft|autoresearch|verify)
 session: <N>              # session counter (increments on each resume)
 skill_name: <name>        # the skill being built
-skill_dir: <abs path>     # the factory's base directory, for workers
 best_score: <value>       # best overall_score achieved
 best_commit: <hash>       # commit hash of best state
 experiments_run: <count>  # total experiments across all sessions
@@ -92,8 +74,6 @@ remaining_budget: <count> # experiments left in budget
 validation_score: <value> # last validation set score (if applicable)
 top_concerns: []          # panel feedback or known weaknesses
 blocked_dimensions: []    # dimensions below threshold
-questions: []             # a worker's questions for the user (operating-rules.md)
-answers: []               # the user's answers, for the next worker
 last_updated: <ISO timestamp>
 baseline_lock: false      # true = a human froze target_score at the recorded best (deliberately, not by interrupting the loop); do not re-derive
 ```
@@ -103,9 +83,9 @@ baseline_lock: false      # true = a human froze target_score at the recorded be
 
 When `work/handoffs/state.yaml` exists: read it and the newest `work/handoffs/HANDOFF-*.md`, resume at the
 recorded phase (re-confirm parameters on **interview**; synthesize if the dossier is incomplete on
-**research**; dispatch the Phase 3 worker to measure a baseline if the draft exists on **draft**; dispatch the Phase 4
-worker, which reads `autoresearch.jsonl` and continues with the remaining budget, on **autoresearch**; re-run the panel
-if the last verdict was ITERATE on **verify**), then bump the session number.
+**research**; read phase-3.md and measure the 3.5 baseline if the draft exists on **draft**; read phase-4.md, then
+`autoresearch.jsonl`, and continue with the remaining budget on **autoresearch**; re-run the panel if the last
+verdict was ITERATE on **verify**), then bump the session number.
 
 ---
 
@@ -150,7 +130,7 @@ patterns, conventions and quality signals it finds to `work/research/NN-<topic>.
 After all researchers complete, write `work/research/00-synthesis.md`: cross-cutting patterns, the
 conventions the skill must follow, quality signals, candidate rubric dimensions, and a **conflicts** table —
 every point where a study material contradicts the gold standards. **The gold standards win**: record each
-conflict with the gold evidence; the Phase 3 worker confirms the draft follows the gold side of every row before the 3.5 baseline.
+conflict with the gold evidence; Phase 3 confirms the draft follows the gold side of every row before the 3.5 baseline.
 
 ### 2.3 Propose Rubric
 
@@ -169,9 +149,9 @@ Add 3-5 domain-specific dimensions from the research synthesis (5-10 dimensions 
 
 ## Phase 3: Draft, and Phase 4: Autoresearch
 
-Dispatch the Phase 3 worker (3.1-3.6). If its summary says `check_gate.py --fast-path` exited 0 (draft at
-`target_score`), skip Phase 4; else dispatch the Phase 4 worker. Workers read the authoring rules in
-[references/authoring-rules.md](references/authoring-rules.md) (3.3) and the evaluation standard in
+Read [references/phase-3.md](references/phase-3.md) and run 3.1-3.6. If `check_gate.py --fast-path` exits 0 (draft at
+`target_score`), skip Phase 4; else read [references/phase-4.md](references/phase-4.md) and run 4.1-4.6. Step 3.3 reads
+the authoring rules in [references/authoring-rules.md](references/authoring-rules.md); both phases follow the evaluation standard in
 [references/benchmark-standard.md](references/benchmark-standard.md): the shipping evidence is the 5.0 gate's same-model Δ.
 
 ---
@@ -180,8 +160,8 @@ Dispatch the Phase 3 worker (3.1-3.6). If its summary says `check_gate.py --fast
 
 ### 5.0-5.1 Gate and Premortem
 
-Dispatch the Phase 5 worker (5.0 and 5.1). A gate it reports invalid on a should-trigger or near-miss indicator is a
-description defect: dispatch the Phase 4 worker for 4.6 only, then Phase 5 again. **On its return, run 5.2's
+Read [references/phase-5.md](references/phase-5.md) and run 5.0 and 5.1. A gate invalid on a should-trigger or near-miss
+indicator is a description defect: re-run 4.6 only, then 5.0 again. **After 5.1, run 5.2's
 `check_gate.py --panel` in the same reply**, never by presenting the risks or announcing the panel. Continue in the
 same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates and a panel consensus on the current skill that allows it, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run (the finish guard repeats it at the end of a turn).
 
@@ -246,7 +226,7 @@ A 5.0 gate gold-standard case with Δ <= 0 caps the verdict at SHIP WITH CAVEATS
 
 If ITERATE: turn each member's top concern and every Devil's Advocate failure scenario into an
 improvement hypothesis in `autoresearch.ideas.md`, log the panel scores and rationales in
-`work/experiments/craft-decisions.md`, and return to Phase 4 (a fresh Phase 4 worker, then the Phase 5 worker).
+`work/experiments/craft-decisions.md`, and return to Phase 4, then 5.0-5.1.
 
 **A terminal ITERATE is `UNSHIPPED`.** ITERATE or BLOCK with no Phase 4 budget left, after the 4.3 plateau rule, or at
 `max_panel_rounds` (3; `check_gate.py` refuses round 4) ends the build: write `Verdict: UNSHIPPED` in `BENCHMARK.md`,

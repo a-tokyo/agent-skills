@@ -1,11 +1,10 @@
 # Phase 4: Autoresearch
 
-The Phase 4 worker's file, dispatched by the main session: invoke the **autoresearch skill** to iterate the skill
-draft against the evaluation rubric, then run the 4.6 description pass. Its inputs: `work/handoffs/state.yaml`,
-[operating-rules.md](operating-rules.md), this file, `work/evaluation/rubric.yaml`, `work/evaluation/data-split.yaml`,
+Read on entering Phase 4: invoke the **autoresearch skill** to iterate the skill draft against the evaluation
+rubric, then run the 4.6 description pass. Its inputs: `work/evaluation/rubric.yaml`, `work/evaluation/data-split.yaml`,
 `work/research/00-synthesis.md`, and the tails of `autoresearch.jsonl` and `autoresearch.ideas.md` when they exist
-(a resume, or an ITERATE that seeded new ideas). Section 4.2 is also the Phase 3 worker's: it records the split
-before the 3.5 baseline.
+(a resume, or an ITERATE that seeded new ideas). Phase 3 also reads section 4.2: it records the split before the
+3.5 baseline.
 
 ## Contents
 - 4.1 Configure Autoresearch (the setup answers and the three records the factory owns)
@@ -186,8 +185,8 @@ adds the rest, and applies it in every experiment:
   ```
 
 - **Context budget.** Read only the tail of `run.log` and the last few jsonl lines per THINK step;
-  when the session's context runs low, hand off ([operating-rules.md](operating-rules.md): update state.yaml and return)
-  rather than compress history.
+  when the session's context runs low, hand off (SKILL.md 4.4: HANDOFF-*.md and state.yaml) rather than compress
+  history.
 
 ## 4.6 Description Pass
 

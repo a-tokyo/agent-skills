@@ -1,7 +1,6 @@
 # Operating Rules
 
-The rules every session of a build follows: the main session and every phase worker.
-A worker reads this file first.
+The rules every session of a build follows, the first and each resume. Read this file before Phase 1.
 
 **Paths.** Run every command from the workspace root (created in 1.6); every path in the factory is relative to it.
 `<skill-dir>` is the factory skill's base directory, given in the handoff.
@@ -26,17 +25,3 @@ in the environment.
 
 **Git.** Stage only the paths a step names (`git add output/<skill-name>`). Never `git add -A`: it sweeps `work/`
 and session logs into experiment commits.
-
-## Phase workers
-
-- Do the phase in your file and nothing else. Do not invoke the create-skill-autoresearch skill or open its
-  SKILL.md: your handoff and phase file are the whole instruction set.
-- You cannot ask the user. Where your phase asks to present something to the user or wait for an answer (an
-  interactive run), write the question to `work/handoffs/state.yaml` `questions:` and return; the main session asks,
-  records the answer in `answers:` and dispatches a fresh worker to continue.
-- When your context or budget runs low, stop at a clean point (no half-applied experiment), update the
-  fields of `work/handoffs/state.yaml` it already holds (`best_score`, `best_commit`, `experiments_run`,
-  `remaining_budget`, `validation_score`, `top_concerns`, `last_updated`) and return; the main session dispatches a fresh worker that
-  resumes from it.
-- Write every output to disk. Your final reply is a summary of at most 15 lines: what you did, the files you wrote,
-  the numbers (scores, Δ, exit codes, experiments run), and the next step. Never paste file contents into it.

@@ -1,7 +1,7 @@
 # Phases 1-2 Reference
 
-The main session's detail for the phases it runs itself before any worker: the Phase 1 interview and the Phase 2
-research. Phases 3, 4 and 5.0-5.1 run in workers, from [phase-3.md](phase-3.md), [phase-4.md](phase-4.md) and
+Read on entering Phase 1: the detail of the Phase 1 interview and the Phase 2 research. Phases 3, 4 and 5.0-5.1
+have their own files, read on entering each: [phase-3.md](phase-3.md), [phase-4.md](phase-4.md) and
 [phase-5.md](phase-5.md); the Phase 5.2 panel prompts are in [consensus-protocol.md](consensus-protocol.md).
 
 ## Contents

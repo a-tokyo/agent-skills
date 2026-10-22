@@ -1,8 +1,8 @@
 # Phase 5.0-5.1: Eval Gate and Premortem
 
-The Phase 5 worker's file, dispatched by the main session: run the eval gate, then the premortem, and return. Its
-inputs: `work/handoffs/state.yaml`, [operating-rules.md](operating-rules.md), this file, `work/evaluation/data-split.yaml`,
-and `output/<skill-name>/`; [phase-3.md](phase-3.md) 3.6 only when a gate failure names the suite or `run-case.sh`. The panel (5.2-5.4) is the main session's: it starts from this worker's return.
+Read on entering Phase 5: run the eval gate, then the premortem. Its inputs: `work/evaluation/data-split.yaml` and
+`output/<skill-name>/`; [phase-3.md](phase-3.md) 3.6 only when a gate failure names the suite or `run-case.sh`. The
+panel (5.2-5.4, SKILL.md) follows 5.1 in the same turn.
 
 ## Contents
 - 5.0 Eval Gate (commands, reading the artifact)
@@ -101,4 +101,4 @@ fixtures first. The 1-run artifact never passes `check_gate.py`; the full run re
 
 ## 5.1 Premortem
 
-Run the **premortem skill** on the skill artifact with its present-and-ask step replaced: write the whole risk list to `work/experiments/premortem.md` and pick no mitigation — every risk becomes a 5.2 test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. Then return: your summary carries the gate's exit code, its `GATE VALID:` line (or the reason it failed) and the premortem path; the main session runs 5.2 from there.
+Run the **premortem skill** on the skill artifact with its present-and-ask step replaced: write the whole risk list to `work/experiments/premortem.md` and pick no mitigation — every risk becomes a 5.2 test scenario, with the five craft failure modes (premature completion, duplication, sediment, sprawl, no-op) as required probes. Then run SKILL.md 5.2 in the same turn, starting with `check_gate.py --panel`.
