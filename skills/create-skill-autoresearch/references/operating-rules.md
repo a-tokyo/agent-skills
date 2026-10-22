@@ -3,7 +3,7 @@
 The rules every session of a build follows, the first and each resume. Read this file before Phase 1.
 
 **Paths.** Run every command from the workspace root (created in 1.6); every path in the factory is relative to it.
-`<skill-dir>` is the factory skill's base directory, given in the handoff.
+`<skill-dir>` is the factory skill's base directory: the one its SKILL.md was loaded from.
 
 **Bundled scripts** run as `python3 <skill-dir>/scripts/<name>.py` (each has `--help`; Python 3.9+ and stdlib on
 macOS, Linux or WSL; native Windows is not supported — [hosts.md](hosts.md)).
