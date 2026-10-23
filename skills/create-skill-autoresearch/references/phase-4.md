@@ -93,7 +93,7 @@ training:            # this experiment's rotation: every case but the held-out o
 `evaluate.sh` with no argument scores the current `training` list.
 
 **Overfitting detection** (70-20-10 split): run `evaluate.sh` against the validation set adaptively — not on
-a fixed schedule — after every **kept** experiment (every improvement changes the overfitting risk profile),
+a fixed schedule — on the baseline (experiment 0, for the [phase-3.md](phase-3.md) 3.5 fast path), after every **kept** experiment (every improvement changes the overfitting risk profile),
 after a **plateau** (is the ceiling real or training-specific?), and when the training score jumps by more
 than 0.05 in one experiment (sudden gains are suspicious). Compare the trends:
 - Training up, validation up → healthy improvement, continue
@@ -150,6 +150,9 @@ unreachable `target_score` burns the whole budget and reports "exit criteria not
 
 - **A plateau is terminal.** `plateau_window` (default 2) consecutive experiments within the noise threshold (judge
   variance, ~0.2-0.3 on a 1-10 scale, below which gains are not measurable) end the loop: carry best-so-far into Phase 5.
+- **The ceiling and the target are terminal sooner.** A best `overall_score` at its maximum (1.0) ends the loop before
+  the next experiment: nothing left to measure. At or above `target_score`, the first experiment that does not beat the
+  best by more than the noise threshold ends it.
 - **Below target is a verdict, not a failure** -- Phase 5.4 grades it (SHIP WITH CAVEATS within
   `caveat_margin` of `target_score`). Honour `baseline_lock` in `state.yaml` the same way, logging the real target
   in the ideas backlog.

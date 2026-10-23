@@ -34,7 +34,7 @@ the panel label Δ in-sample). A non-zero exit says why: fix the suite or `run-c
 
 Read WITH, W/OUT and Δ per case from the artifact; the verdict comes from Δ, the same-model uplift the shipping evidence needs ([benchmark-standard.md](benchmark-standard.md)):
 - Δ <= 0 on a gate gold-standard case is a **verified failure scenario** for the panel — the skill adds
-  nothing there, or hurts;
+  nothing there, or hurts; on a fast-path build it first returns the build to Phase 4 ([phase-3.md](phase-3.md) 3.5);
 - a should-trigger indicator that misses any with-arm run, or a near miss that fires in any run, is a description
   defect: the gate is invalid; return to 4.6, not to the panel;
 - pass the JSON summary to the panel as a known risk list and copy it into `BENCHMARK.md`.

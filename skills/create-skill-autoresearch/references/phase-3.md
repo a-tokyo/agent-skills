@@ -284,8 +284,16 @@ For each dimension:
 ## 3.5 Measure Baseline
 
 Run `evaluate.sh` on the draft, commit it (`git add output/<skill-name> && git commit -m "baseline"`; upstream autoresearch
-never commits one, and its `git reset --hard HEAD~1` needs that parent), log experiment 0 in `autoresearch.jsonl` ([phase-4.md](phase-4.md) 4.1), report it.
-**Fast path:** at `target_score`, record the 4.2 split, run 3.6 and 5.0; `check_gate.py --fast-path` exit 0 skips 4.1 and 4.3-4.6.
+never commits one, and its `git reset --hard HEAD~1` needs that parent), log experiment 0 in `autoresearch.jsonl` ([phase-4.md](phase-4.md) 4.1)
+with that commit's hash (`git rev-parse HEAD`), report it.
+
+**Fast path, decided now.** With a `validation` list in data-split.yaml, score it (`evaluate.sh <case>` per case) and
+log the 4.2 `validation_check` with `"experiment": 0`. Then run `python3 <skill-dir>/scripts/check_gate.py --fast-path`.
+Exit 0 — experiment 0 at `target_score`, its validation score at most 0.05 below it, `output/<skill-name>/` unchanged
+since its commit — skips the Phase 4 loop and 4.6: run 3.6, then Phase 5. The 5.0 gate still runs, and on this build
+(experiment 0 the only experiment logged) a gold case with Δ <= 0 or a panel ITERATE returns it to Phase 4 for the
+loop, 4.6, then 5.0 again; from then on 5.4 applies as on any build (`max_panel_rounds`, Δ <= 0 caps the verdict).
+Non-zero names why: run 3.6, then Phase 4.
 
 ## 3.6 Scaffold the Eval Suite
 

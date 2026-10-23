@@ -149,8 +149,9 @@ Add 3-5 domain-specific dimensions from the research synthesis (5-10 dimensions 
 
 ## Phase 3: Draft, and Phase 4: Autoresearch
 
-Read [references/phase-3.md](references/phase-3.md) and run 3.1-3.6. If `check_gate.py --fast-path` exits 0 (draft at
-`target_score`), skip Phase 4; else read [references/phase-4.md](references/phase-4.md) and run 4.1-4.6. Step 3.3 reads
+Read [references/phase-3.md](references/phase-3.md) and run 3.1-3.6; 3.5 ends with `check_gate.py --fast-path`. Exit 0
+(baseline at `target_score`): after 3.6 go to Phase 5, skipping Phase 4 until the gate or the panel sends the build back
+(phase-3.md 3.5); else read [references/phase-4.md](references/phase-4.md) and run 4.1-4.6. Step 3.3 reads
 the authoring rules in [references/authoring-rules.md](references/authoring-rules.md); both phases follow the evaluation standard in
 [references/benchmark-standard.md](references/benchmark-standard.md): the shipping evidence is the 5.0 gate's same-model Δ.
 

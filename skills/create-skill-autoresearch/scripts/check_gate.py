@@ -11,7 +11,8 @@ a numeric delta per gold case and every Skill indicator passing (phase-5.md 5.0)
 `GATE INVALID: <reason>`; --json the same verdict with a stable `code`.
 --panel, --panel-receipt, --consensus: the panel on a valid gate (SKILL.md 5.2-5.3; scripts/panel.py).
 --finish: BENCHMARK.md's verdict stands (SKILL.md 5.1, 5.4): `BUILD FINISHED: ...` or `BUILD UNFINISHED: <reason>`.
---fast-path: may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or `NO FAST PATH: <reason>`.
+--fast-path: at the end of 3.5, may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or
+`NO FAST PATH: <reason>`; it reads the baseline, the validation check and git, never the gate.
 
 Exit codes: 0 valid (--finish: finished; --fast-path: take it), 1 invalid (unfinished; no fast path), 2 usage error.
 """
@@ -32,12 +33,14 @@ import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     BASELINE_KEY, DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE,
     GateError, baseline_key, baseline_path, cases_sha256, check_skill_name, file_sha256, inputs_sha256, is_number,
-    json_lines, read_attempts, read_baseline, read_data_split, read_json, skill_sha256, split_sha256, utf8_stdio,
+    json_lines, read_attempts, read_baseline, read_data_split, read_json, resolve_skill, skill_sha256, split_sha256,
+    utf8_stdio,
 )
 
 BENCHMARK = Path("BENCHMARK.md")
 EXPERIMENT_LOGS = (Path("autoresearch.jsonl"), Path("work") / "experiments" / "autoresearch.jsonl")
 TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
+VALIDATION_DROP = 0.05  # phase-4.md 4.2: validation this far below training is the overfitting warning
 VERDICT_LINE = re.compile(r"(?im)^[#>*_\s-]*verdict[*_\s]*[:—–-][*_\s`]*"
                           r"(UNSHIPPED|SHIP[ _]+WITH[ _]+CAVEATS|ITERATE|BLOCK|ESCALATE|SHIP)\b")
 
@@ -327,18 +330,42 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
     return True, verdict, "ok"
 
 
+def _git(workspace: Path, *args: str) -> subprocess.CompletedProcess | None:
+    try:
+        return subprocess.run(["git", "-C", str(workspace), *args], capture_output=True, text=True, timeout=60)
+    except (OSError, subprocess.TimeoutExpired):
+        return None
+
+
+def _changed_since(workspace: Path, commit: object, skill: str) -> str | None:
+    """Why output/<skill>/ cannot be shown unchanged since `commit` (tracked edits or new files), or None."""
+    ref = commit.strip() if isinstance(commit, str) else ""
+    resolved = _git(workspace, "rev-parse", "--verify", "--quiet", f"{ref}^{{commit}}") if ref else None
+    if resolved is None or resolved.returncode != 0:
+        return (f"experiment 0 logs no commit git can resolve ({commit!r}); log the baseline commit's hash "
+                "(git rev-parse HEAD after the 3.5 commit)")
+    diff = _git(workspace, "diff", "--quiet", ref, "--", f"output/{skill}")
+    new = _git(workspace, "ls-files", "--others", "--exclude-standard", "--", f"output/{skill}")
+    if diff is None or diff.returncode not in (0, 1) or new is None or new.returncode != 0:
+        return f"git cannot compare output/{skill}/ with commit {ref}"
+    if diff.returncode == 1 or new.stdout.strip():
+        return f"output/{skill}/ changed since experiment 0 (commit {ref})"
+    return None
+
+
 def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
-    """(skip the Phase 4 loop, why): experiment 0 (the 3.5 baseline) is the only one logged, meets target_score,
-    output/<skill>/ is unchanged since its commit (when git can tell), and the gate shows uplift on every gold case."""
-    gate = validate(workspace, skill)
-    if not gate.valid:
-        return False, f"the gate does not validate ({gate.line()})"
-    if not gate.gold_cases:
-        return False, "the gate has no gold case"
-    if gate.non_positive:
-        return False, f"gold delta<=0 on {', '.join(gate.non_positive)}"
+    """(skip the Phase 4 loop, why), decided at the end of 3.5 from what exists then: experiment 0 (the baseline)
+    is the only experiment logged and meets target_score, the 4.2 validation check on it passes (a split with a
+    validation list), and output/<skill>/ is unchanged since its commit. The 5.0 gate runs either way."""
+    try:
+        name = resolve_skill(workspace, skill)
+        split = read_data_split(workspace / DATA_SPLIT)
+        target = panel.read_rubric(workspace).target_score
+    except GateError as exc:
+        return False, str(exc)
     log = next((workspace / p for p in EXPERIMENT_LOGS if (workspace / p).is_file()), None)
-    experiments = [e for e in json_lines(log) if "experiment" in e and e.get("type") in (None, "experiment")]
+    entries = json_lines(log)
+    experiments = [e for e in entries if "experiment" in e and e.get("type") in (None, "experiment")]
     zero = [e for e in experiments if e.get("experiment") == 0]
     if not zero:
         return False, "no experiment 0 in autoresearch.jsonl (3.5 logs the baseline there)"
@@ -347,23 +374,23 @@ def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
     metric = zero[-1].get("metric")
     if not is_number(metric):
         return False, f"experiment 0 has no numeric metric ({metric!r})"
-    try:
-        target = panel.read_rubric(workspace).target_score
-    except GateError as exc:
-        return False, str(exc)
     if metric + 1e-9 < target:
         return False, f"baseline overall_score {metric:.3f} is below target_score {target:.2f}"
-    commit = zero[-1].get("commit")
-    if isinstance(commit, str) and commit.strip():
-        try:
-            diff = subprocess.run(["git", "-C", str(workspace), "diff", "--quiet", commit.strip(), "--",
-                                   f"output/{gate.skill}"], capture_output=True, timeout=60)
-        except (OSError, subprocess.TimeoutExpired):
-            diff = None
-        if diff is not None and diff.returncode == 1:
-            return False, f"output/{gate.skill}/ changed since experiment 0 (commit {commit.strip()})"
-    return True, (f"baseline overall_score {metric:.3f} >= target_score {target:.2f} and every gold delta > 0 "
-                  f"(mean {gate.mean_delta:+.3f}); skip the Phase 4 loop (4.1-4.6) and continue at 5.1")
+    validated = ""
+    if split.gold.get("validation"):
+        checks = [e for e in entries if e.get("type") == "validation_check" and e.get("experiment") == 0]
+        score = checks[-1].get("validation_score") if checks else None
+        if not is_number(score):
+            return False, ("no experiment-0 validation_check with a numeric validation_score in autoresearch.jsonl; "
+                           "score the validation list and log it (phase-4.md 4.2)")
+        if score + VALIDATION_DROP < metric - 1e-9:
+            return False, (f"validation_score {score:.3f} is more than {VALIDATION_DROP} below the baseline "
+                           f"{metric:.3f} (phase-4.md 4.2)")
+        validated = f", validation_score {score:.3f}"
+    if why := _changed_since(workspace, zero[-1].get("commit"), name):
+        return False, why
+    return True, (f"baseline overall_score {metric:.3f} >= target_score {target:.2f}{validated}; skip the Phase 4 "
+                  "loop (4.1-4.6): run 3.6, then Phase 5")
 
 
 def main(argv: list[str] | None = None) -> int:
