@@ -276,7 +276,9 @@ def run_plugin(ws: Path, skill: str, args: argparse.Namespace) -> None:
 
 def _one_run(ws: Path, idx: int, case: str, arm: str, run: int, args: argparse.Namespace) -> dict:
     """One manual run, retried once: {case, arm, run, score (None on failure), error, log}."""
-    env = {**os.environ, "GATE_MODEL": args.model, "GATE_RUN": str(run), "GATE_EXECUTOR": args.executor}
+    # CSA_EXECUTOR: an executor or judge run-case.sh starts with --plugin-dir keeps the finish and subagent guards inert
+    env = {**os.environ, "GATE_MODEL": args.model, "GATE_RUN": str(run), "GATE_EXECUTOR": args.executor,
+           "CSA_EXECUTOR": "1"}
     error, log = "not run", ""
     for attempt in range(1, ATTEMPTS + 1):
         rc, log = run_owned_job(run_owned.state_dir(ws), f"gate-c{idx:02d}-{arm}-r{run}-a{attempt}",

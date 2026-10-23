@@ -23,7 +23,8 @@ SKILL = Path(__file__).resolve().parents[1]
 HOOK = SKILL / "hooks" / "finish_guard.py"
 LAUNCHER = SKILL / "hooks" / "finish-guard"
 SH = "/bin/sh"
-ENV = {**os.environ, "PYTHONDONTWRITEBYTECODE": "1"}
+ENV = {**{k: v for k, v in os.environ.items() if k != "CSA_EXECUTOR"}, "PYTHONDONTWRITEBYTECODE": "1"}
+EXECUTOR = {**ENV, "CSA_EXECUTOR": "1"}
 
 
 def stop(cwd: Path, active: bool = False) -> dict:
@@ -64,10 +65,10 @@ class FinishGuardTest(unittest.TestCase):
             json.dumps({"at": "2026-10-19T00:00:00+00:00", "step": "gate", "error": "no run-case.sh"}) + "\n")
         (ws / "BENCHMARK.md").write_text("Verdict: UNSHIPPED\n")
 
-    def hook(self, payload: object, cmd: list[str] | None = None) -> dict:
+    def hook(self, payload: object, cmd: list[str] | None = None, env: dict | None = None) -> dict:
         data = payload if isinstance(payload, str) else json.dumps(payload)
         out = subprocess.run(cmd or [sys.executable, "-B", str(HOOK)], input=data, capture_output=True, text=True,
-                             timeout=60, env=ENV)
+                             timeout=60, env=env or ENV)
         self.assertEqual(out.returncode, 0, out.stderr)
         return json.loads(out.stdout)
 
@@ -117,6 +118,13 @@ class FinishGuardTest(unittest.TestCase):
         self.assertFalse((self.ws / "work" / "experiments" / "finish-guard.jsonl").exists(), "nothing logged")
         main = stop(self.ws) | {"agent_type": "factory"}
         self.assertEqual(self.hook(main)["decision"], "block", "a main session run with --agent is still guarded")
+
+    def test_an_executor_session_at_the_build_root_ends_its_turn(self) -> None:
+        """An executor or judge started with --plugin-dir and CSA_EXECUTOR=1 (phase-3.md 3.4) is never sent back."""
+        self.assertEqual(self.hook(stop(self.ws), env=EXECUTOR), {})
+        self.assertEqual(self.hook(cursor_stop(self.ws), env=EXECUTOR), {})
+        self.assertFalse((self.ws / "work" / "experiments" / "finish-guard.jsonl").exists(), "no send-back counted")
+        self.assertEqual(self.hook(stop(self.ws))["decision"], "block", "the build's own session is still guarded")
 
     def test_no_hook_config_registers_a_subagent_stop(self) -> None:
         claude = json.loads((SKILL / "hooks" / "hooks.json").read_text())["hooks"]
@@ -220,10 +228,10 @@ class SubagentGuardTest(unittest.TestCase):
     def tearDown(self) -> None:
         self._tmp.cleanup()
 
-    def guard(self, payload: object, cmd: list[str] | None = None) -> subprocess.CompletedProcess:
+    def guard(self, payload: object, cmd: list[str] | None = None, env: dict | None = None) -> subprocess.CompletedProcess:
         data = payload if isinstance(payload, str) else json.dumps(payload)
         return subprocess.run(cmd or [sys.executable, "-B", str(HOOK), "--subagent"], input=data, capture_output=True,
-                              text=True, timeout=60, env=ENV)
+                              text=True, timeout=60, env=env or ENV)
 
     def test_a_background_agent_is_denied_in_a_build_from_phase_1_on(self) -> None:
         for background in (True, "absent"):
@@ -236,6 +244,12 @@ class SubagentGuardTest(unittest.TestCase):
         nested = self.root / "project" / "builds" / "demo" / "work" / "evaluation"
         nested.mkdir(parents=True)
         self.assertEqual(self.guard(agent(self.root / "project", True)).returncode, 2, "a build under builds/")
+
+    def test_an_executor_session_dispatches_freely(self) -> None:
+        out = self.guard(agent(self.ws, True), env=EXECUTOR)
+        self.assertEqual((out.returncode, out.stdout, out.stderr), (0, "", ""))
+        out = self.guard(cursor_task(self.ws, True), env=EXECUTOR)
+        self.assertEqual((out.returncode, json.loads(out.stdout)), (0, {"permission": "allow"}))
 
     def test_a_foreground_agent_is_allowed(self) -> None:
         out = self.guard(agent(self.ws, False))

@@ -132,10 +132,10 @@ MULTILINE = [
 ]
 
 
-def run_hook(payload: object) -> subprocess.CompletedProcess:
+def run_hook(payload: object, **env: str) -> subprocess.CompletedProcess:
     data = payload if isinstance(payload, str) else json.dumps(payload)
     return subprocess.run([sys.executable, "-B", str(HOOK)], input=data, capture_output=True, text=True,
-                          timeout=30, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1"})
+                          timeout=30, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **env})
 
 
 def bash(command: str) -> dict:
@@ -144,6 +144,12 @@ def bash(command: str) -> dict:
 
 
 class KillGuardTest(unittest.TestCase):
+    def test_an_executor_session_is_guarded_too(self) -> None:
+        """CSA_EXECUTOR quiets only the finish and subagent guards; an executor's pattern kill is still blocked."""
+        out = run_hook(bash("pkill -f 'po_tools.py lookup-header'"), CSA_EXECUTOR="1")
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("pattern kills hit unrelated processes", out.stderr)
+
     def test_native_windows_lets_the_call_through_with_one_message(self) -> None:
         code = f"import os, pathlib, runpy, shutil, subprocess, tempfile; os.name = 'nt'; runpy.run_path({str(HOOK)!r}, run_name='__main__')"
         out = subprocess.run([sys.executable, "-B", "-c", code], input="{}", capture_output=True, text=True, timeout=30)

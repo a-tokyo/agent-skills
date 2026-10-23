@@ -16,6 +16,9 @@ With --subagent it is the subagent guard instead (hosts.md "Subagent guard"): in
   Claude Code  PreToolUse Agent {"tool_input": {"run_in_background"}}: absent or true denies (exit 2, reason
                on stderr); legacy Task denies only true.
   Cursor       preToolUse Task: run_in_background true denies; always JSON {"permission", ...}.
+
+Both stay inert in a session started with CSA_EXECUTOR=1 in its environment: an executor or judge the build runs
+with `--plugin-dir` for the kill guard (phase-3.md 3.4), which may start at the build root.
 """
 
 from __future__ import annotations
@@ -42,6 +45,12 @@ FOREGROUND = ("Blocked by create-skill-autoresearch's subagent guard: dispatch r
               "which abandons the build.")
 SUBAGENT_EVENTS = {"SubagentStop", "subagentStop"}
 LOG = Path("work") / "experiments" / "finish-guard.jsonl"
+EXECUTOR_ENV = "CSA_EXECUTOR"
+
+
+def executor() -> bool:
+    """This hook runs in an executor or judge session (CSA_EXECUTOR set), never the build's own."""
+    return bool(os.environ.get(EXECUTOR_ENV))
 
 
 def builds(root: Path, started: bool = False) -> list[Path]:
@@ -153,7 +162,7 @@ def subagent_main() -> int:
         if not isinstance(event, dict):
             raise ValueError("the event is not a JSON object")
         cursor = event.get("hook_event_name") == CURSOR_PRE_TOOL
-        deny = background(event) and any(builds(root, started=True) for root in _roots(event))
+        deny = not executor() and background(event) and any(builds(root, started=True) for root in _roots(event))
     except Exception as exc:  # noqa: BLE001  (the guard must never stop every subagent on its own failure)
         print(f"subagent guard: {type(exc).__name__}: {exc}; subagent allowed", file=sys.stderr)
         print(json.dumps(ALLOW))
@@ -173,7 +182,7 @@ def main() -> int:
         return subagent_main()
     try:
         event = json.load(sys.stdin)
-        reply = decide(event) if isinstance(event, dict) else {}
+        reply = decide(event) if isinstance(event, dict) and not executor() else {}
     except Exception as exc:  # noqa: BLE001  (the guard must never trap a turn on its own failure)
         print(f"finish guard: {type(exc).__name__}: {exc}; turn allowed to end", file=sys.stderr)
         reply = {}

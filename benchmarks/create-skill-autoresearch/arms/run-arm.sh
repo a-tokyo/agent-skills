@@ -242,21 +242,16 @@ if [ "$HOST" = "cursor" ]; then
   ) <"/dev/null" >"$RUN/transcript.txt" 2>&1
 EXIT_CODE=$?
 else
-# Cost metering (scoring/cost.py) reads usage from session logs under $HOME/.claude/projects. A builder's
-# executor started with `claude -p --no-session-persistence` leaves none, so its spend went uncounted. This
-# shim, first on the build's PATH, drops that one flag, logs the call, and runs the real CLI unchanged.
+# The build's `claude` is a shim (arms/claude-shim.sh): it logs each call, drops --no-session-persistence so
+# cost metering sees every executor, and on a hooked factory arm loads the factory plugin (its kill guard) into
+# any `-p` call that lacks --plugin-dir.
 REAL_CLAUDE="$(command -v claude)"
+GUARD_PLUGIN=""
+[ -n "${PLUGIN_ARGS[*]+x}" ] && GUARD_PLUGIN="${PLUGIN_ARGS[1]}"
 mkdir -p "$RUN/bin"
-cat >"$RUN/bin/claude" <<SHIM
-#!/bin/sh
-printf '%s\n' "\$(date +%s)" >>"$RUN/claude-calls.log"
-for arg do
-  shift
-  [ "\$arg" = "--no-session-persistence" ] || set -- "\$@" "\$arg"
-done
-exec "$REAL_CLAUDE" "\$@"
-SHIM
-chmod +x "$RUN/bin/claude"
+# shellcheck source=claude-shim.sh
+. "$HERE/claude-shim.sh"
+write_claude_shim "$RUN/bin/claude" "$REAL_CLAUDE" "$RUN/claude-calls.log" "$GUARD_PLUGIN"
 ( cd "$WORK" && perl -e 'alarm shift @ARGV; exec @ARGV' -- "$TIMEOUT" env -i \
     PATH="$RUN/bin:$PATH" HOME="$HOME" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" SHELL="${SHELL:-/bin/bash}" \
     XDG_CONFIG_HOME="$XDG_CONFIG_HOME" XDG_CACHE_HOME="$XDG_CACHE_HOME" XDG_DATA_HOME="$XDG_DATA_HOME" \

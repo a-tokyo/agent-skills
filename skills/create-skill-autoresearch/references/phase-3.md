@@ -119,6 +119,12 @@ real artifact (migrate, refactor, scaffold) or bundles `scripts/` cannot be scor
 call: evaluate by **execution against a real artifact with an objective real-world metric**, its ground
 truth replacing the judge ([benchmark-standard.md](benchmark-standard.md)).
 
+**An agentic executor runs guarded**, in `evaluate.sh` and `run-case.sh` alike: start it in a scratch directory
+(`mktemp -d`) holding the case's fixtures, never the build root, as `CSA_EXECUTOR=1 claude -p --plugin-dir <skill-dir> …`
+(`<skill-dir>`: this factory's directory; Cursor: `cursor-agent -p --plugin-dir <skill-dir>`), and start a headless judge
+the same way. An executor runs shell commands and the factory's hooks do not reach a session you start, so the plugin
+loads the kill guard there; `CSA_EXECUTOR=1` keeps the plugin's finish and subagent guards inert in that session.
+
 A worked judge call with its METRIC lines: `self-test/evaluation/evaluate.sh` in the [agent-skills-harness](https://github.com/a-tokyo/agent-skills-harness).
 
 ### evaluate.sh Contract

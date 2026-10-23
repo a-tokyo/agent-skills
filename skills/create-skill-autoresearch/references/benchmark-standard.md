@@ -94,7 +94,8 @@ gate gold standards on the pinned model:
   copy of the case's fixtures, the skill directory beside them: the host's headless CLI from
   [hosts.md](hosts.md), e.g. `cursor-agent -p --force --trust`, `codex exec --skip-git-repo-check`,
   `opencode run`, `claude -p`) when the skill bundles `scripts/` or acts on files — one call cannot run a
-  script or write a file. Pass the choice to `gate.py --executor`.
+  script or write a file; it runs with the factory's kill guard loaded (`CSA_EXECUTOR=1 claude -p --plugin-dir
+  <skill-dir>`, [phase-3.md](phase-3.md) 3.4). Pass the choice to `gate.py --executor`.
 - **Score**: each run is the fraction of the case's graders that pass (0-1), skill-fired indicators excluded:
   the 3.6 suite's graders where one exists, else the checks `run-case.sh` applies to the gold standard
   (deterministic first). Mechanical graders (`regex`, file checks) are applied directly. An `llm` grader is

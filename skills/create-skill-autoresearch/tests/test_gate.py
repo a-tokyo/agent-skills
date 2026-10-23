@@ -787,6 +787,16 @@ class GateManualTest(TempWorkspace):
         with_after, without_after = counts()
         return out, with_after - with_before, without_after - without_before
 
+    def test_run_case_runs_as_an_executor(self) -> None:
+        """CSA_EXECUTOR=1 reaches run-case.sh, so a guarded executor it starts keeps the finish guard inert."""
+        self.make_build(["input-01"], invoked=False)
+        self.write_adapter(SCORING_ADAPTER.replace(
+            'echo "EXECUTOR=$GATE_EXECUTOR"', 'echo "EXECUTOR=$GATE_EXECUTOR"; echo "${CSA_EXECUTOR:-unset}" >> work/pids/marker'))
+        (self.ws / "work" / "evaluation" / "score.py").write_text("print('SCORE=1')\n")
+        out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertEqual(set((self.ws / "work" / "pids" / "marker").read_text().split()), {"1"})
+
     def test_a_re_gate_reuses_the_cached_without_arm(self) -> None:
         calls = self.baseline_build()
         out, with_runs, without_runs = self.gate_runs(calls)

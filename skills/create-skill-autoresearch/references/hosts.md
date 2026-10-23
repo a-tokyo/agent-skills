@@ -43,7 +43,9 @@ switch only when the user asks for manual-only there.
 The same command serves every headless role: the 3.4 executor and judge, the manual-protocol agentic
 executor and `llm` grader (benchmark-standard.md), and a fresh-session subagent. Pass the skill as context
 in the prompt (or install it in the run's workspace for an agentic run), keep stdin closed (`</dev/null`),
-and set a timeout. Choose the judge from a different model family than the builder when the host offers
+and set a timeout. An executor or judge on Claude Code or Cursor also gets `--plugin-dir <skill-dir>` and
+`CSA_EXECUTOR=1` (phase-3.md 3.4): the kill guard loads, the finish and subagent guards stay inert; on Codex and
+OpenCode a user-level hook install already covers it. Choose the judge from a different model family than the builder when the host offers
 one (`cursor-agent --list-models`, `opencode models`). `codex exec` refuses a directory outside a git repository
 unless given `--skip-git-repo-check`, and the judge and executor run in scratch directories, so always pass it.
 Verified: Cursor and Claude Code.
@@ -107,8 +109,8 @@ dispatched before `output/<skill>/SKILL.md` exists) — it denies a subagent tha
 the rule: dispatch researchers and panel roles in the foreground, and for parallel roles put several Agent calls in
 one message (they run in parallel and the turn waits for all). Why: headless `claude -p` stops background tasks 10
 minutes after the last turn, so a main session that dispatches a subagent in the background and ends its turn to wait
-abandons the build (3 of 20 Haiku task-2 builds in the 2026-10-22 matrix). Input it cannot read, or an error of its
-own, lets the subagent start.
+abandons the build (3 of 20 Haiku task-2 builds in the 2026-10-22 matrix). Input it cannot read, an error of its
+own, or `CSA_EXECUTOR` in its environment (an executor or judge session, phase-3.md 3.4) lets the subagent start.
 
 | Host | Ships as | Denies | Status |
 |---|---|---|---|
@@ -122,7 +124,8 @@ own, lets the subagent start.
 guard; with none, the turn ends). Only in a factory build — the session's directory, or a `builds/<name>/` under it,
 holding `work/evaluation/` and `output/<skill>/SKILL.md` — it runs `check_gate.py --finish`, and when that fails it
 sends the agent back with the reason, logged to `work/experiments/finish-guard.jsonl`. It never sends it back twice
-in a row, and ends the turn on any error of its own. That log is also its count: after `max_finish_sendbacks`
+in a row, and ends the turn on any error of its own or with `CSA_EXECUTOR` in its environment (an executor or
+judge session started at the build root, phase-3.md 3.4). That log is also its count: after `max_finish_sendbacks`
 (verdict-rules.json, 3) send-backs to a build, the next stop ends the turn with one stderr line saying the build ends
 unfinished (`check_gate.py --finish` still fails it), which bounds an alternating stop/continue loop (one Haiku
 build was sent back 30 times). Phases 1-2 are never sent back or counted (no `output/<skill>/SKILL.md` yet); from

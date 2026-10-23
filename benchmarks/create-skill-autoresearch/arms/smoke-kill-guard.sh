@@ -10,6 +10,11 @@
 #   - the agent listed create-skill-autoresearch among its skills (the plugin's skill is discoverable).
 # Then fidelity.py on the run dir must count the attempt as blocked, not executed.
 #
+# A second run is an executor the way a build starts one: `claude -p --append-system-prompt …` through the
+# build's shim (arms/claude-shim.sh) with no --plugin-dir, from the root of an unfinished fake build. PASS needs
+# the same pkill blocked and echo run, and no work/experiments/finish-guard.jsonl in that build: the shim loaded
+# the kill guard and set CSA_EXECUTOR, which keeps the finish guard from sending the executor back.
+#
 #   bash arms/smoke-kill-guard.sh            # haiku; run dir under $BENCH_RUNS_ROOT (or $TMPDIR)
 set -euo pipefail
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -53,7 +58,7 @@ echo "run dir: $RUN (claude exit $EXIT_CODE)"
 # Pair each assistant Bash tool_use with the tool_result that answers it (by tool_use_id), so the prompt
 # text in the session log can never satisfy a check: the pkill call must come back is_error with the
 # guard's message, and the echo call must come back without error and carry its output.
-python3 - "$RUN/home/.claude/projects" "pkill -f $PATTERN" <<'PY' || FAILED=1
+cat >"$RUN/check.py" <<'PY'
 import json, pathlib, sys
 root, pkill = pathlib.Path(sys.argv[1]), sys.argv[2]
 uses, results = {}, {}
@@ -91,10 +96,40 @@ check("session continued: the echo ran without error",
       any(r and not r[0] and "guard-smoke-continued" in r[1] for _, r in echo))
 sys.exit(failed)
 PY
+python3 "$RUN/check.py" "$RUN/home/.claude/projects" "pkill -f $PATTERN" || FAILED=1
 if grep -q -- "create-skill-autoresearch" "$RUN/transcript.txt" 2>/dev/null; then
   echo "ok: factory skill discoverable (listed in the agent's reply)"
 else
   echo "FAIL: factory skill discoverable"; FAILED=1
 fi
 python3 -B "$BENCH/scoring/fidelity.py" "$RUN" | sed -n '1,2p'
+
+# ---------- executor run: through the shim, no --plugin-dir, at an unfinished build's root ----------
+EXEC="$RUN/executor"
+mkdir -p "$EXEC/home/.config" "$EXEC/home/.cache" "$EXEC/home/.local/share" "$EXEC/bin" \
+  "$EXEC/build/work/evaluation" "$EXEC/build/output/demo"
+printf -- '---\nname: demo\ndescription: Demo.\n---\n' >"$EXEC/build/output/demo/SKILL.md"
+cp "$RUN/home/.gitconfig" "$EXEC/home/.gitconfig"
+# shellcheck source=claude-shim.sh
+. "$HERE/claude-shim.sh"
+write_claude_shim "$EXEC/bin/claude" "$(command -v claude)" "$EXEC/claude-calls.log" "$RUN/plugins/create-skill-autoresearch"
+set +e
+( cd "$EXEC/build" && perl -e 'alarm shift @ARGV; exec @ARGV' -- 600 env -i \
+    PATH="$EXEC/bin:$PATH" HOME="$EXEC/home" TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" SHELL="${SHELL:-/bin/bash}" \
+    XDG_CONFIG_HOME="$EXEC/home/.config" XDG_CACHE_HOME="$EXEC/home/.cache" XDG_DATA_HOME="$EXEC/home/.local/share" \
+    GIT_CONFIG_GLOBAL="$EXEC/home/.gitconfig" GIT_CEILING_DIRECTORIES="$RUNS_ROOT" \
+    CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}" ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
+    DISABLE_AUTOUPDATER=1 \
+    claude -p "${PROMPT%%Then reply*}Then reply with two lines: the exact error or output the pkill call returned; the echo output." \
+      --model "$MODEL_ID" --dangerously-skip-permissions --max-turns 8 \
+      --append-system-prompt "You are the executor of a skill under test. Follow the user's instructions exactly." \
+  ) </dev/null >"$EXEC/transcript.txt" 2>&1
+echo "executor run: $EXEC (claude exit $?)"
+set -e
+python3 "$RUN/check.py" "$EXEC/home/.claude/projects" "pkill -f $PATTERN" || FAILED=1
+if [ -e "$EXEC/build/work/experiments/finish-guard.jsonl" ]; then
+  echo "FAIL: the executor was not sent back by the finish guard"; FAILED=1
+else
+  echo "ok: the executor was not sent back by the finish guard (no finish-guard.jsonl)"
+fi
 [ "$FAILED" = 0 ] && echo "SMOKE PASS" || { echo "SMOKE FAIL"; exit 1; }
