@@ -46,3 +46,17 @@ note="exit=$code"; [ "${HOST:-claude}" = "claude" ] || note="$note host=$HOST"
 echo "$RUN_ID,$ARM,$MODEL,$(metric compliance),$(metric craft),$(metric execution),$(metric overall_score),$wall,claude-cli,$note,$TASK_NAME" \
   >> "$BENCH/results/scores.csv"
 echo "# $RUN_ID: overall=$(metric overall_score) execution=$(metric execution)" >&2
+# The run dir is scratch; its cost and fidelity evidence goes into results/ (tracked) as soon as it exists.
+python3 -B "$BENCH/scoring/cost.py" "$RUN" --json 2>/dev/null | python3 -c '
+import json, sys
+c = json.load(sys.stdin)["builds"]
+for run_id, v in c.items():
+    print(",".join([run_id] + [str(round(v[k])) for k in ("builder", "subagents", "executors", "gate_plugin", "total")]
+                   + [str(v["calls"]), str(v["sessions"])]))' >> "$BENCH/results/costs.csv" \
+  || echo "# $RUN_ID: cost row not written" >&2
+python3 -B "$BENCH/scoring/fidelity.py" "$RUN" 2>/dev/null | python3 -c '
+import json, sys
+text = sys.stdin.read()
+for build in json.loads(text[text.index("{"):])["builds"]:
+    print(json.dumps(build, sort_keys=True))' >> "$BENCH/results/fidelity.jsonl" \
+  || echo "# $RUN_ID: fidelity row not written" >&2
