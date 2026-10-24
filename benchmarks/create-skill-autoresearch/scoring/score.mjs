@@ -5,7 +5,7 @@
 //   <path-to-skill-dir> must contain SKILL.md (the produced skill).
 //
 // Scoring (weights fixed before any benchmark run):
-//   execution  0.60  — a fixed executor model (Haiku, temperature 0) receives the produced
+//   execution  0.60  — a fixed executor model (Haiku 5.5; it accepts no temperature) receives the produced
 //                      SKILL.md as its system prompt and each holdout diff summary as the user
 //                      message; the emitted commit message is parsed field-by-field against
 //                      task/holdout/answer-key.json. No LLM judge anywhere.
@@ -14,6 +14,8 @@
 //
 // Emits METRIC lines to stdout and a JSON report to stderr-adjacent file if --executor-out given.
 // Requires ANTHROPIC_API_KEY for the execution dimension (compliance/craft run without it).
+// An executor fault (API timeout or error after one retry) prints EXECUTOR FAULT, exits 3, and emits no
+// METRIC lines — never a score of 0.
 
 import { readFileSync, existsSync, readdirSync, writeFileSync, mkdirSync, mkdtempSync, rmSync } from "node:fs";
 import { join, dirname } from "node:path";
@@ -23,7 +25,7 @@ import { fileURLToPath } from "node:url";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const TASK = join(HERE, "..", "task");
-export const EXECUTOR_MODEL = "claude-haiku-4-5-20251001";
+export const EXECUTOR_MODEL = "claude-haiku-5-5";
 export const WEIGHTS = { execution: 0.6, compliance: 0.25, craft: 0.15 };
 
 const TYPES = ["feat", "fix", "build", "chore", "ci", "docs", "style", "refactor", "perf", "test"];
@@ -160,7 +162,7 @@ function runExecutorCli(skillText, input, oauthToken) {
       ["-p", EXECUTOR_PROMPT(input), "--model", EXECUTOR_MODEL, "--system-prompt", skillText, "--max-turns", "1"],
       // allowlisted env only — the caller's unrelated secrets must never reach the executor session
       {
-        env: { PATH: process.env.PATH, HOME: home, TERM: "dumb", CLAUDE_CODE_OAUTH_TOKEN: oauthToken },
+        env: { PATH: process.env.PATH, HOME: home, TERM: "dumb", CLAUDE_CODE_OAUTH_TOKEN: oauthToken, DISABLE_AUTOUPDATER: "1" },
         encoding: "utf8", timeout: 240000, stdio: ["ignore", "pipe", "pipe"],
       },
     );
@@ -174,21 +176,53 @@ function runExecutorCli(skillText, input, oauthToken) {
   }
 }
 
-async function runExecutor(skillText, input, apiKey) {
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
-    body: JSON.stringify({
-      model: EXECUTOR_MODEL,
-      max_tokens: 512,
-      temperature: 0,
-      system: skillText,
-      messages: [{ role: "user", content: EXECUTOR_PROMPT(input) }],
-    }),
-  });
-  if (!res.ok) throw new Error(`executor API ${res.status}: ${await res.text()}`);
-  const data = await res.json();
-  return data.content.map((b) => b.text ?? "").join("");
+export const EXECUTOR_TIMEOUT_MS = 120000;
+export const EXECUTOR_ATTEMPTS = 2;
+
+// The executor failed, not the skill: the case gets no score, and the CLI exits without METRIC lines so
+// arms/run-and-score.sh writes no row.
+export class ExecutorFault extends Error {
+  name = "ExecutorFault";
+}
+
+// API executor. Each attempt is bounded by AbortSignal.timeout (request and body); a timeout, network
+// error, 429 or 5xx is retried once, then raised as an ExecutorFault. Other 4xx fail at once.
+export async function runExecutor(skillText, input, apiKey, { fetchImpl = fetch, timeoutMs = EXECUTOR_TIMEOUT_MS } = {}) {
+  let lastFailure = "";
+  for (let attempt = 1; attempt <= EXECUTOR_ATTEMPTS; attempt++) {
+    let res;
+    let data;
+    try {
+      res = await fetchImpl("https://api.anthropic.com/v1/messages", {
+        method: "POST",
+        headers: { "x-api-key": apiKey, "anthropic-version": "2023-06-01", "content-type": "application/json" },
+        body: JSON.stringify({
+          model: EXECUTOR_MODEL,
+          max_tokens: 512,
+          thinking: { type: "disabled" },
+          system: skillText,
+          messages: [{ role: "user", content: EXECUTOR_PROMPT(input) }],
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (res.status === 429 || res.status >= 500) {
+        lastFailure = `API ${res.status}`;
+        continue;
+      }
+      if (!res.ok) throw new ExecutorFault(`executor API ${res.status}: ${await res.text()}`);
+      data = await res.json();
+    } catch (err) {
+      if (err instanceof ExecutorFault) throw err;
+      lastFailure = err.name === "TimeoutError" ? `timed out after ${timeoutMs}ms` : `request failed (${err.message})`;
+      continue;
+    }
+    const text = (data.content ?? []).map((b) => b.text ?? "").join("");
+    if (!text.trim() && data.stop_reason === "max_tokens") {
+      throw new ExecutorFault("executor returned no text before max_tokens — an executor fault, not a skill score");
+    }
+    return text;
+  }
+  throw new ExecutorFault(`executor ${lastFailure} on all ${EXECUTOR_ATTEMPTS} attempts — an executor fault, not a skill score`);
 }
 
 export async function scoreSkill(skillDir, { apiKey, oauthToken, executorOut } = {}) {
@@ -234,7 +268,14 @@ if (isMain) {
   let oauthToken = process.env.CLAUDE_CODE_OAUTH_TOKEN;
   const tokenFile = join(HERE, "..", ".auth-token");
   if (!oauthToken && existsSync(tokenFile)) oauthToken = readFileSync(tokenFile, "utf8").trim();
-  const report = await scoreSkill(skillDir, { apiKey: process.env.ANTHROPIC_API_KEY, oauthToken, executorOut });
+  let report;
+  try {
+    report = await scoreSkill(skillDir, { apiKey: process.env.ANTHROPIC_API_KEY, oauthToken, executorOut });
+  } catch (err) {
+    if (!(err instanceof ExecutorFault)) throw err;
+    console.error(`EXECUTOR FAULT: ${err.message}; not scored`);
+    process.exit(3);
+  }
   console.log(`METRIC compliance=${report.compliance.score.toFixed(3)}`);
   console.log(`METRIC craft=${report.craft.score.toFixed(3)}`);
   console.log(`METRIC execution=${(report.execution?.score ?? 0).toFixed(3)}`);

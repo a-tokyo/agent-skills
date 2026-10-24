@@ -1,0 +1,8 @@
+{
+  "name": "create-skill-autoresearch",
+  "version": "0.3.0",
+  "description": "Factory for building production-grade agent skills, with three hooks: a kill guard that blocks pattern-based process kills in shell commands, a subagent guard that denies a background subagent dispatch inside a build, and a finish guard that sends a build back (at most max_finish_sendbacks times) when the main session ends its turn before check_gate.py --finish passes.",
+  "license": "MIT",
+  "repository": "https://github.com/a-tokyo/agent-skills",
+  "hooks": "hooks/cursor-hooks.json"
+}

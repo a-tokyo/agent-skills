@@ -1,0 +1,144 @@
+# Phases 1-2 Reference
+
+Read on entering Phase 1: the detail of the Phase 1 interview and the Phase 2 research. Phases 3, 4 and 5.0-5.1
+have their own files, read on entering each: [phase-3.md](phase-3.md), [phase-4.md](phase-4.md) and
+[phase-5.md](phase-5.md); the Phase 5.2 panel prompts are in [consensus-protocol.md](consensus-protocol.md).
+
+## Contents
+
+- Phase 1: Interview -- Detailed Question Flow (gold standard intake, manifest)
+- Phase 2: Research -- Subagent Orchestration (researcher prompt, synthesis template)
+
+---
+
+## Phase 1: Interview -- Detailed Question Flow
+
+### What to discover (1.1-1.5)
+
+| Topic | Ask about | Record |
+|-------|-----------|--------|
+| **Purpose and domain** | the problem it solves, the domain, which agent will use it, what "success" looks like | `SKILL_PURPOSE`, `DOMAIN`, `TARGET_USER`, `SUCCESS_CRITERIA` |
+| **Gold standards** | examples of "what good looks like" — input/output pairs, reference artifacts, previously solved problems, existing quality reports; where they are, what format, how many | `GOLD_STANDARD_SOURCE`, `GOLD_STANDARD_FORMAT`, `GOLD_STANDARD_COUNT` |
+| **Study materials** | docs, existing code, transcripts, design docs, reference implementations, specs, style guides | `STUDY_MATERIALS` |
+| **Scope and constraints** | conventions to follow, skills to integrate with, anti-patterns to avoid, target line count (default < 500), and invocation mode — model-invoked (pays permanent context load) or user-invoked (`disable-model-invocation: true`) | `CONSTRAINTS`, `INTEGRATION_SKILLS`, `ANTI_PATTERNS`, `INVOCATION_MODE` |
+| **Existing skill** | is there one for this domain already? If so it is both a study material and a baseline — research it, measure it against the rubric, improve it rather than starting over | `EXISTING_SKILL`, and set mode to **upgrade** rather than **greenfield** |
+
+### Question Sequence
+
+Ask the user these questions directly (use whatever questioning mechanism your agent supports). Gather all answers before proceeding.
+
+**Q1 -- Purpose**: "What skill do you want to build? What problem does it solve?"
+- Follow up: "Who is the target user? An AI coding agent? A CLI tool? A human?"
+- Follow up: "What does success look like when this skill is used correctly?"
+
+**Q2 -- Gold Standards**: "Do you have examples of what good output looks like?"
+- If YES: "Where are they? What format? How many?"
+- If NO: "Can we find reference materials? Previously solved problems? Expert outputs?"
+- If INSUFFICIENT (< 3): "Can we create synthetic examples together? Or find more reference materials?"
+
+**Q3 -- Study Materials**: "What should I study to understand this domain?"
+- Probe for: docs, code, transcripts, specs, style guides, existing skills, external references
+
+**Q4 -- Constraints**: "Any constraints on the skill? Conventions? Integration points? Anti-patterns?"
+- Follow up: "Should the agent fire this skill on its own when it detects the need (model-invoked -- its description then occupies context every turn), or only when you type its name (user-invoked, `disable-model-invocation: true` -- zero context cost, but you must remember it exists)?" Record as `INVOCATION_MODE`; it drives the description style in Phase 3.3 (writing-for-agents; fallback: standalone-fallback.md).
+
+**Q5 -- Confirm**: Present the summary table. Wait for explicit confirmation.
+
+### Gold Standard Intake Formats
+
+The factory supports these gold standard formats:
+
+| Format | Example | How to Use |
+|--------|---------|------------|
+| Input/output pairs | `{ "input": "...", "expected_output": "..." }` | Direct comparison scoring |
+| Reference artifacts | Completed documents, code files | Holistic quality comparison |
+| Previously solved tasks | Task descriptions + solutions | Run skill on task, compare to solution |
+| Quality reports | Existing benchmark scores | Calibrate rubric against known scores |
+
+The user drops gold standards and study materials into `input/` in any structure they prefer. The factory scans `input/`, classifies each item (gold standard vs. study material), and writes its own derived index to `work/manifest.yaml`. The user is NOT asked to hand-author the manifest — they just confirm it looks correct.
+
+```yaml
+# work/manifest.yaml
+pairs:
+  - input: "input-01.md"
+    reference: "output-01.md"
+    tags: ["training"]
+  - input: "input-02.md"
+    reference: "output-02.md"
+    tags: ["validation"]
+  - input: "input-03.md"
+    reference: "output-03.md"
+    tags: ["test"]
+```
+
+### Workspace Layout (1.6)
+
+Each build lives in one self-contained folder, `builds/<skill-name>/`, with three zones:
+
+```
+builds/<skill-name>/
+  input/                  # HUMAN: gold standards + study materials (any structure)
+  work/                   # FACTORY: process artifacts (not shipped)
+    manifest.yaml         #   derived gold-standard index    <- yours to correct
+    research/             #   study notes and dossier
+    evaluation/           #   rubric.yaml (exit criteria), evaluate.sh, judges.yaml, data-split.yaml, run-case.sh,
+                          #   plugin/ (3.6 wrapper plugin + evals/), gate.json + plugin-eval.json or uplift.json (5.0)
+    pids/                 #   run_owned.py job records and logs
+    experiments/          #   results.tsv, autoresearch.jsonl, ideas, run.log, DESIGN.md, craft-decisions.md, premortem.md, panel/
+    handoffs/             #   cross-session context (state.yaml, HANDOFF-*.md)
+  output/<skill-name>/    # FACTORY: the publish-ready skill: SKILL.md, README.md, references/, scripts/ (never evaluation scripts), assets/
+  BENCHMARK.md            # FACTORY: final panel scores, plugin-eval delta, verdict (Phase 5)
+```
+
+---
+
+## Phase 2: Research -- Subagent Orchestration
+
+### Spawning Researchers
+
+For each cluster of study materials, spawn a read-only researcher subagent (the host's own mechanism,
+[hosts.md](hosts.md); with none, run the same prompt as a fresh headless session per cluster, one after another) with:
+
+```
+Prompt: "Study the following materials thoroughly and produce a research note.
+
+Materials to study:
+<list of files/paths>
+
+Your research note must cover:
+1. Key patterns and conventions found in the materials
+2. Quality signals -- what distinguishes good from bad output
+3. Domain-specific terminology and concepts
+4. Potential rubric dimensions (measurable quality aspects)
+5. Anti-patterns or common mistakes to avoid
+
+Write your findings to work/research/<NN>-<topic>.md
+
+Be thorough. Read ALL relevant files. Quote specific examples."
+```
+
+### Synthesis Template
+
+After all researchers complete, create `work/research/00-synthesis.md`:
+
+```markdown
+# Research Synthesis
+
+## Cross-Cutting Patterns
+<Patterns that appear across multiple study materials>
+
+## Quality Signals
+<What makes good output good? What makes bad output bad?>
+
+## Rubric Dimensions (Proposed)
+<List of measurable dimensions with descriptions>
+
+## Conventions to Follow
+<Style, voice, structure, terminology conventions>
+
+## Anti-Patterns to Avoid
+<Common mistakes, bad patterns, traps>
+
+## Key References
+<Links to the most important study materials for the builder>
+```

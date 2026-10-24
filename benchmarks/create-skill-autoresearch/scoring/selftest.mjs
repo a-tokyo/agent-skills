@@ -2,7 +2,9 @@
 // selftest.mjs — offline unit tests for the scorer's probes. No network, no API key.
 // A green run means the checks discriminate; run before trusting any benchmark score.
 
-import { checkCommitMessage, checkCompliance, checkCraft, parseFirstLine } from "./score.mjs";
+import {
+  checkCommitMessage, checkCompliance, checkCraft, parseFirstLine, runExecutor, ExecutorFault, EXECUTOR_ATTEMPTS,
+} from "./score.mjs";
 import { readFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -94,6 +96,44 @@ assert("bad fixture fails concrete example", badK.checks.concrete_example === fa
 
 // --- missing skill dir ---
 assert("missing dir scores 0", checkCompliance(join(HERE, "fixtures", "nope")).score === 0);
+
+// --- API executor: bounded timeout, one retry, then an executor fault (never a score) ---
+const reply = (text) => ({ ok: true, status: 200, json: async () => ({ content: [{ text }], stop_reason: "end_turn" }) });
+function fakeFetch(responses) {
+  const calls = [];
+  const impl = async (url, init) => {
+    calls.push(init);
+    const next = responses[Math.min(calls.length - 1, responses.length - 1)];
+    return typeof next === "function" ? next(init) : next;
+  };
+  return { impl, calls };
+}
+async function rejection(promise) {
+  try { await promise; return null; } catch (err) { return err; }
+}
+const timeoutErr = () => { throw Object.assign(new Error("aborted"), { name: "TimeoutError" }); };
+
+const retried = fakeFetch([timeoutErr, reply("fix: x")]);
+assert("executor retries a timeout once", (await runExecutor("s", "i", "k", { fetchImpl: retried.impl })) === "fix: x"
+  && retried.calls.length === 2);
+assert("executor passes an AbortSignal", retried.calls[0].signal instanceof AbortSignal);
+
+const down = fakeFetch([{ ok: false, status: 503, text: async () => "busy" }]);
+const downErr = await rejection(runExecutor("s", "i", "k", { fetchImpl: down.impl }));
+assert("executor 503 twice is a fault after 2 attempts", downErr instanceof ExecutorFault && down.calls.length === EXECUTOR_ATTEMPTS);
+
+const denied = fakeFetch([{ ok: false, status: 401, text: async () => "bad key" }]);
+const deniedErr = await rejection(runExecutor("s", "i", "k", { fetchImpl: denied.impl }));
+assert("executor 401 faults without a retry", deniedErr instanceof ExecutorFault && denied.calls.length === 1);
+
+// AbortSignal.timeout's timer does not hold the event loop open; the keep-alive stands in for a live socket.
+const hang = fakeFetch([(init) => new Promise((_, reject) => {
+  const keepAlive = setTimeout(() => {}, 10000);
+  init.signal.addEventListener("abort", () => { clearTimeout(keepAlive); reject(init.signal.reason); });
+})]);
+const hangErr = await rejection(runExecutor("s", "i", "k", { fetchImpl: hang.impl, timeoutMs: 50 }));
+assert("executor hang is cut by AbortSignal.timeout", hangErr instanceof ExecutorFault && /timed out after 50ms/.test(hangErr.message)
+  && hang.calls.length === 2, String(hangErr));
 
 console.log(failures === 0 ? "\nSELFTEST PASS" : `\nSELFTEST FAIL (${failures})`);
 process.exit(failures === 0 ? 0 : 1);

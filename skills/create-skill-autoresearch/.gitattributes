@@ -1,0 +1,5 @@
+# A CRLF checkout (Windows git with core.autocrlf, used from WSL) breaks the sh launchers and shell adapters.
+hooks/kill-guard text eol=lf
+hooks/finish-guard text eol=lf
+*.sh text eol=lf
+*.py text eol=lf

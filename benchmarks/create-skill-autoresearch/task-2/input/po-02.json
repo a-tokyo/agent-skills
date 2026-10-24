@@ -1,0 +1,31 @@
+{
+  "site_code": "PT-LIS",
+  "cost_center": "CC-9001",
+  "lines": [
+    {
+      "sku": "LAP-568A",
+      "vendor_id": "V009",
+      "qty": 9,
+      "unit_price_eur": 1262.68,
+      "line_total_eur": 11364.12
+    },
+    {
+      "sku": "DOC-395A",
+      "vendor_id": "V008",
+      "qty": 5,
+      "unit_price_eur": 149.17,
+      "line_total_eur": 745.85
+    },
+    {
+      "sku": "HDM-317A",
+      "vendor_id": "V014",
+      "qty": 10,
+      "unit_price_eur": 7.31,
+      "line_total_eur": 73.1
+    }
+  ],
+  "total_eur": 12183.07,
+  "approval": "director",
+  "it_review": false,
+  "exceptions": []
+}
