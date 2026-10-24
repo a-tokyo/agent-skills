@@ -2,12 +2,16 @@
 """Run the Phase 5.0 eval gate as the owned job `gate` and write its canonical artifact.
 
     gate.py record [--skill NAME] [--backend plugin|manual [--force-manual '<host>: <reason>']]
-    gate.py --detach --model <model> [options]    # check preconditions, start the job, return; then:
+    gate.py --detach --wait --model <model> [options]  # start the job and block (540 s); exit 124: re-issue it
+    gate.py --detach --model <model> [options]    # check preconditions, start the job, return
     gate.py --wait [--wait-timeout 540]           # block; exit 124 = still running: call --wait again
     gate.py --restart --model <model> [options]   # stop only the recorded `gate` group, start it detached
     gate.py --stop                                # stop it and the eval runs it started
 
-Without --detach, --restart, --wait or --stop it starts the job and waits (for a terminal). What it runs, records
+`--detach --wait` is the one command to issue, and to re-issue on exit 124: with a `gate` job running it waits on
+that job, and when the last gate finished on the workspace as it is now with the same options it reports that
+result instead of running it again (only --restart re-runs it). Without --detach, --restart, --wait or --stop it
+starts the job and waits (for a terminal). What it runs, records
 and hashes: references/phase-5.md "Gate Runner"; plugin or manual mode: phase-3.md 3.6; the manual protocol
 and its baseline cache: benchmark-standard.md. `record` writes plugin_eval into data-split.yaml from disk, and
 every gate run records again first. It writes only under work/evaluation/ and work/pids/.
@@ -41,7 +45,7 @@ import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     BASELINE_CACHE, DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
     GateError, baseline_key, baseline_path, cases_sha256, check_skill_name, file_sha256, inputs_sha256,
-    model_invoked, now, omitted_gold, read_baseline, read_data_split, resolve_skill,
+    model_invoked, now, omitted_gold, read_baseline, read_data_split, read_json, resolve_skill,
     log_attempt, skill_sha256, split_sha256, utf8_stdio, write_gate_cases, write_json,
 )
 
@@ -462,7 +466,8 @@ def wait_gate(ws: Path, timeout: float | None, proc: subprocess.Popen | None = N
     if rc == run_owned.EXIT_TIMEOUT:
         last = next((line.strip() for line in reversed(log.splitlines()) if line.strip()), "")
         print(f"gate: still running after {_elapsed(rec.started)}{f' (last: {last})' if last else ''}; call --wait "
-              f"again (exit 124), not run_owned.py status: {WAIT_HINT.format(ws=ws)}", file=sys.stderr)
+              f"again (exit 124), or re-issue the same --detach --wait, not run_owned.py status: "
+              f"{WAIT_HINT.format(ws=ws)}", file=sys.stderr)
         return rc
     sys.stdout.write(log)
     if rc == run_owned.EXIT_NO_STATUS:
@@ -470,11 +475,41 @@ def wait_gate(ws: Path, timeout: float | None, proc: subprocess.Popen | None = N
     return rc
 
 
+# A gate.json in these states does not describe a finished gate on the workspace as it is now.
+RERUN_CODES = {"no_split", "no_gate_record", "bad_gate_record", "gate_unfinished", "gate_unhashed", "stale_skill",
+               "stale_cases", "stale_inputs"}
+SAME_OPTIONS = ("model", "runs", "executor", "in_sample", "force_manual", "fresh_baseline")
+
+
+def _settled(ws: Path, args: argparse.Namespace) -> bool:
+    """The last gate finished on the workspace as it is now, with these options: its result stands."""
+    record = read_json(ws / GATE_RECORD)
+    if not record or not record.get("finished") or any(record.get(k) != getattr(args, k) for k in SAME_OPTIONS):
+        return False
+    return check_gate.validate(ws, args.skill).code not in RERUN_CODES
+
+
 def supervise(ws: Path, args: argparse.Namespace) -> int:
     """Start the gate as the owned job `gate` (stopping a live one first with --restart), then wait for it
-    unless --detach or --restart is given without --wait."""
+    unless --detach or --restart is given without --wait. `--detach --wait` never starts a second gate: it waits
+    on a running one, or reports a settled one."""
     sdir = run_owned.state_dir(ws)
     live = _running(sdir)
+    if args.detach and args.wait and not args.restart:
+        if live:
+            print(f"gate: a `{JOB}` job is already running; waiting on it (gate.py --restart starts over)",
+                  file=sys.stderr)
+            return wait_gate(ws, args.wait_timeout)
+        if _settled(ws, args):
+            print(f"gate: the last gate finished on this workspace with these options; its result follows "
+                  f"(gate.py --restart re-runs it)", file=sys.stderr)
+            try:
+                run_owned.load(sdir, JOB)
+            except run_owned.OwnedError:
+                verdict = check_gate.validate(ws, args.skill)
+                print(verdict.line())
+                return 0 if verdict.valid else EXIT_INVALID
+            return wait_gate(ws, args.wait_timeout)
     if live and not args.restart:
         print(f"gate: a `{JOB}` job is already running (pgid {live['pgid']}, log {live['log']}).\n"
               f"  wait:      {WAIT_HINT.format(ws=ws)}\n"

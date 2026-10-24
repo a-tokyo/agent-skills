@@ -504,6 +504,48 @@ class GateLifecycleTest(TempWorkspace):
         self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
         self.assertIn("GATE INVALID", out.stdout)
 
+    def test_detach_wait_waits_on_a_running_gate(self) -> None:
+        self.make_build(self.CASES)
+        gate = self.detach()
+        try:
+            out = self.run_script("gate.py", "--detach", "--wait", "--model", "m", "--wait-timeout", "1",
+                                  FAKE_MODE="hang")
+            self.assertEqual(out.returncode, 124, out.stderr)
+            self.assertIn("already running; waiting on it", out.stderr)
+            self.assertIn("re-issue the same --detach --wait", out.stderr)
+            self.assertEqual(self.record("gate")["pid"], gate["pid"], "no second gate was started")
+        finally:
+            self.stop()
+
+    def test_detach_wait_reports_a_settled_gate_instead_of_re_running_it(self) -> None:
+        """Re-issued after the gate finished (the 124 race), it reports that result; a change or --restart re-runs."""
+        self.make_build(["input-01"], invoked=False)
+        calls = self.root / "calls.log"
+        self.write_adapter(SCORING_ADAPTER.replace(
+            'echo "EXECUTOR=$GATE_EXECUTOR"', f'echo "EXECUTOR=$GATE_EXECUTOR"; echo run >> {calls}'))
+
+        def gate(*extra: str, model: str = "m") -> tuple[subprocess.CompletedProcess, int]:
+            before = len(calls.read_text().splitlines()) if calls.is_file() else 0
+            out = self.run_script("gate.py", "--detach", "--wait", "--model", model, "--executor", "single-call",
+                                  "--fresh-baseline", *extra)
+            return out, len(calls.read_text().splitlines()) - before
+
+        out, runs = gate()
+        self.assertEqual((out.returncode, runs), (0, 6), out.stdout + out.stderr)
+        out, runs = gate()
+        self.assertEqual((out.returncode, runs), (0, 0), out.stdout + out.stderr)
+        self.assertIn("its result follows (gate.py --restart re-runs it)", out.stderr)
+        self.assertIn("GATE VALID", out.stdout)
+        (self.ws / "work" / "pids" / "gate.json").unlink()
+        out, runs = gate()
+        self.assertEqual((out.returncode, runs), (0, 0), "without the job record, the validator's line")
+        self.assertTrue(out.stdout.startswith("GATE VALID"), out.stdout)
+        self.assertEqual(gate(model="m2")[1], 6, "other options run a new gate")
+        self.assertEqual(gate("--restart")[1], 6, "--restart always runs it again")
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndisable-model-invocation: true\n"
+                                                              "description: Edited.\n---\n")
+        self.assertEqual(gate(model="m2")[1], 6, "a changed skill runs a new gate")
+
     def test_wait_without_a_gate_or_with_bad_options(self) -> None:
         out = self.run_script("gate.py", "--wait")
         self.assertEqual(out.returncode, 3)

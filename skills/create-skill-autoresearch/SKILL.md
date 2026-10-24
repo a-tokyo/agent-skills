@@ -161,7 +161,9 @@ the authoring rules in [references/authoring-rules.md](references/authoring-rule
 
 ### 5.0-5.1 Gate and Premortem
 
-Read [references/phase-5.md](references/phase-5.md) and run 5.0 and 5.1. A gate invalid on a should-trigger or near-miss
+Read [references/phase-5.md](references/phase-5.md) and run 5.0 and 5.1. The gate is one command,
+`python3 <skill-dir>/scripts/gate.py --detach --wait --model <model> …` (phase-5.md 5.0), re-issued only on exit 124.
+A gate invalid on a should-trigger or near-miss
 indicator is a description defect: re-run 4.6 only, then 5.0-5.1 again. **After 5.1, run 5.2's
 `check_gate.py --panel` in the same reply**, never by presenting the risks or announcing the panel. Continue in the
 same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates and a panel consensus on the current skill that allows it, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run (the finish guard repeats it at the end of a turn).

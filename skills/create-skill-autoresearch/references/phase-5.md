@@ -13,14 +13,18 @@ panel (5.2-5.4, SKILL.md) follows 5.1 in the same turn.
 
 ## 5.0 Eval Gate
 
-A full gate runs longer than one shell call waits, so start it detached from the workspace root, then block
-on it with `--wait` (exit 124: still running — call `--wait` again, never poll `run_owned.py status`):
+A full gate runs longer than one shell call waits, so one command, from the workspace root, starts it and blocks on
+it for up to 540 s; give that shell call its longest timeout (Claude Code: `timeout: 600000`):
 
 ```bash
-python3 <skill-dir>/scripts/gate.py --detach --model <model the skill targets> [--in-sample] \
+python3 <skill-dir>/scripts/gate.py --detach --wait --model <model the skill targets> [--in-sample] \
   [--allow-tools Bash Write] [--executor single-call|agentic]
-python3 <skill-dir>/scripts/gate.py --wait [--wait-timeout 540]   # blocks (default 540 s); repeat on 124, else the gate's code
 ```
+
+Exit 124 (still running): re-issue the same command and nothing else — it waits on the running gate, and if the gate
+finished in between it reports that result; never poll `run_owned.py status`, never sleep between calls. Any other exit
+is the gate's own: 0 valid; non-zero names what to fix — fix it and re-issue (a changed skill or gate input starts a
+new gate; `--restart` in place of `--detach` re-runs an unchanged one).
 
 `gate.py` runs as the owned job `gate`, as `run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py …`
 would (log `work/pids/gate.log`), and refuses a second start while it runs. To restart the gate, run
