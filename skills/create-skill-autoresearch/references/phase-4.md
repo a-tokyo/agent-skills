@@ -158,6 +158,10 @@ unreachable `target_score` burns the whole budget and reports "exit criteria not
   in the ideas backlog.
 - Never ask for repeated re-runs toward an unreachable number: report the ceiling, name the binding
   constraint (target too high, or gains below judge variance), and proceed.
+- **The loop guard enforces the fast path, the ceiling and the target rule** (noise floor 0.01): `python3
+  <skill-dir>/scripts/check_gate.py --loop` prints `LOOP DONE: <reason>` or `LOOP OPEN: <reason>`, and while it
+  is done the kill guard denies the metric command. A panel ITERATE or BLOCK newer than the log reopens it for one
+  experiment; a description-only change (4.6) may be scored.
 
 ## Loop Conventions the Factory Owns
 

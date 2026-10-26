@@ -293,7 +293,8 @@ Exit 0 — experiment 0 at `target_score`, its validation score at most 0.05 bel
 since its commit — skips the Phase 4 loop and 4.6: run 3.6, then Phase 5. The 5.0 gate still runs, and on this build
 (experiment 0 the only experiment logged) a gold case with Δ <= 0 or a panel ITERATE returns it to Phase 4 for the
 loop, 4.6, then 5.0 again; from then on 5.4 applies as on any build (`max_panel_rounds`, Δ <= 0 caps the verdict).
-Non-zero names why: run 3.6, then Phase 4.
+Non-zero names why: run 3.6, then Phase 4. Taken, the loop guard (hosts.md) denies `evaluate.sh` with no case
+argument until a gold Δ <= 0 or a panel ITERATE reopens the loop.
 
 ## 3.6 Scaffold the Eval Suite
 

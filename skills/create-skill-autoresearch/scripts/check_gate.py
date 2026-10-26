@@ -2,7 +2,8 @@
 """Validate the Phase 5.0 gate, the panel's receipts and consensus, and the build's end state.
 
     check_gate.py [--workspace DIR] [--skill NAME] [--json]
-                  [--panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish | --fast-path]
+                  [--panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish | --fast-path
+                   | --loop]
 
 No flag: exit 0 only when work/evaluation/gate.json records a finished gate.py run whose hashes still match the
 skill, cases, splits, run-case.sh, gate inputs and artifact, and the mode's artifact (plugin-eval.json or
@@ -13,8 +14,11 @@ a numeric delta per gold case and every Skill indicator passing (phase-5.md 5.0)
 --finish: BENCHMARK.md's verdict stands (SKILL.md 5.1, 5.4): `BUILD FINISHED: ...` or `BUILD UNFINISHED: <reason>`.
 --fast-path: at the end of 3.5, may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or
 `NO FAST PATH: <reason>`; it reads the baseline, the validation check and git, never the gate.
+--loop: is the Phase 4 loop over (phase-4.md 4.3; the loop guard in hooks/kill_guard.py asks the same):
+`LOOP DONE: <reason>` or `LOOP OPEN: <reason>`.
 
-Exit codes: 0 valid (--finish: finished; --fast-path: take it), 1 invalid (unfinished; no fast path), 2 usage error.
+Exit codes: 0 valid (--finish: finished; --fast-path: take it; --loop: done), 1 invalid (unfinished; no fast path;
+open), 2 usage error.
 """
 
 from __future__ import annotations
@@ -41,6 +45,9 @@ BENCHMARK = Path("BENCHMARK.md")
 EXPERIMENT_LOGS = (Path("autoresearch.jsonl"), Path("work") / "experiments" / "autoresearch.jsonl")
 TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
 VALIDATION_DROP = 0.05  # phase-4.md 4.2: validation this far below training is the overfitting warning
+NOISE_FLOOR = 0.01  # phase-4.md Loop Conventions: the noise threshold's absolute minimum
+DISCARDED = {"discard", "discarded", "revert", "reverted", "crash"}  # experiment statuses that are not kept
+REOPENED = {"ITERATE", "BLOCK"}  # panel consensus labels that send the build back to Phase 4
 VERDICT_LINE = re.compile(r"(?im)^[#>*_\s-]*verdict[*_\s]*[:—–-][*_\s`]*"
                           r"(UNSHIPPED|SHIP[ _]+WITH[ _]+CAVEATS|ITERATE|BLOCK|ESCALATE|SHIP)\b")
 
@@ -353,6 +360,15 @@ def _changed_since(workspace: Path, commit: object, skill: str) -> str | None:
     return None
 
 
+def _experiments(workspace: Path) -> tuple[list[dict], list[dict], float]:
+    """(every log entry, the experiment lines, the log's mtime) from the first experiment log that exists; a
+    `type` other than "experiment" (validation_check, description_pass) is not an experiment."""
+    log = next((workspace / p for p in EXPERIMENT_LOGS if (workspace / p).is_file()), None)
+    entries = json_lines(log)
+    experiments = [e for e in entries if "experiment" in e and e.get("type") in (None, "experiment")]
+    return entries, experiments, log.stat().st_mtime if log else 0.0
+
+
 def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
     """(skip the Phase 4 loop, why), decided at the end of 3.5 from what exists then: experiment 0 (the baseline)
     is the only experiment logged and meets target_score, the 4.2 validation check on it passes (a split with a
@@ -363,9 +379,7 @@ def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
         target = panel.read_rubric(workspace).target_score
     except GateError as exc:
         return False, str(exc)
-    log = next((workspace / p for p in EXPERIMENT_LOGS if (workspace / p).is_file()), None)
-    entries = json_lines(log)
-    experiments = [e for e in entries if "experiment" in e and e.get("type") in (None, "experiment")]
+    entries, experiments, _ = _experiments(workspace)
     zero = [e for e in experiments if e.get("experiment") == 0]
     if not zero:
         return False, "no experiment 0 in autoresearch.jsonl (3.5 logs the baseline there)"
@@ -393,6 +407,107 @@ def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
                   "loop (4.1-4.6): run 3.6, then Phase 5")
 
 
+def _gold_non_positive(workspace: Path) -> list[str]:
+    """The gold cases the last finished gate scored at delta <= 0, read from its artifact without the hash checks
+    (the skill may have changed since): [] when there is no such gate or it cannot be read."""
+    record = read_json(workspace / GATE_RECORD)
+    if not record or not record.get("finished") or record.get("mode") not in ("plugin", "manual"):
+        return []
+    try:
+        split = read_data_split(workspace / DATA_SPLIT)
+        plugin = record["mode"] == "plugin"
+        data = read_json(workspace / (PLUGIN_ARTIFACT if plugin else MANUAL_ARTIFACT))
+        if data is None or not split.plugin_eval:
+            return []
+        results = _plugin(data, split.plugin_eval) if plugin else _manual(data, split.plugin_eval, workspace)
+    except (GateError, Invalid):
+        return []
+    return [r.name for r in results if r.kind == "gold" and r.delta is not None and r.delta <= 0]
+
+
+def _without_description(text: str) -> str:
+    """SKILL.md with its frontmatter `description` (and that value's indented continuation lines) removed."""
+    lines = text.splitlines()
+    end = next((i for i, line in enumerate(lines[1:], 1) if line.strip() == "---"), 0) if lines[:1] == ["---"] else 0
+    kept, skipping = [], False
+    for i, line in enumerate(lines):
+        if 0 < i < end:
+            if line.startswith("description:"):
+                skipping = True
+                continue
+            if skipping and line[:1].isspace():
+                continue
+            skipping = False
+        kept.append(line)
+    return "\n".join(kept)
+
+
+def _description_only(workspace: Path, experiments: list[dict], skill: str | None) -> str | None:
+    """The kept experiment whose commit output/<skill>/ differs from only in SKILL.md's description (the 4.6
+    pass, which re-scores before it keeps a new one), or None."""
+    kept = [e for e in experiments if str(e.get("status") or "").lower() not in DISCARDED
+            and isinstance(e.get("commit"), str) and e["commit"].strip()]
+    if not kept:
+        return None
+    try:
+        name = resolve_skill(workspace, skill)
+    except GateError:
+        return None
+    commit, path = kept[-1]["commit"].strip(), f"output/{name}/SKILL.md"
+    diff = _git(workspace, "diff", "--name-only", "--relative", commit, "--", f"output/{name}")
+    new = _git(workspace, "ls-files", "--others", "--exclude-standard", "--", f"output/{name}")
+    old = _git(workspace, "show", f"{commit}:{path}")
+    if any(p is None or p.returncode != 0 for p in (diff, new, old)) or new.stdout.strip() \
+            or diff.stdout.split() != [path]:
+        return None
+    now = (workspace / path).read_text(encoding="utf-8", errors="replace")
+    return str(kept[-1]["experiment"]) if _without_description(old.stdout) == _without_description(now) else None
+
+
+def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
+    """(the Phase 4 loop is over, why), from the experiment log (phase-4.md 4.3): the 3.5 fast path holds, the best
+    kept overall_score is at its maximum (1.0), or the last experiment brought the build to or kept it at
+    target_score with no gain above the noise floor (NOISE_FLOOR, the one noise value on disk) over the best kept
+    before it. It reopens for one more metric run when the panel's latest consensus is ITERATE or BLOCK and newer
+    than the log, when only experiment 0 is logged and a newer gate scored a gold case at delta <= 0 (phase-3.md
+    3.5), or when only the description changed since the last kept experiment (4.6)."""
+    _, experiments, logged = _experiments(workspace)
+    scored = [e for e in experiments if is_number(e.get("metric"))]
+    if not scored:
+        return False, "no scored experiment logged yet"
+    consensus = read_json(workspace / panel.CONSENSUS)
+    label = consensus.get("label") if consensus else None
+    if label in REOPENED and (workspace / panel.CONSENSUS).stat().st_mtime > logged:
+        return False, f"the panel's latest consensus, {label}, is newer than the last logged experiment"
+    gate = workspace / GATE_RECORD
+    if all(e.get("experiment") == 0 for e in experiments) and gate.is_file() and gate.stat().st_mtime > logged \
+            and (names := _gold_non_positive(workspace)):
+        return False, (f"the gate scored gold delta<=0 on {', '.join(names)} with only experiment 0 logged "
+                       "(phase-3.md 3.5)")
+    if fast_path(workspace, skill)[0]:
+        done = "experiment 0 meets target_score: the 3.5 fast path, so run 3.6 first"
+    else:
+        try:
+            target = panel.read_rubric(workspace).target_score
+        except GateError as exc:
+            return False, str(exc)
+        kept = [e for e in scored if str(e.get("status") or "").lower() not in DISCARDED]
+        best = max((e["metric"] for e in kept), default=None)
+        last = scored[-1]
+        prior = max((e["metric"] for e in kept if e is not last), default=None)
+        if best is not None and best >= 1 - 1e-9:
+            done = f"the best overall_score is {best:.3f}, its maximum"
+        elif prior is not None and len(scored) > 1 and max(prior, last["metric"]) + 1e-9 >= target \
+                and last["metric"] <= prior + NOISE_FLOOR + 1e-9:
+            done = (f"experiment {last.get('experiment')} scored {last['metric']:.3f}, no gain above the "
+                    f"{NOISE_FLOOR} noise floor over the best {prior:.3f}, at target_score {target:.2f}")
+        else:
+            return False, "no stop rule holds (fast path, the 1.0 ceiling, at target with no gain)"
+    if (experiment := _description_only(workspace, experiments, skill)) is not None:
+        return False, f"only the description changed since experiment {experiment}: the 4.6 pass may score it"
+    return True, done
+
+
 def main(argv: list[str] | None = None) -> int:
     utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -406,6 +521,7 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument("--consensus", action="store_true", help="5.3: the panel's verdict from the three receipts")
     step.add_argument("--finish", action="store_true", help="the build's end state instead of the gate")
     step.add_argument("--fast-path", action="store_true", help="3.5: may the build skip the Phase 4 loop")
+    step.add_argument("--loop", action="store_true", help="4.3: is the Phase 4 loop over (the loop guard's check)")
     parser.add_argument("--synthesis", action="store_true", help="with --panel-receipt: the synthesis round (5.3)")
     args = parser.parse_args(argv)
     if args.synthesis and not args.panel_receipt:
@@ -416,6 +532,11 @@ def main(argv: list[str] | None = None) -> int:
         print(json.dumps({"fast_path": skip, "reason": reason}) if args.json else
               (f"FAST PATH: {reason}" if skip else f"NO FAST PATH: {reason}"))
         return 0 if skip else 1
+    if args.loop:
+        done, reason = loop_done(workspace, args.skill)
+        print(json.dumps({"loop_done": done, "reason": reason}) if args.json else
+              (f"LOOP DONE: {reason}" if done else f"LOOP OPEN: {reason}"))
+        return 0 if done else 1
     if args.finish:
         done, label, reason = finish(workspace, args.skill)
         print(json.dumps({"finished": done, "verdict": label, "reason": reason}) if args.json else

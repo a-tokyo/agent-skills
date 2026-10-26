@@ -11,7 +11,7 @@ marks what the factory's own tests or benchmark ran.
 - Skills and install
 - Headless runs, judges and executors
 - Subagents
-- Kill guard
+- Kill guard (and the loop guard)
 - Subagent guard
 - Finish guard
 - Operating systems
@@ -71,6 +71,13 @@ saved in one call and killed in the next passes. `run_owned.py` and the rule (st
 recorded PID) are the contract. The hook configs run it through `hooks/kill-guard`, which picks `python3`,
 then `python`; with none, or when the hook fails (`"onFailure": "continue"` on Claude Code), it lets the
 call through.
+
+**Loop guard.** The same hook denies a call that runs a build's Phase 4 metric — `work/evaluation/evaluate.sh` in
+command position with no case argument, resolved against the call's `cd` or the session's directory — while
+`check_gate.py --loop` says the loop is done (phase-4.md 4.3), with "Phase 4 is done (<reason>); go to 5.0".
+`evaluate.sh <case>` always runs (3.5 validation scoring), as does every call in an executor session
+(`CSA_EXECUTOR=1`) or one whose path it cannot resolve (`$WS/…`; OpenCode sends no directory). Best effort, like
+the kill guard.
 
 | Host | Ships as | Install | Status |
 |---|---|---|---|

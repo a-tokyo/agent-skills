@@ -1,5 +1,5 @@
 {
-  "description": "create-skill-autoresearch: the kill guard blocks pattern kills (pkill, killall, pgrep-fed kill) in Bash calls, so stop owned jobs with scripts/run_owned.py; the subagent guard denies a background Agent dispatch inside a factory build (a headless session stops background subagents 10 minutes after its last turn), so researchers and panel roles run in the foreground; the finish guard sends a factory build back when the main session's turn ends (never a subagent's) while scripts/check_gate.py --finish fails, at most max_finish_sendbacks times per build",
+  "description": "create-skill-autoresearch: the kill guard blocks pattern kills (pkill, killall, pgrep-fed kill) in Bash calls, so stop owned jobs with scripts/run_owned.py, and (as the loop guard) a build's Phase 4 metric run once scripts/check_gate.py --loop says the loop is done; the subagent guard denies a background Agent dispatch inside a factory build (a headless session stops background subagents 10 minutes after its last turn), so researchers and panel roles run in the foreground; the finish guard sends a factory build back when the main session's turn ends (never a subagent's) while scripts/check_gate.py --finish fails, at most max_finish_sendbacks times per build",
   "hooks": {
     "PreToolUse": [
       {
