@@ -523,6 +523,7 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument("--fast-path", action="store_true", help="3.5: may the build skip the Phase 4 loop")
     step.add_argument("--loop", action="store_true", help="4.3: is the Phase 4 loop over (the loop guard's check)")
     parser.add_argument("--synthesis", action="store_true", help="with --panel-receipt: the synthesis round (5.3)")
+    parser.add_argument("--verbose", action="store_true", help="longer lines where the default is terse")
     args = parser.parse_args(argv)
     if args.synthesis and not args.panel_receipt:
         parser.error("--synthesis goes with --panel-receipt")
@@ -552,8 +553,8 @@ def main(argv: list[str] | None = None) -> int:
         if args.panel_receipt:
             role, source = args.panel_receipt
             path = panel.write_receipt(workspace, role, Path(source), verdict.skill, skill_sha, args.synthesis)
-            print(f"PANEL RECEIPT: {path.relative_to(workspace).as_posix()} ({role}, round "
-                  f"{2 if args.synthesis else 1}) binds these scores to output/{verdict.skill}/ as it is now")
+            print(f"PANEL RECEIPT: {path.relative_to(workspace).as_posix()} ({role}, round {2 if args.synthesis else 1})"
+                  + (f" binds these scores to output/{verdict.skill}/ as it is now" if args.verbose else ""))
         elif args.consensus:
             print(panel.write_consensus(workspace, verdict.skill, skill_sha).line())
         elif args.panel:

@@ -14,7 +14,8 @@ panel (5.2-5.4, SKILL.md) follows 5.1 in the same turn.
 ## 5.0 Eval Gate
 
 A full gate runs longer than one shell call waits, so one command, from the workspace root, starts it and blocks on
-it for up to 540 s; give that shell call its longest timeout (Claude Code: `timeout: 600000`):
+it for up to 570 s; give that shell call its longest timeout (Claude Code: `timeout: 600000`; its default 120 s
+sends the call to the background):
 
 ```bash
 python3 <skill-dir>/scripts/gate.py --detach --wait --model <model the skill targets> [--in-sample] \
@@ -65,7 +66,7 @@ from the split. In plugin mode it then refreshes `work/evaluation/plugin/skills/
 `output/` and runs this from `work/evaluation/plugin/` as its own owned job:
 
 ```bash
-claude plugin eval . --ablation with-without --runs 3 -j 4 --model <model> --allow-tools Bash Write \
+claude plugin eval . --ablation with-without --runs 3 -j 8 --model <model> --allow-tools Bash Write \
   --scaffold --trust-plugin --no-publish --threshold 0 --json <workspace>/work/evaluation/plugin-eval.json
 ```
 
@@ -75,7 +76,7 @@ runs, `--threshold 0` keeps a low score from failing the run (the verdict reads 
 `--no-publish` keeps the report local. An interrupted or cost-capped run writes `"partial": true`.
 
 In manual mode it calls `work/evaluation/run-case.sh <case> <with|without>` 3 times per arm per case
-(`--jobs` at once, default 4), each run in its own process group with a per-run timeout (default 20
+(`--jobs` at once, default 8), each run in its own process group with a per-run timeout (default 20
 minutes), retries a failed run once, and writes `uplift.json`; a second failure leaves it `"partial": true`
 with an `errors` list. Both modes record `work/evaluation/gate.json` (mode, probe exit code, cases, and
 sha256 hashes, taken when the run starts and checked again when it ends, of `output/<skill-name>/`, the case

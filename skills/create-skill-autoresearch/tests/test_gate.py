@@ -37,12 +37,19 @@ class GatePluginTest(TempWorkspace):
         for flag in ("--ablation", "with-without", "--scaffold", "--trust-plugin", "--no-publish", "--threshold"):
             self.assertIn(flag, argv)
         self.assertEqual(argv[argv.index("--model") + 1], "claude-haiku-5-5")
+        self.assertEqual(argv[argv.index("-j") + 1], "8", "plugin eval's concurrency cap by default")
         record = self.evaluation("gate.json")
         self.assertEqual(record["mode"], "plugin")
         self.assertEqual(record["skill_sha256"], gate_common.skill_sha256(self.ws, "demo"))
         self.assertEqual(record["cases_sha256"], gate_common.cases_sha256(self.ws, self.CASES))
         self.assertEqual(self.record("gate")["cmd"][2], str(SCRIPTS / "gate.py"), "the gate ran as the owned job")
         self.assertEqual(self.run_script("check_gate.py").returncode, 0)
+
+    def test_wait_defaults_fit_one_claude_code_shell_call(self) -> None:
+        import gate  # noqa: E402  (on sys.path through helpers)
+
+        self.assertEqual((gate.WAIT_SECONDS, gate.DEFAULT_JOBS), (570, 8))
+        self.assertLess(gate.WAIT_SECONDS + 15, 600, "returns inside the 600 s a Claude Code Bash call may wait")
 
     def test_summary_separates_gold_cases_from_indicators(self) -> None:
         self.make_build(self.CASES)
@@ -234,6 +241,9 @@ class RecordTest(TempWorkspace):
         out = self.run_script("gate.py", "record")
         self.assertEqual(out.returncode, 0, out.stderr)
         self.assertIn("recorded 2 gate cases for mode plugin", out.stdout)
+        self.assertNotIn("gold-01", out.stdout, "the case list is --verbose detail")
+        verbose = self.run_script("gate.py", "record", "--verbose")
+        self.assertIn("data-split.yaml: gold-01, trigger-1", verbose.stdout)
         split = self.split()
         self.assertEqual((split.plugin_eval, split.plugin_eval_available), (["gold-01", "trigger-1"], 0))
         self.assertTrue(path.read_text().startswith("# split notes\nstrategy: leave-one-out\ntraining: []\n"))
@@ -486,7 +496,11 @@ class GateLifecycleTest(TempWorkspace):
             self.assertEqual(len(out.stderr.strip().splitlines()), 1, out.stderr)
             self.assertIn("still running after", out.stderr)
             self.assertIn("call --wait again", out.stderr)
+            self.assertLess(len(out.stderr), 160, "a short line: every --wait's output stays in the caller's context")
             self.assertEqual(out.stdout, "")
+            verbose = self.run_script("gate.py", "--wait", "--wait-timeout", "1", "--verbose")
+            self.assertEqual(verbose.returncode, 124, verbose.stderr)
+            self.assertIn("gate.log", verbose.stderr, "--verbose names the log")
         finally:
             self.stop()
 
@@ -496,9 +510,15 @@ class GateLifecycleTest(TempWorkspace):
         out = self.run_script("gate.py", "--detach", "--wait", "--model", "m", "--executor", "single-call")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertIn("GATE VALID", out.stdout)
+        self.assertNotIn("started as owned job", out.stderr, "with --wait the result follows; no start line")
         again = self.run_script("gate.py", "--wait", "--wait-timeout", "1")
         self.assertEqual(again.returncode, 0, "a finished gate returns its exit code at once")
-        self.assertIn("GATE VALID", again.stdout)
+        self.assertTrue(again.stdout.startswith("GATE VALID"), "a passed gate: no routine mode line")
+        self.assertNotIn("gate: mode=", again.stdout)
+        verbose = self.run_script("gate.py", "--wait", "--wait-timeout", "1", "--verbose")
+        self.assertEqual(verbose.returncode, 0)
+        self.assertIn("gate: mode=", verbose.stdout, "--verbose keeps the whole log")
+        self.assertIn("GATE VALID", verbose.stdout)
         self.write_adapter(SCORING_ADAPTER.replace('echo "EXECUTOR=$GATE_EXECUTOR"', ""))
         out = self.run_script("gate.py", "--detach", "--wait", "--model", "m", "--executor", "single-call")
         self.assertEqual(out.returncode, 1, out.stdout + out.stderr)

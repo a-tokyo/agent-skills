@@ -47,6 +47,10 @@ class PanelTest(TempWorkspace):
         self.assertIn("correctness: a score of 9 needs evidence", out.stdout)
         out = self.receipt("verifier-a", 9, 9)
         self.assertEqual(out.returncode, 0, out.stdout)
+        self.assertEqual(out.stdout, "PANEL RECEIPT: work/experiments/panel/verifier-a.json (verifier-a, round 1)\n")
+        out = self.run_script("check_gate.py", "--panel-receipt", "verifier-a", str(self.root / "verifier-a.json"),
+                              "--verbose")
+        self.assertIn("binds these scores to output/", out.stdout)
         receipt = json.loads((self.ws / "work" / "experiments" / "panel" / "verifier-a.json").read_text())
         self.assertEqual(receipt["skill_sha256"], gate_common.skill_sha256(self.ws, "demo"))
         self.assertEqual(receipt["rubric_sha256"],
