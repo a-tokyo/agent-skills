@@ -76,8 +76,8 @@ call through.
 command position with no case argument, resolved against the call's `cd` or the session's directory — while
 `check_gate.py --loop` says the loop is done (phase-4.md 4.3), with "Phase 4 is done (<reason>); go to 5.0".
 `evaluate.sh <case>` always runs (3.5 validation scoring), as does every call in an executor session
-(`CSA_EXECUTOR=1`) or one whose path it cannot resolve (`$WS/…`; OpenCode sends no directory). Best effort, like
-the kill guard.
+(`CSA_EXECUTOR=1`) or one whose path it cannot resolve (`$WS/…`). OpenCode sends no directory of its own: its
+plugin passes the session's `directory` as the cwd. Best effort, like the kill guard.
 
 | Host | Ships as | Install | Status |
 |---|---|---|---|

@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import time
@@ -185,6 +186,30 @@ class LoopGuardTest(TempWorkspace):
         (other / "work" / "evaluation").mkdir(parents=True)
         out = self.hook(command=f"cd {other} && ./work/evaluation/evaluate.sh")
         self.assertEqual(out.returncode, 0, "not a build: allowed")
+
+    @unittest.skipUnless(shutil.which("node"), "node not installed")
+    def test_the_opencode_plugin_resolves_a_relative_metric_against_its_directory(self) -> None:
+        """OpenCode sends no cwd of its own: the plugin passes its `directory` init argument as the event's cwd."""
+        self.log({"experiment": 0, "commit": self.git("rev-parse", "HEAD"), "metric": 1.0, "status": "baseline"})
+        plugin = (HOOK.parent / "opencode-kill-guard.js").as_uri()
+
+        def call(directory: str) -> str:
+            script = f"""
+                import {{ KillGuard }} from {json.dumps(plugin)};
+                const hooks = await KillGuard({{ directory: {json.dumps(directory)} }});
+                try {{
+                  await hooks["tool.execute.before"]({{ tool: "bash" }}, {{ args: {{ command: {json.dumps(METRIC)} }} }});
+                  console.log("allowed");
+                }} catch (error) {{ console.log("blocked: " + error.message); }}
+            """
+            env = {k: v for k, v in os.environ.items() if k != "CSA_EXECUTOR"} | {"PYTHONDONTWRITEBYTECODE": "1"}
+            out = subprocess.run([shutil.which("node"), "--input-type=module", "-e", script], capture_output=True,
+                                 text=True, timeout=60, env=env, cwd=self.root)
+            self.assertEqual(out.returncode, 0, out.stderr)
+            return out.stdout.strip()
+
+        self.assertIn("Phase 4 is done", call(str(self.ws)))
+        self.assertEqual(call(str(self.root)), "allowed", "the same relative path from another directory")
 
 
 if __name__ == "__main__":
