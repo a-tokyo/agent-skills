@@ -24,30 +24,38 @@ prices, vendors, codes, a new currency), so a skill that memorises gold outputs 
 standards and the answer key come from one seeded generator and reference solver
 ([`task-2/tools/`](task-2/tools/)), which no arm ever sees.
 
-**task-3** — `freight-quote-builder` ([`task-3/brief.md`](task-3/brief.md)). Turn a free-text
-shipment request into a parcel quote JSON by rating it across carriers against replaceable rate
-tables: volumetric and billable weight, zone rate bands, six surcharges with per-carrier units and
-thresholds, fuel, per-charge currency conversion, business-day delivery dates, and the choice of
-carrier and service. The guide's format part is current; its rules part is two years old, and ten of
-its rules are contradicted by the eight gold quotes, which are desk-log summaries (no base, fuel or
-surcharge amounts). Five holdouts use other rate tables and vary what every training table holds
-constant (rounding and size thresholds, surcharge units, holiday countries, zone postcode ranges,
-box-weight limits). [`task-3/tools/generate.py`](task-3/tools/generate.py) proves every stale rule
-changes a gold quote, every rule changes a holdout score, and no other combination of the stale and
-naive rule variants reproduces all eight gold logs.
+**task-3** — `student-aid-index` ([`task-3/brief.md`](task-3/brief.md)). Turn a FAFSA submission
+summary into the federal Student Aid Index result for the 2027–28 award year: dependency status,
+formula (A, B or C), family size, maximum- and minimum-Pell indicators, the formula's main intermediate
+values and the SAI. The rules are **not in the materials**. They are the published federal methodology
+(Federal Student Aid's 2027–28 SAI and Pell Grant Eligibility Guide, June 2026, and the HHS poverty
+guidelines it points to), which a builder has to research. `materials/format.md` fixes only the file
+formats. Three gold results are summaries (no intermediates) and confirm an implementation without
+teaching one. [`task-3/tools/generate.py`](task-3/tools/generate.py) checks the solver against the
+guide's own worked exemplar, proves the prior edition's rules miss every gold SAI, and proves every
+misread clause in `solve.NAIVE` changes a holdout score while ten of the eleven change no gold SAI.
+Sources, the clause map and the memory pre-flight showing the models do not know the 2027–28 tables are
+in [`task-3/NOTES.md`](task-3/NOTES.md), which no run receives. Six holdouts.
 
-**Task-3 does not yet qualify under Amendment 6** (bare median ≤ 0.70 on both models). Bare-arm
-probes, one build per model per design iteration, 2026-10-30:
+**Task-3 does not qualify under Amendment 6** (bare median ≤ 0.70 on both models), after four designs.
+Bare-arm probes, 2026-10-30 (iterations 1–3: one build per model; iteration 4: three):
 
 | Design iteration (run ids) | bare Sonnet 5.5 | bare Haiku 5.5 |
 |----------------------------|-----------------|----------------|
 | 1 — stale rules, full gold quotes (`t3probe-*`) | 1.000 | 0.932 |
 | 2 — + holdout-only regimes documented in the format guide (`t3i2probe-*`) | 0.933 | 0.921 |
 | 3 — + desk-log gold, heavy-box rule settled (`t3i3probe-*`) | 1.000 | 0.985 |
+| 4 — research variant: rules only in the public 2027–28 SAI guide (`t3r-bare-*`, n=3) | 0.973 / 0.985 / 0.985 (median 0.985) | 0.188 / 1.000 / 0.974 (median 0.974) |
 
-Both models reproduce the gold quotes in 2–6 minutes and implement every rule the guide states. Their
-only misses were one script bug and one rule that no gold quote or guide sentence settled, and that
-rule was then fixed. Rows are in `results/` on this branch only.
+In iterations 1–3 (freight quotes), both models reproduced the gold quotes in 2–6 minutes and implemented
+every rule the guide stated. Their only misses were one script bug and one rule that no gold quote or
+guide sentence settled, and that rule was then fixed. Iteration 4 removed the rules from the materials
+entirely. Every bare build still found the guide by web search (4–8 searches), downloaded the PDF,
+extracted its text and implemented it in 3–12 minutes; five of six scored execution ≥ 0.986. The one low
+build (`t3r-bare-haiku-1`, 0.188) researched too, but kept a "state tax allowance" table from the
+pre-2024 EFC formula, which does not exist in the SAI, and its skill refuses to run without it. A
+complete public standard with a worked exemplar is not a knowledge gap for a builder that can use the
+web. Rows are in `results/` on this branch only.
 
 Holdouts never reach a builder in any task.
 
@@ -123,19 +131,20 @@ headless CLI as the factory describes, so `references/hosts.md` has to carry tha
   was scored under it and had no executor faults, so the later timeout rule changes no `k-*` number.
 
 - **task-3** — [`scoring/score-task3.mjs`](scoring/score-task3.mjs): task-2's agentic executor
-  harness (imported: isolation, retry, env-failure rule), given one holdout `shipment.md` plus the
-  holdout `rates/`, must write `quote.json` — 12 checks (carrier, service, billable kg, base,
-  surcharge codes and amounts, fuel, total within 0.01, delivery date, exception codes and details).
+  harness (imported: isolation, retry, env-failure rule), given one holdout `applicant.md`, must write
+  `sai.json` — 12 checks (valid JSON plus the eleven schema fields, exact integers and nulls: the
+  methodology rounds every step to whole dollars).
   execution 0.80 · compliance 0.15 · craft 0.05, fixed before any task-3 run: compliance and craft are
   near-saturated for every arm, so execution carries the separation. One executor run costs about what
-  a task-2 run does (Haiku 5.5, about $0.003, 6–8 turns, measured on h2 for each).
+  a task-2 run does (Haiku 5.5, $0.003 and 6 turns on h2 with the reference skill). Six holdouts make
+  12 executor runs per score at the default `--runs 2`.
 
 No LLM judge anywhere. `node scoring/selftest.mjs`, `node scoring/selftest-task2.mjs` and
 `node scoring/selftest-task3.mjs` must print `SELFTEST PASS` before any score is trusted. The task-3
-selftest also scores offline baselines: the reference solver 1.000, a skill that trusts the stale
-rules 0.587, and a gold-fitter that reproduces all eight gold logs with constants and shortcuts 0.613.
-A live run of `node scoring/score-task3.mjs scoring/fixtures/t3-good-skill --runs 2` scored 1.000 on
-2026-10-30. A live run of `node scoring/score-task2.mjs
+selftest also scores offline baselines (overall): the reference solver 1.000, the same solver on the
+prior (2026–27) edition's tables and rules 0.700, and a naive reader with the current tables but every
+clause in `solve.NAIVE` misread 0.678. A live run of `node scoring/score-task3.mjs
+scoring/fixtures/t3-good-skill --runs 1` scored 1.000 on 2026-10-30. A live run of `node scoring/score-task2.mjs
 scoring/fixtures/t2-good-skill` (the task-2 reference solver wrapped as a skill) scored 1.000, and of
 `scoring/fixtures/t2-bad-skill` (a generic skill) 0.22, on 2026-10-15.
 
