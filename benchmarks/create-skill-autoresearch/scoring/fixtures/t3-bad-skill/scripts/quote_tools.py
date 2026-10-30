@@ -5,26 +5,35 @@ Usage: solve.py <rates-dir> <shipment.md> [--stale rule,rule]   -> prints the qu
 
 This is the ground truth the gold standards and the holdout answer key are generated from.
 
-`solve(..., stale=...)` switches individual rules to the version a builder gets by trusting the
-written guide (class B, the guide is stale and a gold standard contradicts it) or by fitting the gold
-standards without reading the guide (class A, the guide is right and the gold standards happen not to
-tell the two apart). generate.py uses the switches to prove that every class-B rule is visible in at
-least one gold standard and every rule of either class changes at least one holdout answer.
+`solve(..., stale=...)` switches individual rules to a wrong version, so generate.py can prove where
+each rule shows. Three classes:
 
-Class B (guide stale, gold shows practice):
+Class B (the guide's rules section is stale; at least one gold quote contradicts it):
   divisor       guide: volumetric divisor 5000 for every carrier; practice: carriers.csv dim_divisor
   cutoff        guide: pickup cutoff 17:00; practice: carriers.csv cutoff
   holidays      guide: business days are Mon-Fri; practice: holidays.csv dates are not business days
-  whole_kg      guide: billable weight rounds up to 0.5 kg; practice: above 20 kg, to the next whole kg
+  whole_kg      guide: round up to round_step_kg; practice: a box over heavy_kg rounds to the next whole kg
   per_kg_total  guide: above the last break, last flat price + per-kg x excess; practice: per-kg x all kg
   fuel_base     guide: fuel on the base charge; practice: on base + RES + REM + OVS + OWT (not DG, SIG)
-  girth         guide: oversize when the longest side > 120 cm; practice: or length + girth > 300 cm
+  girth         guide: oversize when the longest side > oversize_cm; practice: or length + girth > girth_cm
   selection     guide: preferred carrier, else lowest base; practice: lowest total EUR
   dg_upgrade    guide: no DG carrier on the service -> DG_NOT_ALLOWED, no quote; practice: next faster
                 service, SERVICE_UPGRADED "<from>-><to>"
   deadline      guide: silent; practice: no option meets the date -> earliest delivery, DEADLINE_MISSED
-Class A (guide right, gold does not separate):
-  sum_round     per-package rounding (naive: round the shipment sum once)
+Class C (the guide's format section is current and states the rule; every training table holds one
+value, so the gold quotes cannot tell the rule from a constant or a shortcut; the holdout tables vary):
+  c_round       carriers.csv round_step_kg / heavy_kg (shortcut: 0.5 and 20)
+  c_size        carriers.csv oversize_cm / girth_cm (shortcut: 120 and 300)
+  c_owt         carriers.csv owt_kg (shortcut: 30)
+  unit_by_code  surcharges.csv unit decides the multiplier (shortcut: RES/DG/SIG per shipment,
+                OVS/OWT per box, REM per kg, whatever the unit says)
+  hol_any       holidays.csv country: only PT and destination holidays count (shortcut: every row)
+  hol_pt        same rule (shortcut: only PT rows)
+  zone_first    zones.csv postcode range rows win over the country row (shortcut: first country row)
+  zone_last     same rule (shortcut: last country row, a dict keyed by carrier and country)
+  max_box       services.csv max_box_kg excludes a service for a heavier box (shortcut: ignored)
+Class A (the guide is right and the gold quotes do not separate it from a naive reading):
+  sum_round     per-box rounding (naive: round the shipment sum once)
   owt_billable  overweight on actual kg (naive: on billable kg)
   fx_total      convert each charge to EUR and round (naive: convert the carrier-currency total once)
 """
@@ -40,12 +49,17 @@ from pathlib import Path
 
 IN_CM = Decimal("2.54")
 LB_KG = Decimal("0.45359237")
+ORIGIN = "PT"
 SERVICE_ORDER = ["economy", "standard", "express"]
 FUEL_CODES = ("RES", "REM", "OVS", "OWT")
 SURCHARGE_ORDER = ("RES", "REM", "OVS", "OWT", "DG", "SIG")
+CODE_UNITS = {"RES": "shipment", "REM": "kg", "OVS": "package", "OWT": "package", "DG": "shipment", "SIG": "shipment"}
+SHORTCUT = {"round_step_kg": "0.5", "heavy_kg": "20", "oversize_cm": "120", "girth_cm": "300", "owt_kg": "30"}
+NUMBER_WORDS = {"one": 1, "two": 2, "three": 3, "four": 4, "five": 5, "six": 6, "seven": 7, "eight": 8,
+                "nine": 9, "ten": 10}
 PKG_RE = re.compile(
-    r"^-\s+(\d+)\s*x\s+(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*(cm|in),\s*"
-    r"(\d+(?:\.\d+)?)\s*(kg|lb)(?:\s+(each|total))?\s*$", re.IGNORECASE)
+    r"^-\s+(\d+|one|two|three|four|five|six|seven|eight|nine|ten)\s*x\s+(\d+(?:\.\d+)?)\s*x\s*(\d+(?:\.\d+)?)\s*x\s*"
+    r"(\d+(?:\.\d+)?)\s*(cm|in),\s*(\d+(?:\.\d+)?)\s*(kg|lb)(?:\s+(each|total))?\s*$", re.IGNORECASE)
 DEST_RE = re.compile(r"^(\d+)\s+(.+?),\s*([A-Z]{2})\s*\((residential|business)\)\s*$", re.IGNORECASE)
 
 
@@ -60,11 +74,12 @@ def read_csv(path: Path) -> list[dict[str, str]]:
 
 def parse_request(text: str) -> dict[str, object]:
     fields: dict[str, str] = {}
-    packages: list[dict[str, Decimal]] = []
+    packages: list[dict[str, object]] = []
     for line in text.splitlines():
         line = line.strip()
         if m := PKG_RE.match(line):
-            count = int(m.group(1))
+            word = m.group(1).lower()
+            count = int(word) if word.isdigit() else NUMBER_WORDS[word]
             dims = [Decimal(m.group(i)) for i in (2, 3, 4)]
             if m.group(5).lower() == "in":
                 dims = [d * IN_CM for d in dims]
@@ -101,53 +116,71 @@ class Rates:
     def __init__(self, master: Path) -> None:
         self.carriers = {c["carrier_id"]: c for c in read_csv(master / "carriers.csv")}
         self.services = read_csv(master / "services.csv")
-        self.zones = {(z["carrier_id"], z["country"]): z["zone"] for z in read_csv(master / "zones.csv")}
+        self.zones = read_csv(master / "zones.csv")
         self.bands: dict[tuple[str, str, str], list[dict[str, str]]] = {}
         for r in read_csv(master / "rates.csv"):
             self.bands.setdefault((r["carrier_id"], r["service"], r["zone"]), []).append(r)
         self.surcharges = {(s["carrier_id"], s["code"]): s for s in read_csv(master / "surcharges.csv")}
         self.remote = read_csv(master / "remote_areas.csv")
-        self.holidays = {date.fromisoformat(h["date"]) for h in read_csv(master / "holidays.csv")}
+        self.holidays = [(date.fromisoformat(h["date"]), h["country"]) for h in read_csv(master / "holidays.csv")]
         self.fx = {r["currency"]: Decimal(r["rate_to_eur"]) for r in read_csv(master / "fx.csv")}
 
 
-def business_day(d: date, rates: Rates, stale: frozenset[str]) -> bool:
-    return d.weekday() < 5 and ("holidays" in stale or d not in rates.holidays)
+def param(carrier: dict, column: str, rule: str, stale: frozenset[str]) -> Decimal:
+    return Decimal(SHORTCUT[column] if rule in stale else carrier[column])
 
 
-def next_business_day(d: date, rates: Rates, stale: frozenset[str]) -> date:
+def closed(d: date, country: str, rates: Rates, stale: frozenset[str]) -> bool:
+    if "holidays" in stale:
+        return False
+    if "hol_any" in stale:
+        return any(day == d for day, _ in rates.holidays)
+    if "hol_pt" in stale:
+        return (d, ORIGIN) in rates.holidays
+    return (d, ORIGIN) in rates.holidays or (d, country) in rates.holidays
+
+
+def business_day(d: date, country: str, rates: Rates, stale: frozenset[str]) -> bool:
+    return d.weekday() < 5 and not closed(d, country, rates, stale)
+
+
+def next_business_day(d: date, country: str, rates: Rates, stale: frozenset[str]) -> date:
     d += timedelta(days=1)
-    while not business_day(d, rates, stale):
+    while not business_day(d, country, rates, stale):
         d += timedelta(days=1)
     return d
 
 
 def delivery_date(req: dict, carrier: dict, transit: int, rates: Rates, stale: frozenset[str]) -> date:
     ship: datetime = req["ship"]
+    country = req["country"]
     cutoff = "17:00" if "cutoff" in stale else carrier["cutoff"]
     pickup = ship.date()
-    if not business_day(pickup, rates, stale) or ship.strftime("%H:%M") >= cutoff:
-        pickup = next_business_day(pickup, rates, stale)
+    if not business_day(pickup, country, rates, stale) or ship.strftime("%H:%M") >= cutoff:
+        pickup = next_business_day(pickup, country, rates, stale)
     for _ in range(transit):
-        pickup = next_business_day(pickup, rates, stale)
+        pickup = next_business_day(pickup, country, rates, stale)
     return pickup
 
 
-def round_billable(kg: Decimal, stale: frozenset[str]) -> Decimal:
-    if kg > 20 and "whole_kg" not in stale:
+def round_billable(kg: Decimal, carrier: dict, stale: frozenset[str]) -> Decimal:
+    if kg > param(carrier, "heavy_kg", "c_round", stale) and "whole_kg" not in stale:
         return kg.to_integral_value(rounding=ROUND_CEILING)
-    return (kg * 2).to_integral_value(rounding=ROUND_CEILING) / 2
+    step = param(carrier, "round_step_kg", "c_round", stale)
+    return (kg / step).to_integral_value(rounding=ROUND_CEILING) * step
+
+
+def volumetric(p: dict, carrier: dict, stale: frozenset[str]) -> Decimal:
+    divisor = Decimal("5000") if "divisor" in stale else Decimal(carrier["dim_divisor"])
+    l, w, h = p["dims"]
+    return l * w * h / divisor
 
 
 def billable_kg(req: dict, carrier: dict, stale: frozenset[str]) -> Decimal:
-    divisor = Decimal("5000") if "divisor" in stale else Decimal(carrier["dim_divisor"])
-    per_pkg = []
-    for p in req["packages"]:
-        l, w, h = p["dims"]
-        per_pkg.append(max(p["kg"], l * w * h / divisor))
+    per_pkg = [max(p["kg"], volumetric(p, carrier, stale)) for p in req["packages"]]
     if "sum_round" in stale:
-        return round_billable(sum(per_pkg, Decimal("0")), stale)
-    return sum((round_billable(kg, stale) for kg in per_pkg), Decimal("0"))
+        return round_billable(sum(per_pkg, Decimal("0")), carrier, stale)
+    return sum((round_billable(kg, carrier, stale) for kg in per_pkg), Decimal("0"))
 
 
 def band_price(bands: list[dict[str, str]], kg: Decimal, stale: frozenset[str]) -> Decimal:
@@ -161,43 +194,69 @@ def band_price(bands: list[dict[str, str]], kg: Decimal, stale: frozenset[str]) 
     return per_kg * kg
 
 
-def oversize(p: dict, stale: frozenset[str]) -> bool:
+def oversize(p: dict, carrier: dict, stale: frozenset[str]) -> bool:
     l, w, h = p["dims"]
-    return l > 120 or ("girth" not in stale and l + 2 * w + 2 * h > 300)
+    if l > param(carrier, "oversize_cm", "c_size", stale):
+        return True
+    return "girth" not in stale and l + 2 * w + 2 * h > param(carrier, "girth_cm", "c_size", stale)
+
+
+def overweight(p: dict, carrier: dict, stale: frozenset[str]) -> bool:
+    kg = max(p["kg"], volumetric(p, carrier, stale)) if "owt_billable" in stale else p["kg"]
+    return kg > param(carrier, "owt_kg", "c_owt", stale)
+
+
+def zone_for(req: dict, rates: Rates, cid: str, stale: frozenset[str]) -> str | None:
+    rows = [z for z in rates.zones if z["carrier_id"] == cid and z["country"] == req["country"]]
+    if not rows:
+        return None
+    if "zone_first" in stale:
+        return rows[0]["zone"]
+    if "zone_last" in stale:
+        return rows[-1]["zone"]
+    for z in rows:
+        if z["postcode_from"] and int(z["postcode_from"]) <= req["postcode"] <= int(z["postcode_to"]):
+            return z["zone"]
+    return next(z["zone"] for z in rows if not z["postcode_from"])
 
 
 def quote(req: dict, rates: Rates, cid: str, svc: dict, stale: frozenset[str]) -> dict | None:
     carrier = rates.carriers[cid]
-    zone = rates.zones.get((cid, req["country"]))
+    zone = zone_for(req, rates, cid, stale)
     if zone is None or (cid, svc["service"], zone) not in rates.bands:
+        return None
+    if "max_box" not in stale and any(p["kg"] > Decimal(svc["max_box_kg"]) for p in req["packages"]):
         return None
     kg = billable_kg(req, carrier, stale)
     base = money(max(band_price(rates.bands[(cid, svc["service"], zone)], kg, stale), Decimal(svc["min_charge"])))
 
-    def amount(code: str) -> Decimal:
-        return Decimal(rates.surcharges[(cid, code)]["amount"])
+    n_box = len(req["packages"])
+    n_ovs = sum(1 for p in req["packages"] if oversize(p, carrier, stale))
+    n_owt = sum(1 for p in req["packages"] if overweight(p, carrier, stale))
+    remote = any(r["carrier_id"] == cid and r["country"] == req["country"]
+                 and int(r["postcode_from"]) <= req["postcode"] <= int(r["postcode_to"]) for r in rates.remote)
+    applies = {"RES": req["residential"], "REM": remote, "OVS": n_ovs > 0, "OWT": n_owt > 0, "DG": req["dg"],
+               "SIG": req["signature"]}
+    boxes = {"OVS": n_ovs, "OWT": n_owt}
 
     sur: dict[str, Decimal] = {}
-    if req["residential"]:
-        sur["RES"] = money(amount("RES"))
-    if any(r["carrier_id"] == cid and r["country"] == req["country"]
-           and int(r["postcode_from"]) <= req["postcode"] <= int(r["postcode_to"]) for r in rates.remote):
-        sur["REM"] = money(max(amount("REM") * kg, Decimal(rates.surcharges[(cid, "REM")]["min"] or "0")))
-    n_ovs = sum(1 for p in req["packages"] if oversize(p, stale))
-    if n_ovs:
-        sur["OVS"] = money(amount("OVS") * n_ovs)
-    if "owt_billable" in stale:
-        divisor = Decimal("5000") if "divisor" in stale else Decimal(carrier["dim_divisor"])
-        n_owt = sum(1 for p in req["packages"]
-                    if max(p["kg"], p["dims"][0] * p["dims"][1] * p["dims"][2] / divisor) > 30)
-    else:
-        n_owt = sum(1 for p in req["packages"] if p["kg"] > 30)
-    if n_owt:
-        sur["OWT"] = money(amount("OWT") * n_owt)
-    if req["dg"]:
-        sur["DG"] = money(amount("DG"))
-    if req["signature"]:
-        sur["SIG"] = money(amount("SIG"))
+    for code in SURCHARGE_ORDER:
+        if not applies[code]:
+            continue
+        row = rates.surcharges[(cid, code)]
+        unit = CODE_UNITS[code] if "unit_by_code" in stale else row["unit"]
+        amount = Decimal(row["amount"])
+        if unit == "package":
+            value = amount * boxes.get(code, n_box)
+        elif unit == "kg":
+            value = amount * kg
+        elif unit == "pct_base":
+            value = amount * base / 100
+        else:
+            value = amount
+        if row["min"]:
+            value = max(value, Decimal(row["min"]))
+        sur[code] = money(value)
     fuel_basis = base if "fuel_base" in stale else base + sum((sur[c] for c in FUEL_CODES if c in sur), Decimal("0"))
     fuel = money(fuel_basis * Decimal(carrier["fuel_pct"]) / 100)
 
@@ -217,7 +276,7 @@ def quote(req: dict, rates: Rates, cid: str, svc: dict, stale: frozenset[str]) -
         "fuel_eur": float(eur(fuel)),
         "total_eur": float(total),
         "delivery_date": delivery_date(req, carrier, int(svc["transit_days"]), rates, stale).isoformat(),
-        "_base_native_eur": eur(base),
+        "_base_eur": eur(base),
         "_preferred": carrier.get("preferred") == "Y",
     }
 
@@ -241,9 +300,7 @@ def options(req: dict, rates: Rates, service: str | None, stale: frozenset[str])
 def pick(cands: list[dict], stale: frozenset[str]) -> dict:
     if "selection" in stale:
         preferred = [q for q in cands if q["_preferred"]]
-        if preferred:
-            return min(preferred, key=lambda q: (q["_base_native_eur"], q["carrier_id"]))
-        return min(cands, key=lambda q: (q["_base_native_eur"], q["carrier_id"]))
+        return min(preferred or cands, key=lambda q: (q["_base_eur"], q["carrier_id"]))
     return min(cands, key=lambda q: (q["total_eur"], q["delivery_date"], q["carrier_id"],
                                      SERVICE_ORDER.index(q["service"])))
 
@@ -253,7 +310,6 @@ def solve(master: Path, request_text: str, stale: frozenset[str] = frozenset()) 
     req = parse_request(request_text)
     exceptions: list[dict[str, str]] = []
     service = req["service"]
-    chosen = None
     if service in SERVICE_ORDER:
         cands = options(req, rates, service, stale)
         if not cands and req["dg"]:

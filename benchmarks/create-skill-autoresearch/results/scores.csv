@@ -583,3 +583,5 @@ n10-t1-factory-v030-haiku-2,factory,haiku,1.000,0.333,0.952,0.871,1614,claude-cl
 n10-t1-factory-v030-haiku-6,factory,haiku,1.000,0.667,0.810,0.836,1120,claude-cli,exit=0,task
 n10-t1-factory-v030-haiku-7,factory,haiku,1.000,0.667,0.810,0.836,1548,claude-cli,exit=0,task
 n10-t1-factory-v030-haiku-9,factory,haiku,1.000,1.000,0.911,0.946,2073,claude-cli,exit=0,task
+t3probe-bare-sonnet-1,bare,sonnet,1.000,1.000,1.000,1.000,186,claude-cli,exit=0,task-3
+t3probe-bare-haiku-1,bare,haiku,0.900,1.000,0.933,0.932,266,claude-cli,exit=0,task-3

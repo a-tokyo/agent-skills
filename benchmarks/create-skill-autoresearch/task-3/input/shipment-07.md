@@ -1,7 +1,7 @@
 # Shipment request 07
 
 Ship date: 2026-06-08 10:20
-Destination: 8100 Sassari, IT (residential)
+Destination: 08100 Sassari, IT (residential)
 Service: standard
 Contents: furniture
 

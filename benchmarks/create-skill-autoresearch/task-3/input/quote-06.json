@@ -1,11 +1,11 @@
 {
-  "carrier_id": "C02",
+  "carrier_id": "C03",
   "service": "standard",
-  "billable_kg": 96.0,
-  "base_eur": 52.79,
+  "billable_kg": 64.0,
+  "base_eur": 54.96,
   "surcharges": [],
-  "fuel_eur": 4.75,
-  "total_eur": 57.54,
+  "fuel_eur": 8.24,
+  "total_eur": 63.2,
   "delivery_date": "2026-06-02",
   "exceptions": []
 }

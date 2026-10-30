@@ -4,9 +4,12 @@
 Usage: generate.py   (writes ../input, ../holdout; idempotent for fixed seeds)
 
 The holdout rate tables use other carriers, divisors, cutoffs, fuel rates, currencies, holidays, zones
-and remote areas than the training tables, so a skill that memorises gold outputs fails. After writing,
-it prints which shipments each stale-guide (class B) and gold-fitting (class A) rule changes, and exits
-non-zero if a class-B rule is invisible in the gold standards or any rule leaves every holdout unchanged.
+and remote areas than the training tables, and they vary what every training table holds constant
+(rounding and size thresholds, surcharge units, holiday countries, zone postcode ranges, box-weight
+limits). After writing, it checks where every rule in solve.py shows and exits non-zero unless:
+  - each class-B rule (stale guide) changes at least one gold quote,
+  - no class-C rule (current guide, constant in training) changes any gold quote,
+  - every class-B and class-C rule changes the SCORE of at least one holdout, not only its JSON.
 """
 from __future__ import annotations
 
@@ -24,56 +27,77 @@ TASK = HERE.parent
 
 CLASS_B = ["divisor", "cutoff", "holidays", "whole_kg", "per_kg_total", "fuel_base", "girth", "selection",
            "dg_upgrade", "deadline"]
+CLASS_C = ["c_round", "c_size", "c_owt", "unit_by_code", "hol_any", "hol_pt", "zone_first", "zone_last", "max_box"]
 CLASS_A = ["sum_round", "owt_billable", "fx_total"]
 COUNTRIES = ["FR", "DE", "ES", "IT", "BE", "AT"]
 FLAT_BREAKS = {"train": [1, 2, 5, 10, 15, 20, 30, 50, 70], "holdout": [0.5, 1, 3, 5, 10, 20, 25, 40, 60]}
+CARRIER_COLUMNS = ["carrier_id", "name", "status", "currency", "dim_divisor", "round_step_kg", "heavy_kg",
+                   "oversize_cm", "girth_cm", "owt_kg", "fuel_pct", "cutoff", "preferred"]
+DEFAULT_UNITS = {"RES": "shipment", "REM": "kg", "OVS": "package", "OWT": "package", "DG": "shipment", "SIG": "shipment"}
 
 DATASETS: dict[str, dict[str, object]] = {
     "train": {
         "seed": 31,
         "out": TASK / "input" / "rates",
-        # carrier_id, name, status, currency, dim_divisor, fuel_pct, cutoff, preferred
+        # every training carrier holds the same thresholds (the guide's), so gold cannot separate them
         "carriers": [
-            ("C01", "Atlas Parcel", "active", "EUR", "5000", "12.5", "16:00", "Y"),
-            ("C02", "Nordic Express", "active", "GBP", "4000", "9", "17:30", "N"),
-            ("C03", "Iberia Freight", "active", "EUR", "6000", "15", "14:00", "N"),
-            ("C04", "Orion Logistics", "suspended", "EUR", "5000", "10", "17:00", "N"),
+            ("C01", "Atlas Parcel", "active", "EUR", "5000", "0.5", "20", "120", "300", "30", "12.5", "16:00", "Y"),
+            ("C02", "Nordic Express", "active", "GBP", "4000", "0.5", "20", "120", "300", "30", "9", "17:30", "N"),
+            ("C03", "Iberia Freight", "active", "EUR", "6000", "0.5", "20", "120", "300", "30", "15", "14:00", "N"),
+            ("C04", "Orion Logistics", "suspended", "EUR", "5000", "0.5", "20", "120", "300", "30", "10", "17:00", "N"),
         ],
-        # carrier, service, transit_days, dg_allowed, price level
+        # carrier, service, transit_days, dg_allowed, price level, max_box_kg
         "services": [
-            ("C01", "express", 1, "Y", 1.9), ("C01", "standard", 3, "Y", 1.0), ("C01", "economy", 5, "N", 0.75),
-            ("C02", "express", 2, "Y", 1.45), ("C02", "standard", 4, "Y", 0.8),
-            ("C03", "standard", 3, "Y", 0.9), ("C03", "economy", 6, "N", 0.62),
-            ("C04", "express", 1, "Y", 1.2), ("C04", "standard", 2, "Y", 0.5), ("C04", "economy", 4, "Y", 0.4),
+            ("C01", "express", 1, "Y", 1.9, 70), ("C01", "standard", 3, "Y", 1.0, 70),
+            ("C01", "economy", 5, "N", 0.75, 70),
+            ("C02", "express", 2, "Y", 1.45, 70), ("C02", "standard", 4, "Y", 0.8, 70),
+            ("C03", "standard", 3, "Y", 0.9, 70), ("C03", "economy", 6, "N", 0.62, 70),
+            ("C04", "express", 1, "Y", 1.2, 70), ("C04", "standard", 2, "Y", 0.5, 70),
+            ("C04", "economy", 4, "Y", 0.4, 70),
         ],
+        "zone_ranges": [],
+        "units": {},
         "remote": [("C01", "FR", 20000, 20999), ("C02", "FR", 20000, 20999), ("C03", "FR", 20000, 20999),
                    ("C01", "IT", 7000, 9999), ("C02", "IT", 7000, 9999), ("C03", "IT", 8000, 9999),
                    ("C01", "ES", 7000, 7999), ("C03", "ES", 7000, 7999), ("C02", "AT", 6500, 6999)],
-        "holidays": [("2026-04-03", "Good Friday"), ("2026-04-25", "Freedom Day"), ("2026-05-01", "Labour Day"),
-                     ("2026-06-04", "Corpus Christi"), ("2026-06-10", "Portugal Day")],
+        "holidays": [("2026-04-03", "PT", "Good Friday"), ("2026-04-25", "PT", "Freedom Day"),
+                     ("2026-05-01", "PT", "Labour Day"), ("2026-06-04", "PT", "Corpus Christi"),
+                     ("2026-06-10", "PT", "Portugal Day")],
         "fx": {"EUR": "1", "GBP": "1.17", "USD": "0.92"},
     },
     "holdout": {
         "seed": 47,
         "out": TASK / "holdout" / "rates",
         "carriers": [
-            ("K11", "Kestrel Cargo", "active", "CHF", "4500", "11", "15:30", "N"),
-            ("K12", "Delta Courier", "active", "EUR", "6000", "14.5", "18:00", "Y"),
-            ("K13", "Polar Post", "suspended", "EUR", "5000", "8", "17:00", "N"),
-            ("K14", "Meridian Freight", "active", "EUR", "5500", "17", "13:30", "N"),
+            ("K11", "Kestrel Cargo", "active", "CHF", "4500", "0.5", "20", "120", "300", "30", "11", "15:30", "N"),
+            ("K12", "Delta Courier", "active", "EUR", "6000", "1", "20", "150", "330", "32", "14.5", "18:00", "Y"),
+            ("K13", "Polar Post", "suspended", "EUR", "5000", "0.5", "20", "120", "300", "30", "8", "17:00", "N"),
+            ("K14", "Meridian Freight", "active", "EUR", "5500", "0.5", "25", "100", "260", "25", "17", "13:30", "N"),
         ],
         "services": [
-            ("K11", "express", 2, "Y", 1.5), ("K11", "standard", 3, "Y", 0.85), ("K11", "economy", 6, "N", 0.6),
-            ("K12", "express", 1, "Y", 1.85), ("K12", "standard", 2, "Y", 1.05), ("K12", "economy", 5, "N", 0.72),
-            ("K13", "express", 1, "Y", 1.1), ("K13", "standard", 2, "Y", 0.5), ("K13", "economy", 3, "Y", 0.4),
-            ("K14", "standard", 4, "Y", 0.8), ("K14", "economy", 7, "N", 0.55),
+            ("K11", "express", 2, "Y", 1.5, 70), ("K11", "standard", 3, "Y", 0.85, 70),
+            ("K11", "economy", 6, "N", 0.6, 70),
+            ("K12", "express", 1, "Y", 1.85, 70), ("K12", "standard", 2, "Y", 1.05, 70),
+            ("K12", "economy", 5, "N", 0.72, 70),
+            ("K13", "express", 1, "Y", 1.1, 70), ("K13", "standard", 2, "Y", 0.5, 70),
+            ("K13", "economy", 3, "Y", 0.4, 70),
+            ("K14", "standard", 4, "Y", 0.8, 20), ("K14", "economy", 7, "N", 0.55, 70),
         ],
+        # carrier, country, postcode_from, postcode_to, zone — listed after the carrier's country row
+        "zone_ranges": [("K12", "IT", 9000, 9999, "Z4"), ("K11", "DE", 18000, 18999, "Z4"),
+                        ("K14", "FR", 20000, 20999, "Z4"), ("K12", "FR", 20000, 20999, "Z4"),
+                        ("K12", "AT", 4000, 4999, "Z3")],
+        "units": {("K12", "RES"): ("pct_base", "6"), ("K14", "RES"): ("pct_base", "9"), ("K11", "SIG"): ("package", None)},
         "remote": [("K11", "IT", 9000, 9999), ("K12", "IT", 9000, 9999), ("K14", "IT", 9000, 9999),
                    ("K11", "DE", 18500, 18599), ("K12", "DE", 18500, 18599), ("K14", "DE", 18000, 18999),
                    ("K11", "ES", 35000, 35999), ("K12", "ES", 35000, 35999), ("K14", "ES", 35000, 35999),
                    ("K12", "FR", 20000, 20999)],
-        "holidays": [("2026-10-05", "Republic Day"), ("2026-11-01", "All Saints"), ("2026-12-01", "Restoration"),
-                     ("2026-12-08", "Immaculate Conception"), ("2026-12-25", "Christmas Day")],
+        "holidays": [("2026-10-05", "PT", "Republic Day"), ("2026-10-12", "ES", "National Day"),
+                     ("2026-11-01", "PT", "All Saints"), ("2026-11-11", "FR", "Armistice"),
+                     ("2026-11-11", "BE", "Armistice"), ("2026-12-01", "PT", "Restoration"),
+                     ("2026-12-07", "ES", "Constitution Day (moved)"), ("2026-12-08", "PT", "Immaculate Conception"),
+                     ("2026-12-08", "IT", "Immaculate Conception"), ("2026-12-08", "AT", "Immaculate Conception"),
+                     ("2026-12-25", "PT", "Christmas Day"), ("2026-12-25", "FR", "Christmas Day")],
         "fx": {"EUR": "1", "GBP": "1.15", "CHF": "1.06", "USD": "0.89"},
     },
 }
@@ -92,20 +116,20 @@ GOLD_REQUESTS = [
      ["2 x 30x25x20 cm, 17.2 kg each"]),
     ("2026-05-27 16:40", "1010 Vienna, AT (business)", "deliver by 2026-06-02", "textiles", "",
      ["4 x 60x40x40 cm, 9.5 kg each"]),
-    ("2026-06-08 10:20", "8100 Sassari, IT (residential)", "standard", "furniture", "",
+    ("2026-06-08 10:20", "08100 Sassari, IT (residential)", "standard", "furniture", "",
      ["1 x 130x60x40 cm, 34 kg", "2 x 60x40x35 cm, 21.3 kg each"]),
     ("2026-06-15 16:30", "50667 Cologne, DE (business)", "deliver by 2026-06-16", "documents", "",
      ["1 x 35x25x10 cm, 1.2 kg"]),
 ]
 
 HOLDOUT_REQUESTS = [
-    ("2026-11-27 14:10", "9120 Cagliari, IT (residential)", "standard", "garden tools", "",
-     ["3 x 70x50x40 cm, 41.4 kg total", "1 x 20x14x10 in, 22 lb"]),
-    ("2026-12-04 15:45", "18546 Sassnitz, DE (business)", "deliver by 2026-12-10", "lithium batteries",
-     "signature required", ["2 x 55x45x35 cm, 16.6 kg each"]),
+    ("2026-11-27 14:10", "09120 Cagliari, IT (residential)", "standard", "garden tools", "",
+     ["three x 70x50x40 cm, 41.4 kg total", "1 x 20x14x10 in, 22 lb"]),
+    ("2026-12-04 15:45", "18546 Sassnitz, DE (business)", "deliver by 2026-12-09", "lithium batteries",
+     "signature required", ["2 x 55x45x35 cm, 16.3 kg each"]),
     ("2026-10-02 11:30", "35001 Las Palmas, ES (residential)", "economy", "lithium batteries", "",
      ["1 x 110x60x55 cm, 24.2 kg"]),
-    ("2026-12-21 09:00", "75011 Paris, FR (business)", "cheapest", "display stands", "signature required",
+    ("2026-11-09 09:00", "75011 Paris, FR (business)", "cheapest", "display stands", "signature required",
      ["2 x 125x40x30 cm, 31.5 kg each", "1 x 60x60x60 cm, 12 kg"]),
     ("2026-11-30 16:05", "4020 Linz, AT (business)", "deliver by 2026-12-01", "laptops", "",
      ["5 x 18x13x4 in, 7.5 lb each"]),
@@ -126,22 +150,20 @@ def build_dataset(name: str, ds: dict[str, object]) -> Path:
         shutil.rmtree(out)
     out.mkdir(parents=True)
     carriers: list[tuple] = ds["carriers"]  # type: ignore[assignment]
-    write_csv(out / "carriers.csv",
-              ["carrier_id", "name", "status", "currency", "dim_divisor", "fuel_pct", "cutoff", "preferred"],
-              [list(c) for c in carriers])
+    write_csv(out / "carriers.csv", CARRIER_COLUMNS, [list(c) for c in carriers])
     currency = {c[0]: c[3] for c in carriers}
     fx = {k: float(v) for k, v in ds["fx"].items()}  # type: ignore[union-attr]
-    services = []
-    zones = []
-    rates = []
+    services, zones, rates = [], [], []
+    ranges: list[tuple] = ds["zone_ranges"]  # type: ignore[assignment]
     for cid, *_ in carriers:
         for country in COUNTRIES:
-            zones.append([cid, country, f"Z{rng.randint(1, 4)}"])
-    zone_of = {(z[0], z[1]): z[2] for z in zones}
-    for cid, svc, transit, dg, level in ds["services"]:  # type: ignore[union-attr]
+            zones.append([cid, country, "", "", f"Z{rng.randint(1, 3)}"])
+            zones += [[c, k, lo, hi, z] for c, k, lo, hi, z in ranges if (c, k) == (cid, country)]
+    zone_names = {(z[0], z[4]) for z in zones}
+    for cid, svc, transit, dg, level, max_box in ds["services"]:  # type: ignore[union-attr]
         min_charge = round(level * rng.uniform(9, 13) / fx[currency[cid]], 2)
-        services.append([cid, svc, transit, f"{min_charge:.2f}", dg])
-        for zone in sorted({z for (c, _), z in zone_of.items() if c == cid}):
+        services.append([cid, svc, transit, f"{min_charge:.2f}", dg, max_box])
+        for zone in sorted(z for c, z in zone_names if c == cid):
             zf = 1 + 0.18 * (int(zone[1]) - 1)
             start = level * zf * rng.uniform(7, 9)
             slope = level * zf * rng.uniform(1.1, 1.5)
@@ -151,24 +173,25 @@ def build_dataset(name: str, ds: dict[str, object]) -> Path:
             last = FLAT_BREAKS[name][-1]
             per_kg = (start + slope * last ** 0.9) / last * rng.uniform(0.78, 0.9) / fx[currency[cid]]
             rates.append([cid, svc, zone, "", f"{per_kg:.2f}", "per_kg"])
-    write_csv(out / "services.csv", ["carrier_id", "service", "transit_days", "min_charge", "dg_allowed"], services)
-    write_csv(out / "zones.csv", ["carrier_id", "country", "zone"], zones)
+    write_csv(out / "services.csv", ["carrier_id", "service", "transit_days", "min_charge", "dg_allowed", "max_box_kg"],
+              services)
+    write_csv(out / "zones.csv", ["carrier_id", "country", "postcode_from", "postcode_to", "zone"], zones)
     write_csv(out / "rates.csv", ["carrier_id", "service", "zone", "max_kg", "price", "rate_type"], rates)
+    units: dict = ds["units"]  # type: ignore[assignment]
     sur = []
     for cid, *_ in carriers:
         f = fx[currency[cid]]
-        sur += [
-            [cid, "RES", f"{rng.uniform(3, 6) / f:.2f}", "shipment", ""],
-            [cid, "REM", f"{rng.uniform(0.35, 0.6) / f:.2f}", "kg", f"{rng.uniform(12, 20) / f:.2f}"],
-            [cid, "OVS", f"{rng.uniform(22, 40) / f:.2f}", "package", ""],
-            [cid, "OWT", f"{rng.uniform(14, 24) / f:.2f}", "package", ""],
-            [cid, "DG", f"{rng.uniform(28, 45) / f:.2f}", "shipment", ""],
-            [cid, "SIG", f"{rng.uniform(2, 4) / f:.2f}", "shipment", ""],
-        ]
+        amounts = {"RES": (rng.uniform(3, 6) / f, ""), "REM": (rng.uniform(0.35, 0.6) / f, rng.uniform(12, 20) / f),
+                   "OVS": (rng.uniform(22, 40) / f, ""), "OWT": (rng.uniform(14, 24) / f, ""),
+                   "DG": (rng.uniform(28, 45) / f, ""), "SIG": (rng.uniform(2, 4) / f, "")}
+        for code, (amount, minimum) in amounts.items():
+            unit, override = units.get((cid, code), (DEFAULT_UNITS[code], None))
+            amount_s = override if override is not None else f"{amount:.2f}"
+            sur.append([cid, code, amount_s, unit, f"{minimum:.2f}" if minimum != "" else ""])
     write_csv(out / "surcharges.csv", ["carrier_id", "code", "amount", "unit", "min"], sur)
     write_csv(out / "remote_areas.csv", ["carrier_id", "country", "postcode_from", "postcode_to"],
               [list(r) for r in ds["remote"]])  # type: ignore[union-attr]
-    write_csv(out / "holidays.csv", ["date", "name"], [list(h) for h in ds["holidays"]])  # type: ignore[union-attr]
+    write_csv(out / "holidays.csv", ["date", "country", "name"], [list(h) for h in ds["holidays"]])  # type: ignore[union-attr]
     write_csv(out / "fx.csv", ["currency", "rate_to_eur"], [[k, v] for k, v in ds["fx"].items()])  # type: ignore[union-attr]
     return out
 
@@ -183,11 +206,18 @@ def request_md(n: str, req: tuple) -> str:
     return "\n".join(lines) + "\n"
 
 
-def coverage(master: Path, texts: dict[str, str]) -> dict[str, list[str]]:
-    hits: dict[str, list[str]] = {}
-    for rule in CLASS_B + CLASS_A:
-        hits[rule] = [k for k, t in texts.items() if solve(master, t, frozenset({rule})) != solve(master, t)]
-    return hits
+def score(got: dict, want: dict) -> float:
+    """Mirror of scoring/score-task3.mjs checkQuote, for the coverage proof only."""
+    near = lambda a, b: isinstance(a, (int, float)) and abs(a - b) <= 0.011  # noqa: E731
+    gs, ws = {s["code"]: s["amount_eur"] for s in got["surcharges"]}, {s["code"]: s["amount_eur"] for s in want["surcharges"]}
+    checks = [True, got["carrier_id"] == want["carrier_id"], got["service"] == want["service"],
+              near(got["billable_kg"], want["billable_kg"]), near(got["base_eur"], want["base_eur"]),
+              sorted(gs) == sorted(ws), sorted(gs) == sorted(ws) and all(near(gs[c], ws[c]) for c in ws),
+              near(got["fuel_eur"], want["fuel_eur"]), near(got["total_eur"], want["total_eur"]),
+              got["delivery_date"] == want["delivery_date"],
+              [e["code"] for e in got["exceptions"]] == [e["code"] for e in want["exceptions"]],
+              [e["detail"] for e in got["exceptions"]] == [e["detail"] for e in want["exceptions"]]]
+    return sum(checks) / len(checks)
 
 
 def main() -> None:
@@ -213,15 +243,21 @@ def main() -> None:
         q = solve(hold if k.startswith("h") else train, t)
         print(k, q["carrier_id"], q["service"], q["billable_kg"], q["total_eur"], q["delivery_date"],
               [s["code"] for s in q["surcharges"]], [e["code"] for e in q["exceptions"]])
-    gold_hits, hold_hits = coverage(train, gold_texts), coverage(hold, hold_texts)
     problems = []
-    for rule in CLASS_B + CLASS_A:
-        cls = "B" if rule in CLASS_B else "A"
-        print(f"{cls} {rule:13s} gold={','.join(gold_hits[rule]) or '-':24s} holdout={','.join(hold_hits[rule]) or '-'}")
-        if cls == "B" and not gold_hits[rule]:
-            problems.append(f"class-B rule {rule} is not visible in any gold standard")
-        if not hold_hits[rule]:
-            problems.append(f"rule {rule} changes no holdout answer")
+    for rule in CLASS_B + CLASS_C + CLASS_A:
+        cls = "B" if rule in CLASS_B else "C" if rule in CLASS_C else "A"
+        gold = [k for k, t in gold_texts.items() if solve(train, t, frozenset({rule})) != solve(train, t)]
+        hits = {k: score(solve(hold, t, frozenset({rule})), key[k]["expected"]) for k, t in hold_texts.items()}
+        hits = {k: s for k, s in hits.items() if s < 1}
+        mean = 1 - sum(1 - s for s in hits.values()) / len(hold_texts)
+        print(f"{cls} {rule:13s} gold={','.join(gold) or '-':24s} holdout={','.join(hits) or '-':16s} "
+              f"execution if only this is wrong={mean:.3f}")
+        if cls == "B" and not gold:
+            problems.append(f"class-B rule {rule} is not visible in any gold quote")
+        if cls == "C" and gold:
+            problems.append(f"class-C rule {rule} changes gold quote(s) {gold}")
+        if cls != "A" and not hits:
+            problems.append(f"rule {rule} changes no holdout score")
     if problems:
         print("COVERAGE FAIL\n- " + "\n- ".join(problems))
         sys.exit(1)

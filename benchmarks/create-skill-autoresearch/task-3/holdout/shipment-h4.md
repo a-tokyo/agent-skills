@@ -1,6 +1,6 @@
 # Shipment request h4
 
-Ship date: 2026-12-21 09:00
+Ship date: 2026-11-09 09:00
 Destination: 75011 Paris, FR (business)
 Service: cheapest
 Contents: display stands

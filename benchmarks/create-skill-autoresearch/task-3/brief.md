@@ -24,16 +24,16 @@ Study them closely; several rules only show when you redo a quote's arithmetic.
 
 ## Study materials (1.3)
 
-- `materials/rating-guide.md` — the written part of the rating rules, the request format, the rate
-  table columns and the output schema. It is two years old; where past quotes disagree with it, past
-  quotes are right. Where past quotes do not settle a question, the guide is right.
+- `materials/rating-guide.md` — the request format, the rate-table columns and the output schema
+  (Part 1, current) and the written rating rules (Part 2, two years old). Where past quotes disagree
+  with Part 2, past quotes are right. Where past quotes do not settle a question, the guide is right.
 - The gold standards above
 
 ## Scope and constraints (1.4)
 
 - **Rate tables are replaced every month.** The skill must work on rate folders it has never seen
-  (different carriers, divisors, cutoffs, fuel rates, currencies, zones, remote areas, holidays and
-  weight breaks). Never hard-code their contents.
+  (different carriers, thresholds, surcharge units, fuel rates, currencies, zones, remote areas,
+  holidays and weight breaks). Never hard-code their contents.
 - **Production rate tables hold thousands of rows.** Do not read whole CSVs into the conversation.
   Deterministic work (unit conversion, weights, band lookups, surcharges, currency, dates, choosing
   the cheapest option) belongs in small bundled script functions; the model's job is reading the

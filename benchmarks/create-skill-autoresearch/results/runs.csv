@@ -668,3 +668,5 @@ n10-t1-factory-v030-haiku-2,factory,haiku,0,1614,0,task,13653517,352905
 n10-t1-factory-v030-haiku-6,factory,haiku,0,1120,0,task,11685863,316429
 n10-t1-factory-v030-haiku-7,factory,haiku,0,1548,0,task,9317894,192368
 n10-t1-factory-v030-haiku-9,factory,haiku,0,2073,0,task,8778219,1306203
+t3probe-bare-sonnet-1,bare,sonnet,0,186,0,task-3,487616,25134
+t3probe-bare-haiku-1,bare,haiku,0,266,0,task-3,1376330,55643
