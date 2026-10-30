@@ -338,6 +338,29 @@ class RecordTest(TempWorkspace):
         self.assertEqual(out.returncode, 3, out.stdout)
         self.assertIn("input/edge-case.md", out.stderr)
 
+    def test_manual_record_reports_manifest_paths_with_spaces_and_quotes(self) -> None:
+        """Round 6 adversary: a manifest path with a space, differently named from the listed ones."""
+        self.manual_files("input-01.md", "input-02.md", "request one.md", "request two.md", "it's.md", "say \"hi\".md",
+                          "flow one.md")
+        (self.ws / "work" / "manifest.yaml").write_text(
+            "pairs:\n"
+            '  - input: "input/request one.md"  # quoted\n'
+            "    reference: output-01.md\n"
+            "  - input: input/request two.md\n"
+            "  - input: 'it''s.md'\n"
+            '  - input: "input/say \\"hi\\".md"\n'
+            "  - {reference: x.md, input: flow one.md, tags: [test]}\n")
+        out = self.run_script("gate.py", "record")
+        self.assertEqual(out.returncode, 3, out.stdout)
+        self.assertIn("leaves out gold standards found on disk: input/flow one.md, input/it's.md, input/request one.md, "
+                      'input/request two.md, input/say "hi".md;', out.stderr)
+
+    def test_manifest_inputs_parses_quoted_plain_and_flow_scalars(self) -> None:
+        text = ('pairs:\n  - input: "a b.md"  # c\n  - input: c d.md\n  - {input: e f.md, reference: g}\n'
+                "  - {reference: g, input: 'h, i.md'}\n  - reference: no-input.md\n  - raw_input: not-me.md\n"
+                "  # input: commented.md\n")
+        self.assertEqual(gate_common.manifest_inputs(text), ["a b.md", "c d.md", "e f.md", "h, i.md"])
+
     def test_manual_record_accepts_a_complete_split(self) -> None:
         self.manual_files("input-01.md", "input-02.md", "output-01.md", "output-02.md")
         out = self.run_script("gate.py", "record")

@@ -44,7 +44,7 @@ TEST_SPLIT_MIN = 10  # phase-4.md 4.2: from this many gold standards a test set 
 _TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
 SKILL_NAME = re.compile(r"[a-z0-9]+(?:-[a-z0-9]+)*")
 BASELINE_KEY = re.compile(r"[0-9a-f]{64}")
-_MANIFEST_INPUT = re.compile(r"""(?:^|[\s{,-])input:\s*["']?([^"',}\s#]+)""")
+_MANIFEST_INPUT = re.compile(r"(^\s*(?:-\s+)?|\{\s*|,\s*)input:[ \t]*")
 
 
 class GateError(Exception):
@@ -219,9 +219,35 @@ def _case_file(ws: Path, entry: str) -> Path | None:
     return found[0].resolve() if len(found) == 1 else None
 
 
+def _scalar(text: str, flow: bool) -> str:
+    """The YAML scalar at the start of `text`: a quoted one up to its closing quote (decoded), else a plain one up
+    to the line's end, or in a flow mapping up to the next `,` or `}`. Plain scalars may hold spaces."""
+    if text[:1] == "'":  # '' is a quote inside
+        match = re.match(r"'((?:[^']|'')*)'", text)
+        return match.group(1).replace("''", "'") if match else ""
+    if text[:1] == '"':
+        i = 1
+        while i < len(text) and text[i] != '"':
+            i += 2 if text[i] == "\\" else 1
+        return _unquote(text[:i + 1]) if i < len(text) else ""
+    return re.split(r"[,}]", text, maxsplit=1)[0].strip() if flow else text.strip()
+
+
+def manifest_inputs(text: str) -> list[str]:
+    """Every `input:` value in work/manifest.yaml (phase-1-2.md): block items (`- input: x`, `input: x`) and flow
+    mappings (`{input: x, reference: y}`), quoted or plain, spaces kept; comments stripped."""
+    found = []
+    for line in text.splitlines():
+        line = _strip_comment(line)
+        for match in _MANIFEST_INPUT.finditer(line):
+            if value := _scalar(line[match.end():], "{" in line[:match.end()]):
+                found.append(value)
+    return found
+
+
 def omitted_gold(ws: Path, listed: list[str]) -> list[str]:
-    """Gold standards on disk that the split's lists leave out: every `input:` path in work/manifest.yaml, and
-    every file beside a listed case file that differs from it only in its numbers (input/input-01.md covers
+    """Gold standards on disk that the split's lists leave out: every `input:` path in work/manifest.yaml (from the
+    workspace root, else from input/), and every file beside a listed case file that differs from it only in its numbers (input/input-01.md covers
     input/input-02.md, ...). Only entries that name a file are checked."""
     ws = ws.resolve()
     listed_files = {f for entry in listed if (f := _case_file(ws, entry))}
@@ -234,9 +260,10 @@ def omitted_gold(ws: Path, listed: list[str]) -> list[str]:
             on_disk.update(p for p in path.parent.iterdir() if p.is_file() and pattern.fullmatch(p.name))
     manifest = ws / "work" / "manifest.yaml"
     if manifest.is_file():
-        for match in _MANIFEST_INPUT.finditer(manifest.read_text(encoding="utf-8", errors="replace")):
-            if (ws / match.group(1)).is_file():
-                on_disk.add((ws / match.group(1)).resolve())
+        for value in manifest_inputs(manifest.read_text(encoding="utf-8", errors="replace")):
+            path = next((p for p in (ws / value, ws / "input" / value) if p.is_file()), None)
+            if path is not None:
+                on_disk.add(path.resolve())
     return sorted(p.relative_to(ws).as_posix() for p in on_disk - listed_files)
 
 
