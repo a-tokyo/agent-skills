@@ -2,7 +2,8 @@
 the OpenCode plugin and the hook configs.
 
 Each case feeds the hook the JSON a host sends on stdin and checks its answer: Claude Code and Codex
-exit 2 to block the call (reason on stderr) and 0 to let it through; Cursor always gets JSON.
+exit 2 to block the call (reason on stderr) and 0 to let it through; Cursor always gets JSON. The guard acts only
+in a factory build or an executor session, so every case runs in a fake build (BUILD) unless it tests that scope.
 
     python3 -B -m unittest discover -s <skill>/tests -v
 """
@@ -23,6 +24,18 @@ SKILL = Path(__file__).resolve().parents[1]
 HOOK = SKILL / "hooks" / "kill_guard.py"
 LAUNCHER = SKILL / "hooks" / "kill-guard"
 SH = "/bin/sh"
+BUILD = Path(tempfile.mkdtemp(prefix="csa-kill-guard-build-"))  # a build past Phase 1: work/manifest.yaml
+OUTSIDE = Path(tempfile.mkdtemp(prefix="csa-kill-guard-outside-"))  # any other directory
+
+
+def setUpModule() -> None:
+    (BUILD / "work").mkdir(exist_ok=True)
+    (BUILD / "work" / "manifest.yaml").write_text("pairs: []\n")
+
+
+def tearDownModule() -> None:
+    shutil.rmtree(BUILD, ignore_errors=True)
+    shutil.rmtree(OUTSIDE, ignore_errors=True)
 
 ALLOWED = [
     "python3 scripts/run_owned.py stop gate",
@@ -132,15 +145,45 @@ MULTILINE = [
 ]
 
 
-def run_hook(payload: object, **env: str) -> subprocess.CompletedProcess:
+def run_hook(payload: object, cwd: Path = BUILD, **env: str) -> subprocess.CompletedProcess:
     data = payload if isinstance(payload, str) else json.dumps(payload)
+    base = {k: v for k, v in os.environ.items() if k != "CSA_EXECUTOR"}
     return subprocess.run([sys.executable, "-B", str(HOOK)], input=data, capture_output=True, text=True,
-                          timeout=30, env={**os.environ, "PYTHONDONTWRITEBYTECODE": "1", **env})
+                          timeout=30, cwd=cwd, env={**base, "PYTHONDONTWRITEBYTECODE": "1", **env})
 
 
-def bash(command: str) -> dict:
-    return {"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash",
-            "tool_input": {"command": command, "description": "test"}, "tool_use_id": "t"}
+def bash(command: str, cwd: Path | None = BUILD) -> dict:
+    event = {"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash",
+             "tool_input": {"command": command, "description": "test"}, "tool_use_id": "t"}
+    return event if cwd is None else {**event, "cwd": str(cwd)}
+
+
+class ScopeTest(unittest.TestCase):
+    """The guard acts only in a factory build or an executor session; installing the plugin changes nothing
+    elsewhere (quality panel, round 6)."""
+
+    def test_outside_a_build_every_call_is_allowed(self) -> None:
+        for command in ("pkill -f gate.py", "killall node", "kill $(pgrep -f eval)"):
+            with self.subTest(command=command):
+                out = run_hook(bash(command, OUTSIDE), cwd=OUTSIDE)
+                self.assertEqual((out.returncode, out.stderr), (0, ""))
+                self.assertEqual(json.loads(run_hook(cursor(command, OUTSIDE), cwd=OUTSIDE).stdout),
+                                 {"permission": "allow"})
+                self.assertEqual(run_hook(bash(command, None), cwd=OUTSIDE).returncode, 0, "no cwd: the hook's own")
+
+    def test_inside_a_build_or_one_under_builds_it_blocks(self) -> None:
+        self.assertEqual(run_hook(bash("pkill -f gate.py", BUILD), cwd=OUTSIDE).returncode, 2)
+        self.assertEqual(run_hook(bash("pkill -f gate.py", None), cwd=BUILD).returncode, 2, "no cwd: the hook's own")
+        with tempfile.TemporaryDirectory() as tmp:
+            nested = Path(tmp) / "builds" / "demo" / "work" / "evaluation"
+            nested.mkdir(parents=True)
+            self.assertEqual(run_hook(bash("pkill -f gate.py", Path(tmp)), cwd=OUTSIDE).returncode, 2)
+            self.assertEqual(json.loads(run_hook(cursor("killall node", Path(tmp))).stdout)["permission"], "deny")
+
+    def test_an_executor_session_is_guarded_anywhere(self) -> None:
+        out = run_hook(bash("pkill -f gate.py", OUTSIDE), cwd=OUTSIDE, CSA_EXECUTOR="1")
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("pattern kills hit unrelated processes", out.stderr)
 
 
 class KillGuardTest(unittest.TestCase):
@@ -207,10 +250,10 @@ class KillGuardTest(unittest.TestCase):
                                  "Cursor blocks a permission hook whose stdout is empty or not JSON")
 
 
-def cursor(command: str) -> dict:
+def cursor(command: str, cwd: Path = BUILD) -> dict:
     return {"conversation_id": "c", "generation_id": "g", "hook_event_name": "beforeShellExecution",
-            "cursor_version": "2026.10.16", "workspace_roots": ["/tmp/ws"], "command": command,
-            "cwd": "/tmp/ws", "sandbox": False}
+            "cursor_version": "2026.10.16", "workspace_roots": [str(cwd)], "command": command,
+            "cwd": str(cwd), "sandbox": False}
 
 
 class CursorContractTest(unittest.TestCase):
@@ -240,7 +283,7 @@ class CodexContractTest(unittest.TestCase):
     """Codex PreToolUse sends the Claude shape (tool_input.command) and honours exit 2 + stderr."""
 
     def test_codex_shell_call(self) -> None:
-        event = {"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": "/tmp/ws",
+        event = {"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Bash", "cwd": str(BUILD),
                  "tool_input": {"command": "pkill -f eval"}}
         out = run_hook(event)
         self.assertEqual(out.returncode, 2)
@@ -274,10 +317,10 @@ class OpenCodePluginTest(unittest.TestCase):
         self.assertEqual(out.returncode, 0, out.stderr)
         return out.stdout.strip()
 
-    def call(self, tool: str, command: str, env: dict[str, str] | None = None) -> str:
+    def call(self, tool: str, command: str, env: dict[str, str] | None = None, directory: Path = BUILD) -> str:
         return self.node(f"""
             import {{ KillGuard }} from {json.dumps(self.PLUGIN)};
-            const hooks = await KillGuard({{}});
+            const hooks = await KillGuard({{ directory: {json.dumps(str(directory))} }});
             try {{
               await hooks["tool.execute.before"]({{ tool: {json.dumps(tool)} }}, {{ args: {{ command: {json.dumps(command)} }} }});
               console.log("allowed");
@@ -290,6 +333,7 @@ class OpenCodePluginTest(unittest.TestCase):
         self.assertTrue(self.call("bash", "killall node").startswith("blocked:"))
         self.assertEqual(self.call("bash", "python3 scripts/run_owned.py stop gate"), "allowed")
         self.assertEqual(self.call("read", "pkill -f gate.py"), "allowed", "only bash calls are checked")
+        self.assertEqual(self.call("bash", "pkill -f gate.py", directory=OUTSIDE), "allowed", "outside a build")
 
     def test_every_export_passes_opencodes_plugin_loader(self) -> None:
         """OpenCode v1.19 (packages/opencode/src/plugin/index.ts getLegacyPlugins) treats every export

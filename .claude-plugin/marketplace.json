@@ -63,7 +63,7 @@
         ]
       },
       "version": "0.3.0",
-      "description": "Factory for building production-grade agent skills: interviews you for purpose and gold standards, researches the domain (gold standards win where docs disagree), drafts the skill with Anthropic's skill-creator, autonomously improves it against an LLM-as-judge (or real-world) metric, gates it with a with/without claude plugin eval, and verifies it with an independent multi-agent panel — delegating to tribunal when installed. Ships a same-model-uplift benchmark standard (scored by execution, honest negatives required) and a publish checklist, and stops the improvement loop on a plateau inside judge variance. Composes its companions instead of copying them (skill-creator, writing-for-agents, autoresearch, premortem, handoff), with a built-in fallback for standalone installs; the full batteries-included environment is the agent-skills-harness."
+      "description": "Factory for building production-grade agent skills: interviews you for purpose and gold standards, researches the domain (gold standards win where docs disagree), drafts the skill with Anthropic's skill-creator, autonomously improves it against an LLM-as-judge (or real-world) metric, gates it with a with/without claude plugin eval, and verifies it with an independent multi-agent panel — delegating to tribunal when installed. Ships a same-model-uplift benchmark standard (scored by execution, honest negatives required) and a publish checklist, and stops the improvement loop on a plateau inside judge variance. Composes its companions instead of copying them (skill-creator, writing-for-agents, autoresearch, premortem, handoff), with a built-in fallback for standalone installs; the full batteries-included environment is the agent-skills-harness. Its hooks (kill, loop, subagent and finish guards) act only inside a factory build."
     },
     {
       "name": "tribunal",
@@ -132,7 +132,7 @@
           }
         ]
       },
-      "description": "Install every skill in this repository as one plugin: production-grade, tailwind-v3-to-v4-migration, create-skill-autoresearch, tribunal, database-documentation, and app-ai-guardrails."
+      "description": "Install every skill in this repository as one plugin: production-grade, tailwind-v3-to-v4-migration, create-skill-autoresearch, tribunal, database-documentation, and app-ai-guardrails. create-skill-autoresearch's hooks act only inside its factory builds."
     }
   ]
 }

@@ -7,8 +7,11 @@ recorded. What it blocks and allows, and each host's install: references/hosts.m
   Cursor              beforeShellExecution {"command": ...}: always JSON on stdout, exit 0, {"permission":
                       "deny", "user_message", "agent_message"} or {"permission": "allow"}.
 
-Input it cannot read is allowed (with Cursor's JSON): the guard must never stop every shell call. It is a
-best-effort tripwire for honest mistakes, not a sandbox: it sees one call at a time.
+It acts only in a factory build (a session directory, or a builds/<name>/ under it, holding work/manifest.yaml or
+work/evaluation/, the subagent guard's test) or an executor session (CSA_EXECUTOR set): anywhere else every call is
+allowed, so installing the plugin changes nothing outside a build. Input it cannot read is allowed (with Cursor's
+JSON): the guard must never stop every shell call. It is a best-effort tripwire for honest mistakes, not a sandbox:
+it sees one call at a time.
 
 The loop guard rides on the same hook: a call that runs a build's Phase 4 metric (`work/evaluation/evaluate.sh`
 with no case argument, the autoresearch run step) is denied while `check_gate.py --loop` says the loop is done
@@ -158,6 +161,27 @@ def loop_block(command: str, cwd: str | None) -> str | None:
     return None
 
 
+def guarded(cwd: str | None) -> bool:
+    """An executor session, or a factory build at `cwd` (else this process's directory) or under its builds/."""
+    if os.environ.get("CSA_EXECUTOR"):
+        return True
+    try:
+        root = cwd or os.getcwd()
+        builds = os.path.join(root, "builds")
+        candidates = [root, *(os.path.join(builds, n) for n in (os.listdir(builds) if os.path.isdir(builds) else []))]
+        return any(os.path.isfile(os.path.join(ws, "work", "manifest.yaml"))
+                   or os.path.isdir(os.path.join(ws, "work", "evaluation")) for ws in candidates)
+    except OSError:
+        return False
+
+
+def check(command: object, cwd: str | None) -> str | None:
+    """The deny reason for this call, or None: neither guard acts outside a factory build."""
+    if not isinstance(command, str) or not guarded(cwd):
+        return None
+    return MESSAGE if is_pattern_kill(command) else loop_block(command, cwd)
+
+
 def main() -> int:
     try:
         event = json.load(sys.stdin)
@@ -170,16 +194,14 @@ def main() -> int:
         command = event.get("command")
         roots = [r for r in event.get("workspace_roots") or [] if isinstance(r, str)]
         cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else (roots[0] if roots else None)
-        reason = None if not isinstance(command, str) else MESSAGE if is_pattern_kill(command) else \
-            loop_block(command, cwd)
+        reason = check(command, cwd)
         reply = {"permission": "deny", "user_message": reason, "agent_message": reason} if reason else ALLOW
         print(json.dumps(reply))
         return 0
     command = (event.get("tool_input") or {}).get("command")
     if not isinstance(command, str):
         return 0
-    cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else None
-    reason = MESSAGE if is_pattern_kill(command) else loop_block(command, cwd)
+    reason = check(command, event.get("cwd") if isinstance(event.get("cwd"), str) else None)
     if reason:
         print(reason, file=sys.stderr)
         return 2

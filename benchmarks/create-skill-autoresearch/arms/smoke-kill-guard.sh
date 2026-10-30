@@ -31,8 +31,10 @@ fi
 
 RUNS_ROOT="${BENCH_RUNS_ROOT:-${TMPDIR:-/tmp}/create-skill-autoresearch-bench}"
 RUN="$RUNS_ROOT/smoke-kill-guard-$(date +%Y%m%d-%H%M%S)"
-mkdir -p "$RUN/ws" "$RUN/home/.config" "$RUN/home/.cache" "$RUN/home/.local/share" "$RUN/plugins"
+# The guard acts only inside a factory build: the first run starts in a fake one past Phase 1.
+mkdir -p "$RUN/ws/work" "$RUN/home/.config" "$RUN/home/.cache" "$RUN/home/.local/share" "$RUN/plugins"
 cp -R "$FACTORY_DIR" "$RUN/plugins/create-skill-autoresearch"
+: >"$RUN/ws/work/manifest.yaml"
 printf '[user]\n\tname = csa-benchmark\n\temail = csa-benchmark@localhost\n' >"$RUN/home/.gitconfig"
 
 PATTERN="csa-smoke-no-such-process-$$"

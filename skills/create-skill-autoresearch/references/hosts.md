@@ -61,7 +61,9 @@ context walls the panel depends on.
 
 ## Kill guard
 
-`hooks/kill_guard.py` reads either contract and blocks pattern kills: `pkill`, `killall`, and any call holding
+`hooks/kill_guard.py` reads either contract and acts only in a factory build — the call's cwd (else the hook's
+own directory), or a `builds/<name>/` under it, holding `work/manifest.yaml` or `work/evaluation/` — or an executor
+session (`CSA_EXECUTOR=1`); anywhere else it allows every call. There it blocks pattern kills: `pkill`, `killall`, and any call holding
 both a process lister (`pgrep`, `pidof`, `lsof`, `ps`) and a kill, however the PIDs travel (pipe, variable, renamed
 file). The one exception: every kill names literal PIDs and nothing keeps the listing (`ps aux | head; kill 1234`
 passes; `ps aux > f; kill 4242` and `ps aux | head; kill $PID` do not: kill in a call of its own). A redirect counts
