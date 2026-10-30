@@ -2,7 +2,7 @@
 # run-and-score.sh <arm> <model> <run-id> [task] [executor-runs]
 #
 # One build (run-arm.sh) followed by its deterministic score; appends one row to results/scores.csv.
-# executor-runs applies to task-2 only and defaults to 2 per holdout, the published method.
+# executor-runs applies to task-2 and task-3 only and defaults to 2 per holdout, the published method.
 # env_failure runs (exit 75) are retried once under a "-retry" run-id and never scored.
 # SCORE_ONLY=1 skips the build and scores an existing run dir (e.g. one whose scoring step failed).
 set -uo pipefail
@@ -32,6 +32,7 @@ fi
 case "$TASK_NAME" in
   task)   OUT="conventional-commits"; SCORER="score.mjs"; EXTRA=() ;;
   task-2) OUT="purchase-order-builder"; SCORER="score-task2.mjs"; EXTRA=(--runs "$EXEC_RUNS") ;;
+  task-3) OUT="student-aid-index"; SCORER="score-task3.mjs"; EXTRA=(--runs "$EXEC_RUNS") ;;
 esac
 RUN="$RUNS_ROOT/$RUN_ID"
 BUILD_DIR="$RUN/ws"; [ -d "$BUILD_DIR" ] || BUILD_DIR="$RUN/work"  # run dirs from before the ws/ rename

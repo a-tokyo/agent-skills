@@ -668,3 +668,15 @@ n10-t1-factory-v030-haiku-2,factory,haiku,0,1614,0,task,13653517,352905
 n10-t1-factory-v030-haiku-6,factory,haiku,0,1120,0,task,11685863,316429
 n10-t1-factory-v030-haiku-7,factory,haiku,0,1548,0,task,9317894,192368
 n10-t1-factory-v030-haiku-9,factory,haiku,0,2073,0,task,8778219,1306203
+t3probe-bare-sonnet-1,bare,sonnet,0,186,0,task-3,487616,25134
+t3probe-bare-haiku-1,bare,haiku,0,266,0,task-3,1376330,55643
+t3i2probe-bare-sonnet-1,bare,sonnet,0,135,0,task-3,344485,18565
+t3i2probe-bare-haiku-1,bare,haiku,0,324,0,task-3,1768718,71984
+t3i3probe-bare-sonnet-1,bare,sonnet,0,192,0,task-3,493663,25404
+t3i3probe-bare-haiku-1,bare,haiku,0,336,0,task-3,1302878,75874
+t3r-bare-sonnet-1,bare,sonnet,0,199,0,task-3,946153,23615
+t3r-bare-haiku-1,bare,haiku,0,170,0,task-3,799640,17448
+t3r-bare-sonnet-2,bare,sonnet,0,462,0,task-3,1310428,25320
+t3r-bare-sonnet-3,bare,sonnet,0,539,0,task-3,1209038,25282
+t3r-bare-haiku-3,bare,haiku,0,633,0,task-3,3418460,81045
+t3r-bare-haiku-2,bare,haiku,0,738,0,task-3,5699881,97251

@@ -65,7 +65,7 @@ export function checkPurchaseOrder(raw, expected) {
   return { checks, passed, total: names.length, score: passed / names.length };
 }
 
-function parseFrontmatter(text) {
+export function parseFrontmatter(text) {
   const m = text.match(/^---\n([\s\S]*?)\n---\n?/);
   if (!m) return null;
   const fm = {};
@@ -82,7 +82,7 @@ function parseFrontmatter(text) {
   return { fm, body: text.slice(m[0].length) };
 }
 
-function listFiles(dir) {
+export function listFiles(dir) {
   if (!existsSync(dir)) return [];
   return readdirSync(dir).flatMap((f) => {
     const p = join(dir, f);
