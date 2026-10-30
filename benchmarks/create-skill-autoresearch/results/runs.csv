@@ -672,3 +672,5 @@ t3probe-bare-sonnet-1,bare,sonnet,0,186,0,task-3,487616,25134
 t3probe-bare-haiku-1,bare,haiku,0,266,0,task-3,1376330,55643
 t3i2probe-bare-sonnet-1,bare,sonnet,0,135,0,task-3,344485,18565
 t3i2probe-bare-haiku-1,bare,haiku,0,324,0,task-3,1768718,71984
+t3i3probe-bare-sonnet-1,bare,sonnet,0,192,0,task-3,493663,25404
+t3i3probe-bare-haiku-1,bare,haiku,0,336,0,task-3,1302878,75874

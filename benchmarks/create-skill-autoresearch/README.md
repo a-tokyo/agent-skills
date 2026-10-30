@@ -24,7 +24,32 @@ prices, vendors, codes, a new currency), so a skill that memorises gold outputs 
 standards and the answer key come from one seeded generator and reference solver
 ([`task-2/tools/`](task-2/tools/)), which no arm ever sees.
 
-Holdouts never reach a builder in either task.
+**task-3** — `freight-quote-builder` ([`task-3/brief.md`](task-3/brief.md)). Turn a free-text
+shipment request into a parcel quote JSON by rating it across carriers against replaceable rate
+tables: volumetric and billable weight, zone rate bands, six surcharges with per-carrier units and
+thresholds, fuel, per-charge currency conversion, business-day delivery dates, and the choice of
+carrier and service. The guide's format part is current; its rules part is two years old, and ten of
+its rules are contradicted by the eight gold quotes, which are desk-log summaries (no base, fuel or
+surcharge amounts). Five holdouts use other rate tables and vary what every training table holds
+constant (rounding and size thresholds, surcharge units, holiday countries, zone postcode ranges,
+box-weight limits). [`task-3/tools/generate.py`](task-3/tools/generate.py) proves every stale rule
+changes a gold quote, every rule changes a holdout score, and no other combination of the stale and
+naive rule variants reproduces all eight gold logs.
+
+**Task-3 does not yet qualify under Amendment 6** (bare median ≤ 0.70 on both models). Bare-arm
+probes, one build per model per design iteration, 2026-10-30:
+
+| Design iteration (run ids) | bare Sonnet 5.5 | bare Haiku 5.5 |
+|----------------------------|-----------------|----------------|
+| 1 — stale rules, full gold quotes (`t3probe-*`) | 1.000 | 0.932 |
+| 2 — + holdout-only regimes documented in the format guide (`t3i2probe-*`) | 0.933 | 0.921 |
+| 3 — + desk-log gold, heavy-box rule settled (`t3i3probe-*`) | 1.000 | 0.985 |
+
+Both models reproduce the gold quotes in 2–6 minutes and implement every rule the guide states. Their
+only misses were one script bug and one rule that no gold quote or guide sentence settled, and that
+rule was then fixed. Rows are in `results/` on this branch only.
+
+Holdouts never reach a builder in any task.
 
 ## Arms
 
@@ -97,8 +122,20 @@ headless CLI as the factory describes, so `references/hosts.md` has to carry tha
   stopping at the skill's own parser defect, so it changes no `j-*` number. The published `k-*` run
   was scored under it and had no executor faults, so the later timeout rule changes no `k-*` number.
 
-No LLM judge anywhere. `node scoring/selftest.mjs` and `node scoring/selftest-task2.mjs` must print
-`SELFTEST PASS` before any score is trusted. A live run of `node scoring/score-task2.mjs
+- **task-3** — [`scoring/score-task3.mjs`](scoring/score-task3.mjs): task-2's agentic executor
+  harness (imported: isolation, retry, env-failure rule), given one holdout `shipment.md` plus the
+  holdout `rates/`, must write `quote.json` — 12 checks (carrier, service, billable kg, base,
+  surcharge codes and amounts, fuel, total within 0.01, delivery date, exception codes and details).
+  execution 0.80 · compliance 0.15 · craft 0.05, fixed before any task-3 run: compliance and craft are
+  near-saturated for every arm, so execution carries the separation. One executor run costs about what
+  a task-2 run does (Haiku 5.5, about $0.003, 6–8 turns, measured on h2 for each).
+
+No LLM judge anywhere. `node scoring/selftest.mjs`, `node scoring/selftest-task2.mjs` and
+`node scoring/selftest-task3.mjs` must print `SELFTEST PASS` before any score is trusted. The task-3
+selftest also scores offline baselines: the reference solver 1.000, a skill that trusts the stale
+rules 0.587, and a gold-fitter that reproduces all eight gold logs with constants and shortcuts 0.613.
+A live run of `node scoring/score-task3.mjs scoring/fixtures/t3-good-skill --runs 2` scored 1.000 on
+2026-10-30. A live run of `node scoring/score-task2.mjs
 scoring/fixtures/t2-good-skill` (the task-2 reference solver wrapped as a skill) scored 1.000, and of
 `scoring/fixtures/t2-bad-skill` (a generic skill) 0.22, on 2026-10-15.
 
