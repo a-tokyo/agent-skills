@@ -105,7 +105,7 @@ def build_cost(run: Path) -> dict:
 
 def _cell(run_id: str) -> tuple[str, str, str] | None:
     """(prefix, task, model) from ids such as u-t2-factory-v030-haiku-3 or m-t1-bare-sonnet-2."""
-    m = re.match(r"^([a-z]+-)(t\d)-(.+)-(sonnet|haiku|opus)-\d+(?:-retry)?$", run_id)
+    m = re.match(r"^([a-z][a-z0-9]*-)(t\d)-(.+)-(sonnet|haiku|opus)-\d+(?:-retry)?$", run_id)
     return (m.group(1), m.group(2) + "|" + m.group(3), m.group(4)) if m else None
 
 
