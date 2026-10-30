@@ -170,9 +170,10 @@ not sum to the total):
 | purchase orders, Haiku | 6.63 / 3.02 | 1.93 / 0.41 | 0.52 / 2.16 | 0.28 / 0 |
 | purchase orders, Sonnet | 2.36 / 0.86 | 1.09 / 0.37 | 1.30 / 2.42 | 0.28 / 0 |
 
-- **Every cell passes, but v0.3.0 is not cheaper.** Its median is higher in all four cells: 1.03× on
-  commit-message Sonnet, 1.36× and 1.64× on purchase orders, and 2.92× on commit-message Haiku. The bar
-  passes because v0.2.1's own builds vary widely (Haiku spreads of 11.06M and 22.53M).
+- **v0.3.0 is not cheaper than v0.2.1 in any cell.** Its median build costs 1.03× v0.2.1's on
+  commit-message Sonnet, 1.36× and 1.64× on purchase orders, and 2.92× on commit-message Haiku. Criterion
+  17 passes on Amendment 4a's bar (v0.2.1's median plus v0.2.1's own spread), not on literal parity: the
+  bar is wide because v0.2.1's own builds vary widely (Haiku spreads of 11.06M and 22.53M).
 - **Commit-message Haiku is panel-heavy.** Its subagent median (4.85M) exceeds its builder median; the
   v0.3.0 panel spawns a median of 9 subagents per build against 3 for v0.2.1, and a post-panel fix
   re-runs the panel in full (Amendment 4b). That cell has no plugin-eval gate cost because its gates ran
@@ -246,6 +247,24 @@ is inflated the same way). Read the medians as rough and the maxima not at all; 
 
 ### Disclosures
 
+- **Builder model: use Sonnet.** Sonnet is the recommended builder. Haiku builds end `UNSHIPPED` in 6 of 9
+  (commit messages) and 8 of 10 (purchase orders) runs, against 2 of 10 and 3 of 10 for Sonnet, cost
+  1.6–2.9× v0.2.1, and score below v0.2.1 and bare (inside the spread).
+- **The six fixes after this run are not benchmarked.** The final panel's fixes (harness `6b040c5` to
+  `db3a28e`: the kill guard acts only inside a factory build, a settled gate is reused only with every
+  option unchanged, the loop guard ends a below-target plateau on the measured noise threshold, manifest
+  paths with spaces are read, panel receipts grep their evidence quotes, OpenCode's guard gets its cwd) are
+  covered by the offline tests, the kill-guard smoke and live Cursor smokes, not by a new matrix. The
+  plateau rule can end a loop sooner, and the quote check can fail a receipt that cited a command's output.
+- **`tests/` ships inside the skill folder.** An `npx skills` or plugin install receives
+  `tests/` (about 3,300 lines of offline tests); Claude Code reads only the files SKILL.md references, so they
+  cost install size, not context.
+- **Guard coverage per host.** Only Claude Code has the full guard set verified live (kill, loop, subagent and
+  finish guards; this benchmark ran there). Cursor: kill guard verified live as a plugin, subagent guard
+  offline-tested, finish guard offline only (`cursor-agent -p` runs no `stop` hook). Codex: kill, loop and
+  finish guards contract-tested offline, untested in Codex; no subagent guard. OpenCode: kill, loop and finish
+  plugins tested with node, untested in OpenCode; no subagent guard. Every guard acts only inside a factory
+  build ([hosts.md](../../skills/create-skill-autoresearch/references/hosts.md)).
 - **Run store and earlier data.** Run directories lived in `~/.cache/csa-bench` until 2026-10-24, when
   that directory was lost; the run directories of every run before that date (`u-*` and the Amendment 4 cost
   runs up to `fm-*`/`vm-*` included) are gone, and their published numbers can no longer be re-derived
