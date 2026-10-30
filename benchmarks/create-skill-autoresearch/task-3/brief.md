@@ -17,10 +17,14 @@ Build a skill named `freight-quote-builder` that turns a free-text **shipment re
 
 ## Gold standards (1.2)
 
-Eight pairs in `input/`: `shipment-01.md`..`shipment-08.md` with the quotes the desk produced for
-them, `quote-01.json`..`quote-08.json`, all against the rate tables in `input/rates/`. The desk's
-rating rules are only partly written down — the gold standards are the primary source for the rest.
-Study them closely; several rules only show when you redo a quote's arithmetic.
+Eight pairs in `input/`: `shipment-01.md`..`shipment-08.md` with the desk-log entries for the quotes
+the desk produced for them, `quote-01.json`..`quote-08.json`, all against the rate tables in
+`input/rates/`. The desk log is a summary: it records the carrier, service, billable weight, which
+surcharges applied, the total, the delivery date and any exceptions, but not the base charge, the
+surcharge amounts or the fuel. The skill must still produce the full `quote.json` schema in the
+guide, because the booking system needs every field. The desk's rating rules are only partly
+written down — the gold standards are the primary source for the rest. Study them closely; several
+rules only show when you redo a quote's arithmetic.
 
 ## Study materials (1.3)
 

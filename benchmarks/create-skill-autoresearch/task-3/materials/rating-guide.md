@@ -46,7 +46,8 @@ Column meanings:
 - `carriers.csv`: only `status` = `active` carriers may be used. `currency` is the currency of every
   price, minimum and surcharge amount of that carrier. `round_step_kg`, `heavy_kg`, `oversize_cm`,
   `girth_cm` and `owt_kg` are that carrier's weight-rounding step and its heavy-box, oversize,
-  length-plus-girth and overweight thresholds; carriers set their own. `cutoff` is the latest
+  length-plus-girth and overweight thresholds; carriers set their own. A box is heavy when the
+  greater of its actual and volumetric weight, before rounding, is over `heavy_kg`. `cutoff` is the latest
   `HH:MM` the carrier collects the same day. `preferred` is `Y` or `N`.
 - `services.csv`: `max_box_kg` is the heaviest **actual** box weight the service accepts; a shipment
   with a heavier box cannot use that service. `dg_allowed` is `Y` when the service carries

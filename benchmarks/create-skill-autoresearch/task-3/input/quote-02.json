@@ -2,18 +2,10 @@
   "carrier_id": "C02",
   "service": "express",
   "billable_kg": 19.0,
-  "base_eur": 37.64,
-  "surcharges": [
-    {
-      "code": "RES",
-      "amount_eur": 4.84
-    },
-    {
-      "code": "SIG",
-      "amount_eur": 2.91
-    }
+  "surcharge_codes": [
+    "RES",
+    "SIG"
   ],
-  "fuel_eur": 3.83,
   "total_eur": 49.22,
   "delivery_date": "2026-03-16",
   "exceptions": []

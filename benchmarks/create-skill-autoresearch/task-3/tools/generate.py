@@ -9,18 +9,25 @@ and remote areas than the training tables, and they vary what every training tab
 limits). After writing, it checks where every rule in solve.py shows and exits non-zero unless:
   - each class-B rule (stale guide) changes at least one gold quote,
   - no class-C rule (current guide, constant in training) changes any gold quote,
-  - every class-B and class-C rule changes the SCORE of at least one holdout, not only its JSON.
+  - every class-B and class-C rule changes the SCORE of at least one holdout, not only its JSON,
+  - among every combination of the class-B and class-A switches, only the true rules reproduce all
+    eight gold quotes as the desk log records them (the learnability proof).
+
+The gold quotes are desk-log summaries (carrier, service, billable weight, surcharge codes, total,
+delivery date, exceptions): base, fuel and per-surcharge amounts are not shown, so the money rules
+have to be inferred jointly from the totals. The holdout answer key keeps the full schema.
 """
 from __future__ import annotations
 
 import csv
+import itertools
 import json
 import random
 import shutil
 import sys
 from pathlib import Path
 
-from solve import solve
+from solve import Rates, solve
 
 HERE = Path(__file__).resolve().parent
 TASK = HERE.parent
@@ -117,7 +124,7 @@ GOLD_REQUESTS = [
     ("2026-05-27 16:40", "1010 Vienna, AT (business)", "deliver by 2026-06-02", "textiles", "",
      ["4 x 60x40x40 cm, 9.5 kg each"]),
     ("2026-06-08 10:20", "08100 Sassari, IT (residential)", "standard", "furniture", "",
-     ["1 x 130x60x40 cm, 34 kg", "2 x 60x40x35 cm, 21.3 kg each"]),
+     ["1 x 130x60x40 cm, 34 kg", "2 x 70x50x35 cm, 12.4 kg each"]),
     ("2026-06-15 16:30", "50667 Cologne, DE (business)", "deliver by 2026-06-16", "documents", "",
      ["1 x 35x25x10 cm, 1.2 kg"]),
 ]
@@ -220,6 +227,27 @@ def score(got: dict, want: dict) -> float:
     return sum(checks) / len(checks)
 
 
+def desk_log(q: dict) -> dict:
+    """What the desk log records of a full quote: no base, fuel or per-surcharge amounts."""
+    return {"carrier_id": q["carrier_id"], "service": q["service"], "billable_kg": q["billable_kg"],
+            "surcharge_codes": [s["code"] for s in q["surcharges"]], "total_eur": q["total_eur"],
+            "delivery_date": q["delivery_date"], "exceptions": q["exceptions"]}
+
+
+def unique_fit(train: Path, gold_texts: dict[str, str]) -> list[frozenset[str]]:
+    """Every non-empty combination of class-B and class-A switches that reproduces all gold desk logs."""
+    rates = Rates(train)
+    want = {k: desk_log(solve(train, t, rates=rates)) for k, t in gold_texts.items()}
+    rules = CLASS_B + CLASS_A
+    fits = []
+    for n in range(1, len(rules) + 1):
+        for combo in itertools.combinations(rules, n):
+            stale = frozenset(combo)
+            if all(desk_log(solve(train, t, stale, rates)) == want[k] for k, t in gold_texts.items()):
+                fits.append(stale)
+    return fits
+
+
 def main() -> None:
     train = build_dataset("train", DATASETS["train"])
     hold = build_dataset("holdout", DATASETS["holdout"])
@@ -231,7 +259,8 @@ def main() -> None:
         text = request_md(f"{i:02d}", req)
         gold_texts[f"{i:02d}"] = text
         (inp / f"shipment-{i:02d}.md").write_text(text, encoding="utf-8")
-        (inp / f"quote-{i:02d}.json").write_text(json.dumps(solve(train, text), indent=2) + "\n", encoding="utf-8")
+        (inp / f"quote-{i:02d}.json").write_text(json.dumps(desk_log(solve(train, text)), indent=2) + "\n",
+                                                 encoding="utf-8")
     key = {}
     for i, req in enumerate(HOLDOUT_REQUESTS, 1):
         text = request_md(f"h{i}", req)
@@ -246,7 +275,8 @@ def main() -> None:
     problems = []
     for rule in CLASS_B + CLASS_C + CLASS_A:
         cls = "B" if rule in CLASS_B else "C" if rule in CLASS_C else "A"
-        gold = [k for k, t in gold_texts.items() if solve(train, t, frozenset({rule})) != solve(train, t)]
+        gold = [k for k, t in gold_texts.items()
+                if desk_log(solve(train, t, frozenset({rule}))) != desk_log(solve(train, t))]
         hits = {k: score(solve(hold, t, frozenset({rule})), key[k]["expected"]) for k, t in hold_texts.items()}
         hits = {k: s for k, s in hits.items() if s < 1}
         mean = 1 - sum(1 - s for s in hits.values()) / len(hold_texts)
@@ -258,6 +288,11 @@ def main() -> None:
             problems.append(f"class-C rule {rule} changes gold quote(s) {gold}")
         if cls != "A" and not hits:
             problems.append(f"rule {rule} changes no holdout score")
+    others = unique_fit(train, gold_texts)
+    print(f"learnability: {len(others)} wrong rule combinations reproduce every gold desk log")
+    for combo in others:
+        if not combo <= set(CLASS_A):
+            problems.append(f"gold desk logs do not rule out {sorted(combo)}")
     if problems:
         print("COVERAGE FAIL\n- " + "\n- ".join(problems))
         sys.exit(1)

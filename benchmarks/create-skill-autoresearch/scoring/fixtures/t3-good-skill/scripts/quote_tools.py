@@ -12,7 +12,8 @@ Class B (the guide's rules section is stale; at least one gold quote contradicts
   divisor       guide: volumetric divisor 5000 for every carrier; practice: carriers.csv dim_divisor
   cutoff        guide: pickup cutoff 17:00; practice: carriers.csv cutoff
   holidays      guide: business days are Mon-Fri; practice: holidays.csv dates are not business days
-  whole_kg      guide: round up to round_step_kg; practice: a box over heavy_kg rounds to the next whole kg
+  whole_kg      guide: round up to round_step_kg; practice: a box whose max(actual, volumetric) is over
+                heavy_kg rounds up to the next whole kg
   per_kg_total  guide: above the last break, last flat price + per-kg x excess; practice: per-kg x all kg
   fuel_base     guide: fuel on the base charge; practice: on base + RES + REM + OVS + OWT (not DG, SIG)
   girth         guide: oversize when the longest side > oversize_cm; practice: or length + girth > girth_cm
@@ -305,8 +306,8 @@ def pick(cands: list[dict], stale: frozenset[str]) -> dict:
                                      SERVICE_ORDER.index(q["service"])))
 
 
-def solve(master: Path, request_text: str, stale: frozenset[str] = frozenset()) -> dict[str, object]:
-    rates = Rates(master)
+def solve(master: Path, request_text: str, stale: frozenset[str] = frozenset(), rates: Rates | None = None) -> dict[str, object]:
+    rates = rates or Rates(master)
     req = parse_request(request_text)
     exceptions: list[dict[str, str]] = []
     service = req["service"]

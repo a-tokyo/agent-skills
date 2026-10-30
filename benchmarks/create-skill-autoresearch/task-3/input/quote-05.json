@@ -2,18 +2,10 @@
   "carrier_id": "C02",
   "service": "standard",
   "billable_kg": 35.0,
-  "base_eur": 45.49,
-  "surcharges": [
-    {
-      "code": "DG",
-      "amount_eur": 31.12
-    },
-    {
-      "code": "SIG",
-      "amount_eur": 2.91
-    }
+  "surcharge_codes": [
+    "DG",
+    "SIG"
   ],
-  "fuel_eur": 4.1,
   "total_eur": 83.62,
   "delivery_date": "2026-05-26",
   "exceptions": [

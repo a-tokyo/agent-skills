@@ -72,13 +72,16 @@ show("gold-fitter", good, f);
 expect("good fixture scores 1.0 on every holdout", g.scores.every((s) => s === 1));
 expect("stale-guide fixture execution <= 0.50", b.mean <= 0.5);
 expect("gold-fitter execution <= 0.55", f.mean <= 0.55);
+// Gold files are desk-log summaries, so compare against the reference solver's full output instead.
+const run = (dir, n, stale) => spawnSync("python3", ["-B", join(good, "scripts", "quote_tools.py"), join(dir, "rates"),
+  join(dir, n), ...(stale ? ["--stale", stale] : [])], { encoding: "utf8" }).stdout;
 const goldFits = readdirSync(join(TASK, "input")).filter((n) => /^shipment-\d+\.md$/.test(n)).every((n) => {
-  const out = spawnSync("python3", ["-B", join(good, "scripts", "quote_tools.py"), join(TASK, "input", "rates"),
-    join(TASK, "input", n), "--stale", FIT], { encoding: "utf8" });
-  const want = JSON.parse(readFileSync(join(TASK, "input", n.replace("shipment", "quote").replace(".md", ".json")), "utf8"));
-  return checkQuote(out.stdout, want).score === 1;
+  const full = JSON.parse(run(join(TASK, "input"), n));
+  const log = JSON.parse(readFileSync(join(TASK, "input", n.replace("shipment", "quote").replace(".md", ".json")), "utf8"));
+  const visible = (q) => JSON.stringify([q.carrier_id, q.service, q.billable_kg, q.total_eur, q.delivery_date, q.exceptions]);
+  return visible(full) === visible(log) && checkQuote(run(join(TASK, "input"), n, FIT), full).score === 1;
 });
-expect("gold-fitter reproduces every gold quote", goldFits);
+expect("gold logs match the solver, and the gold-fitter reproduces every gold quote", goldFits);
 
 if (failures.length) {
   console.log(`SELFTEST FAIL\n- ${failures.join("\n- ")}`);

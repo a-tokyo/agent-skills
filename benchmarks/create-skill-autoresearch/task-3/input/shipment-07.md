@@ -7,4 +7,4 @@ Contents: furniture
 
 Packages:
 - 1 x 130x60x40 cm, 34 kg
-- 2 x 60x40x35 cm, 21.3 kg each
+- 2 x 70x50x35 cm, 12.4 kg each
