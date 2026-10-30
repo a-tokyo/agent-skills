@@ -1,7 +1,7 @@
 """Panel role receipts, rounds and the consensus they derive (SKILL.md 5.2-5.4), for check_gate.py.
 
 A receipt (work/experiments/panel/<role>.json, <role>.synthesis.json) binds a verifier's scores to the skill and
-rubric hashes; each consensus is archived as a round under work/experiments/panel/rounds/<n>/ with a copy of
+rubric hashes, once every quote its evidence gives is found verbatim in output/<skill>/ or input/ (_verify_quote); each consensus is archived as a round under work/experiments/panel/rounds/<n>/ with a copy of
 SKILL.md and the final receipts. The thresholds and max_panel_rounds live in references/verdict-rules.json;
 the protocol in references/consensus-protocol.md; rubric.yaml's schema (read here by a small stdlib reader:
 target_score, plateau_window, and dimensions with name, weight, scale) in references/rubric-templates.md.
@@ -27,6 +27,7 @@ RULES_PATH = Path(__file__).resolve().parent.parent / "references" / "verdict-ru
 DA = "devils-advocate"
 ROLES = ("verifier-a", "verifier-b", DA)
 RANK = {"UNSHIPPED": 0, "SHIP WITH CAVEATS": 1, "SHIP": 2}
+QUOTED = re.compile(r'"([^"]+)"|\u201c([^\u201d]+)\u201d')  # "…" or “…”
 
 
 def rules() -> dict:
@@ -117,7 +118,38 @@ def _check_score(name: str, score: object, quote: object, d: Dimension, what: st
         raise GateError(f"{name}: a {what} of {score:g} needs evidence (a verbatim quote or the failing line)")
 
 
-def _scores(raw: object, rubric: Rubric) -> dict[str, dict]:
+def _spaced(text: str) -> str:
+    return " ".join(text.split())
+
+
+def quotable(workspace: Path, skill: str) -> list[str]:
+    """The text files a quote may come from, whitespace-normalised: the skill the receipt binds (output/<skill>/)
+    and the gold standards with the rest of input/. Files that are not UTF-8 text are skipped."""
+    texts = []
+    for root in (workspace / "output" / skill, workspace / "input"):
+        for path in sorted(p for p in root.rglob("*") if p.is_file()) if root.is_dir() else []:
+            try:
+                texts.append(_spaced(path.read_bytes().decode("utf-8")))
+            except (OSError, UnicodeDecodeError):
+                continue
+    return texts
+
+
+def _verify_quote(name: str, evidence: str, texts: list[str]) -> None:
+    """Each quoted segment of `evidence` ("…" or “…”; the whole string when it quotes nothing) must occur in one of
+    `texts`, whitespace aside: an invented quote fails the receipt."""
+    for quote in [_spaced(a or b) for a, b in QUOTED.findall(evidence)] or [_spaced(evidence)]:
+        if quote and not any(quote in text for text in texts):
+            raise GateError(f"{name}: the evidence quote {quote!r} is not in output/<skill>/ or input/ (verbatim, "
+                            "whitespace aside); quote the skill or a gold standard as it reads, in double quotes")
+
+
+def _extreme(score: float) -> bool:
+    evidence = rules()["evidence_required"]
+    return score >= evidence["score_at_least"] or score <= evidence["score_at_most"]
+
+
+def _scores(raw: object, rubric: Rubric, texts: list[str]) -> dict[str, dict]:
     dims = {d.name: d for d in rubric.dimensions}
     if not isinstance(raw, dict) or set(raw) != set(dims):
         got = sorted(raw) if isinstance(raw, dict) else raw
@@ -127,15 +159,18 @@ def _scores(raw: object, rubric: Rubric) -> dict[str, dict]:
         entry = entry if isinstance(entry, dict) else {}
         score, conf, quote = entry.get("score"), entry.get("confidence"), entry.get("evidence")
         _check_score(name, score, quote, dims[name])
+        if isinstance(quote, str) and quote.strip():
+            _verify_quote(name, quote, texts)
         if not is_number(conf) or not 0 <= conf <= 1:
             raise GateError(f"{name}: confidence {conf!r} is not in 0..1")
         out[name] = {"score": score, "confidence": conf, "evidence": quote if isinstance(quote, str) else ""}
     return out
 
 
-def _synthesis_scores(raw: dict, first: dict, disputed: list[str], rubric: Rubric) -> dict[str, dict]:
+def _synthesis_scores(raw: dict, first: dict, disputed: list[str], rubric: Rubric,
+                      texts: list[str]) -> dict[str, dict]:
     """A revised score meets the first round's rules, its evidence being its own `evidence`, else the first
-    round's, else its `justification`."""
+    round's (already verified), else its `justification`; whichever new text backs it is verified like a quote."""
     dims = {d.name: d for d in rubric.dimensions}
     revised = raw.get("revised_scores")
     if not isinstance(revised, dict):
@@ -149,6 +184,9 @@ def _synthesis_scores(raw: dict, first: dict, disputed: list[str], rubric: Rubri
         quote = next((q for q in (entry.get("evidence"), out[name].get("evidence"), why)
                       if isinstance(q, str) and q.strip()), "")
         _check_score(name, score, quote, dims[name], "revised score")
+        own = entry.get("evidence") if isinstance(entry.get("evidence"), str) and entry["evidence"].strip() else None
+        if own or (quote and quote == why and _extreme(score)):
+            _verify_quote(name, own or quote, texts)
         out[name] = {**out[name], "score": score, "evidence": quote,
                      "justification": why if isinstance(why, str) else ""}
     return out
@@ -161,7 +199,7 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
         raise GateError(f"role {role!r} is not one of {', '.join(ROLES)}")
     if not synthesis:
         check_round(workspace, skill_sha)
-    rubric = read_rubric(workspace)
+    rubric, texts = read_rubric(workspace), quotable(workspace, skill)
     raw = read_json(source)
     if raw is None:
         raise GateError(f"{source} is not a JSON object (the panel template's output)")
@@ -173,11 +211,11 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
             raise GateError(f"a synthesis receipt needs every first-round receipt for this skill; missing {missing}")
         if not (disputed := disputes(current, rubric)):
             raise GateError("the first round disputed nothing; there is no synthesis round")
-        receipt["scores"] = _synthesis_scores(raw, current[role], disputed, rubric)
+        receipt["scores"] = _synthesis_scores(raw, current[role], disputed, rubric, texts)
         recommendation = raw.get("final_recommendation") or current[role]["recommendation"]
         escalate = current[role].get("escalate") if "escalation" not in raw else raw.get("escalation")
     else:
-        receipt["scores"] = _scores(raw.get("scores"), rubric)
+        receipt["scores"] = _scores(raw.get("scores"), rubric, texts)
         recommendation, escalate = raw.get("pass_recommendation"), raw.get("escalation")
     receipt["recommendation"] = (re.sub(r"[ _]+", " ", recommendation.strip().upper())
                                  if isinstance(recommendation, str) and recommendation.strip() else None)

@@ -189,7 +189,7 @@ logs (`autoresearch.jsonl`), or builder context.
 | Devil's Advocate | Failure modes (incl. the five craft failure modes), hidden assumptions, missing constraints; always tries to smuggle an instruction in through content the skill fetches | Explicitly adversarial |
 
 Each panel member scores every rubric dimension independently: score (rubric scale), confidence
-(0.0-1.0), and evidence (a verbatim quote from the artifact). Its last step is the `--panel-receipt` command above
+(0.0-1.0), and evidence (a verbatim quote from the skill or a gold standard, in double quotes; the receipt greps it). Its last step is the `--panel-receipt` command above
 (`<role>`: `verifier-a`, `verifier-b` or `devils-advocate`; `<scores.json>`: its template output), which binds those
 scores to the skill and rubric hashes: a skill change afterwards voids every receipt.
 

@@ -79,10 +79,12 @@ Score each rubric dimension in an independent evaluation pass. This prevents hal
 - Score of 3- (on 1-10 scale): must cite the specific section/line where the failure occurs
 - Mid-range scores (4-7): evidence recommended but not required
 
-`--panel-receipt` enforces only that an extreme score (first round or revised in synthesis) carries non-empty
-evidence; it does not grep the quote, because evidence is often a `file:line "quote"` citation or a command's
-failing output rather than a bare substring of the skill. The ORCHESTRATOR's grep (SKILL.md 5.2: "Grep every
-verdict-driving citation") is the verbatim check, and an invented quote it does not find discards the finding.
+`--panel-receipt` enforces that an extreme score (first round or revised in synthesis) carries evidence, and greps
+every quote given: each double-quoted segment of an `evidence` string (`SKILL.md:40 "<quote>"`; the whole string
+when it quotes nothing) must occur verbatim, whitespace aside, in `output/<skill>/` or `input/` (the gold standards
+and study materials, which the gate's hash binds), or the receipt fails naming the quote. Quote what the skill or a
+gold standard says; for something missing, quote the line where it should be. A command's output is not
+evidence the receipt can check. The ORCHESTRATOR still greps every verdict-driving citation (SKILL.md 5.2).
 
 ### Confidence Signals
 
@@ -255,7 +257,7 @@ JSON to `<workspace>/work/experiments/panel/<role>.scores.json`, then run `pytho
 A non-zero exit names what to fix in your JSON; fix it and re-run." `<role>` is `verifier-a`, `verifier-b` or
 `devils-advocate`. A member that cannot run commands returns its JSON and the orchestrator runs that command on it
 verbatim, unedited. The receipt checks the scores against rubric.yaml (every dimension, on its scale, evidence for
-8+ and 3-) and binds them to the skill and rubric hashes; `--consensus` reads only receipts for the current hashes.
+8+ and 3-), finds every evidence quote in `output/<skill>/` or `input/`, and binds them to the skill and rubric hashes; `--consensus` reads only receipts for the current hashes.
 
 ### Verifier-A: Quality Assessor
 

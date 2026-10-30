@@ -267,7 +267,7 @@ class TempWorkspace(unittest.TestCase):
                 synthesis: dict | None = None) -> subprocess.CompletedProcess:
         """Write `role`'s scoring JSON (the panel template's output) and run --panel-receipt on it."""
         def dim(score: float) -> dict:
-            return {"score": score, "confidence": 0.9, "evidence": "verbatim quote"}
+            return {"score": score, "confidence": 0.9, "evidence": 'SKILL.md:2 "name: demo"'}
         body = ({"revised_scores": synthesis, "final_recommendation": "SHIP"} if synthesis is not None else
                 {"scores": {"correctness": dim(correctness), "clarity": dim(clarity)},
                  "pass_recommendation": "SHIP_WITH_CAVEATS", "escalation": escalation})

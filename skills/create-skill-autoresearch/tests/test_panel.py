@@ -58,6 +58,34 @@ class PanelTest(TempWorkspace):
         self.assertEqual((receipt["round"], receipt["recommendation"]), (1, "SHIP WITH CAVEATS"))
         self.assertIn("no current role receipt from verifier-b, devils-advocate", self.consensus().stdout)
 
+    def test_evidence_quotes_must_occur_in_the_skill_or_input(self) -> None:
+        """Round 6 adversary: a fabricated quote fails the receipt, naming it."""
+        (self.ws / "input").mkdir(exist_ok=True)
+        (self.ws / "input" / "gold-01.md").write_text("The approver is the\n  finance director.\n")
+        self.gate()
+        body = self.root / "scores.json"
+
+        def submit(correctness: str, clarity: str = "name: demo", score: float = 9) -> subprocess.CompletedProcess:
+            body.write_text(json.dumps({"scores": {
+                "correctness": {"score": score, "confidence": 0.9, "evidence": correctness},
+                "clarity": {"score": 9, "confidence": 0.9, "evidence": clarity}}}))
+            return self.run_script("check_gate.py", "--panel-receipt", "verifier-a", str(body))
+
+        for evidence in ('SKILL.md:2 "name: demo"', "name:   demo", 'gold-01.md "approver is the finance director"',
+                         '\u201cdescription: Demo.\u201d and "# Demo"'):
+            with self.subTest(accepted=evidence):
+                out = submit(evidence)
+                self.assertEqual(out.returncode, 0, out.stdout)
+        for evidence, missing in (('SKILL.md:9 "handles every edge case"', "handles every edge case"),
+                                  ('"name: demo" and "an invented line"', "an invented line"),
+                                  ("the skill is thorough", "the skill is thorough")):
+            with self.subTest(rejected=evidence):
+                out = submit(evidence)
+                self.assertEqual(out.returncode, 1, out.stdout)
+                self.assertIn(f"correctness: the evidence quote {missing!r} is not in output/<skill>/ or input/", out.stdout)
+        self.assertEqual(submit("invented", score=5).returncode, 1, "evidence given at a mid score is checked too")
+        self.assertEqual(submit("", score=5).returncode, 0, "none is needed there")
+
     def test_a_dispute_needs_a_synthesis_round_then_resolves_by_majority(self) -> None:
         self.gate()
         for role, scores in (("verifier-a", (9, 9)), ("verifier-b", (9, 9)), ("devils-advocate", (6, 9))):
@@ -83,7 +111,7 @@ class PanelTest(TempWorkspace):
             self.assertEqual(self.receipt(role, 9, 9).returncode, 0)
         da, first = "devils-advocate", self.root / "da.json"
         first.write_text(json.dumps({"scores": {"correctness": {"score": 6, "confidence": 0.9, "evidence": ""},
-                                                "clarity": {"score": 9, "confidence": 0.9, "evidence": "q"}}}))
+                                                "clarity": {"score": 9, "confidence": 0.9, "evidence": "name: demo"}}}))
         self.assertEqual(self.run_script("check_gate.py", "--panel-receipt", da, str(first)).returncode, 0)
         for revised in (0.5, 11, 100, "9", None, True):
             with self.subTest(revised=revised):
@@ -94,7 +122,8 @@ class PanelTest(TempWorkspace):
             with self.subTest(empty_evidence_at=revised):
                 out = self.receipt(da, 0, 0, synthesis={"correctness": {"revised": revised, "justification": " "}})
                 self.assertIn(f"correctness: a revised score of {revised} needs evidence", out.stdout)
-        for revised, body in ((1, {"evidence": "the failing line"}), (10, {"justification": "quote"}), (5, {})):
+        for revised, body in ((1, {"evidence": "description: Demo."}), (10, {"justification": 'it reads "# Demo"'}),
+                              (5, {"justification": "prose is fine short of an extreme"}), (5, {})):
             with self.subTest(accepted=revised):
                 out = self.receipt(da, 0, 0, synthesis={"correctness": {"revised": revised, **body}})
                 self.assertEqual(out.returncode, 0, out.stdout)
