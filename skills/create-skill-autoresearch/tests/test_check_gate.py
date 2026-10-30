@@ -175,10 +175,38 @@ class FinishTest(TempWorkspace):
         line = self.run_panel(self.SHIP_PANEL)
         self.assertIn("PANEL CONSENSUS: SHIP (allows SHIP)", line)
         self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n{line}\n")
-        self.assertIn("gold delta<=0 on trigout-2 caps the verdict at SHIP WITH CAVEATS", self.finish()["reason"])
+        self.assertIn("gold delta<=0 on trigout-2, lowest +0.000, caps the verdict at SHIP WITH CAVEATS", self.finish()["reason"])
         self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n{line}\n")
         self.assertTrue(self.finish()["finished"])
         self.assertEqual(self.run_script("check_gate.py", "--panel", "--finish").returncode, 2)
+
+    def test_a_gold_delta_below_the_caveat_margin_allows_only_unshipped(self) -> None:
+        self.gated(["gold-01", "regress-25"])
+        line = self.run_panel(self.SHIP_PANEL)
+        consensus = self.run_script("check_gate.py", "--consensus").stdout
+        self.assertIn("GOLD GATE: allows at most UNSHIPPED; gold delta<=0 on regress-25, lowest -0.250", consensus)
+        for verdict in ("SHIP", "SHIP WITH CAVEATS"):
+            self.benchmark(f"Verdict: {verdict}\n\n{self.gate_line()}\n{line}\n")
+            self.assertIn("gold delta<=0 on regress-25, lowest -0.250, below -caveat_margin, allows only UNSHIPPED",
+                          self.finish()["reason"], verdict)
+        self.benchmark(f"Verdict: UNSHIPPED\n\n{self.gate_line()}\n{line}\n")
+        self.assertTrue(self.finish()["finished"])
+
+    def caps_at_caveats(self, case: str) -> None:
+        self.gated(["gold-01", case])
+        line = self.run_panel(self.SHIP_PANEL)
+        self.assertIn(f"GOLD GATE: allows at most SHIP WITH CAVEATS; gold delta<=0 on {case}",
+                      self.run_script("check_gate.py", "--consensus").stdout)
+        self.benchmark(f"Verdict: SHIP\n\n{self.gate_line()}\n{line}\n")
+        self.assertIn("caps the verdict at SHIP WITH CAVEATS", self.finish()["reason"])
+        self.benchmark(f"Verdict: SHIP WITH CAVEATS\n\n{self.gate_line()}\n{line}\n")
+        self.assertTrue(self.finish()["finished"], self.finish()["reason"])
+
+    def test_a_gold_delta_within_the_caveat_margin_caps_at_caveats(self) -> None:
+        self.caps_at_caveats("regress-05")
+
+    def test_a_gold_delta_at_the_caveat_margin_caps_at_caveats(self) -> None:
+        self.caps_at_caveats("regress-10")
 
     def test_one_run_gate_never_finishes_a_ship(self) -> None:
         self.make_build(["gold-01"])

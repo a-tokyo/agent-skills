@@ -101,7 +101,7 @@ case's class: a should-trigger grader reports how many with-arm runs fired the s
 (`max: 0`) how many runs in both arms left it quiet. Indicators gate: one with-arm run where a should-trigger
 grader fails, or one run where a near miss fires, makes the gate invalid (`trigger_failed`, `near_miss_fired`:
 a description defect, back to 4.6). A should-trigger prompt that also grades output is therefore gold: its Δ
-counts (Δ <= 0 caps the verdict, 5.4) and its indicator gates too. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
+counts (on either 5.4 path, Δ <= 0 caps the verdict at SHIP WITH CAVEATS, below -`caveat_margin` at `UNSHIPPED`) and its indicator gates too. Smoke-test the suite with `gate.py --runs 1` before the full gate: a with-arm score
 of 0 while `skill-fired` passes means the skill fired but could not act — check the tool grants and the
 fixtures first. The 1-run artifact never passes `check_gate.py`; the full run replaces it.
 

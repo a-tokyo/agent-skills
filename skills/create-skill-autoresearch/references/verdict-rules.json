@@ -1,5 +1,5 @@
 {
-  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py and scripts/check_gate.py read this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash) on the panel-verdict path; each round re-scores every dimension. metric_first replaces the panel's verdict when rubric.yaml says `metric: answer-key`. hooks/finish_guard.py reads max_finish_sendbacks: the finish guard's send-backs per build, after which a stop ends it unfinished.",
+  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py and scripts/check_gate.py read this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash) on the panel-verdict path; each round re-scores every dimension. gold_gate caps the verdict on both paths, by caveat_margin. metric_first replaces the panel's verdict when rubric.yaml says `metric: answer-key`. hooks/finish_guard.py reads max_finish_sendbacks: the finish guard's send-backs per build, after which a stop ends it unfinished.",
   "default_target_score": 0.85,
   "caveat_margin": 0.1,
   "block_below": 3,
@@ -25,6 +25,7 @@
     "SHIP WITH CAVEATS": "overall_score >= target_score - caveat_margin",
     "ITERATE": "overall_score < target_score - caveat_margin: back to Phase 4, or UNSHIPPED with no budget left"
   },
+  "gold_gate": "the 5.0 gold deltas allow SHIP when every one is > 0, at most SHIP WITH CAVEATS when the lowest is >= -caveat_margin, else only UNSHIPPED; on the panel path as on metric_first",
   "allowed_terminal": {
     "SHIP": "SHIP",
     "SHIP WITH CAVEATS": "SHIP WITH CAVEATS",
@@ -36,7 +37,7 @@
     "applies_when": "work/evaluation/rubric.yaml has `metric: answer-key` (phase-3.md 3.4); absent or `metric: llm-judge` keeps the panel's verdict (labels, allowed_terminal)",
     "max_panel_rounds": 1,
     "metric": "the last kept autoresearch.jsonl experiment whose commit output/<skill>/ still matches; with a validation split, the lower of its metric and that experiment's validation_score",
-    "gate": "SHIP when every gold delta > 0; SHIP WITH CAVEATS when the lowest is >= -caveat_margin; else UNSHIPPED (a valid gate already passed every trigger and near-miss indicator)",
+    "gate": "gold_gate (a valid gate already passed every trigger and near-miss indicator)",
     "metric_level": "SHIP at >= target_score; SHIP WITH CAVEATS at >= target_score - caveat_margin; else UNSHIPPED",
     "allowed": "the lower of the gate's and the metric's level; UNSHIPPED on any panel veto",
     "veto_kinds": {

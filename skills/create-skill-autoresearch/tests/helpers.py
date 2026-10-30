@@ -41,7 +41,8 @@ FAKE_CLAUDE = textwrap.dedent('''\
     nodelta (gold cases report a null delta); FAKE_TRIGGER_MISSES / FAKE_NEAR_MISS_FIRES fail that many
     trigger-* with-arm runs / near-miss* bare-arm runs. Cases named trigout-* get skill-fired plus an output regex
     that passes in both arms (delta 0, the k-* task-2 Sonnet 5 trigger-2 shape); trigger-* only skill-fired,
-    near-miss* only a not-fired one (max 0), holdout-* the worked case's approval regex plus skill-fired.
+    near-miss* only a not-fired one (max 0), holdout-* the worked case's approval regex plus skill-fired,
+    regress-NN a gold case the skill makes worse, at delta -NN/100.
     A case directory holding a file named INVALID fails to load: like the real CLI, a `✗` line names it
     and the run skips it. `--max-cost-usd 0` loads the cases and stops before any run (exit 2)."""
     import json, os, sys, time
@@ -95,6 +96,13 @@ FAKE_CLAUDE = textwrap.dedent('''\
             return {"name": name, "graders": [grader], "arms": {"with": indicator("not-fired", 0), "without": bare},
                     "aggregates": {"delta": 0}}
         delta = None if mode == "nodelta" else 0.5
+        if name.startswith("regress"):
+            drop = int(name.split("-")[1]) / 100
+            grader = {"name": "fact", "type": "regex", "config": {}}
+            worse = {"score": 1 - drop, "error": None, "graders": [{"name": "fact", "passed": False}]}
+            bare = {"score": 1, "error": None, "graders": [{"name": "fact", "passed": True}]}
+            return {"name": name, "graders": [grader], "arms": {"with": [worse] * runs, "without": [bare] * runs},
+                    "aggregates": {"delta": None if mode == "nodelta" else -drop}}
         if name.startswith("holdout"):
             graders = [{"name": "approval", "type": "regex",
                         "config": {"target": {"source": "file", "path": "po.json"}, "pattern": "director"}},
@@ -283,4 +291,4 @@ class TempWorkspace(unittest.TestCase):
             self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         out = self.run_script("check_gate.py", "--consensus")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
-        return out.stdout.strip()
+        return out.stdout.splitlines()[0].strip()

@@ -149,7 +149,9 @@ numbers in [verdict-rules.json](verdict-rules.json), their one home: `caveat_mar
 | otherwise | **ITERATE** -- feed panel feedback back to autoresearch |
 
 ESCALATE, BLOCK and ITERATE allow only `UNSHIPPED` as the build's terminal verdict; `check_gate.py --finish`
-rejects a BENCHMARK.md verdict above the label the consensus allows. A majority with two equally close pairs takes
+rejects a BENCHMARK.md verdict above the label the consensus allows, or above the gold gate's cap (`GOLD GATE:`,
+verdict-rules.json `gold_gate`): a 5.0 gold Δ <= 0 allows at most SHIP WITH CAVEATS, one below -`caveat_margin` only
+`UNSHIPPED`, as on the metric-first path. A majority with two equally close pairs takes
 the lower pair (the conservative reading).
 
 ### Metric-First: The Panel as a Review

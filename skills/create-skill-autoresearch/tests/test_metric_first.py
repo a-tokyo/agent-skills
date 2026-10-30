@@ -143,6 +143,19 @@ class MetricFirstTest(TempWorkspace):
                                "lowest +0.000; metric: experiment 0 0.950 -> 0.950 target 0.85; veto: none")
         self.assertIn("allows at most SHIP WITH CAVEATS", self.finish("SHIP", consensus, rule)["reason"])
 
+    def test_a_gold_delta_below_the_caveat_margin_unships(self) -> None:
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "regress-25").mkdir()
+        (self.ws / "work" / "evaluation" / "plugin" / "evals" / "regress-25" / "prompt.md").write_text("Do it.\n")
+        split = self.ws / "work" / "evaluation" / "data-split.yaml"
+        split.write_text(split.read_text() + '  - "regress-25"\n')
+        self.log(0.95)
+        self.gate()
+        consensus, rule = self.panel()
+        self.assertEqual(rule, "SHIP RULE: UNSHIPPED (metric-first); gate: gold delta<=0 on regress-25, "
+                               "lowest -0.250; metric: experiment 0 0.950 -> 0.950 target 0.85; veto: none")
+        self.assertIn("allows at most UNSHIPPED", self.finish("SHIP WITH CAVEATS", consensus, rule)["reason"])
+        self.assertTrue(self.finish("UNSHIPPED", consensus, rule)["finished"])
+
     def test_a_cited_hard_defect_vetoes(self) -> None:
         self.log(0.95)
         self.gate()

@@ -233,8 +233,9 @@ re-submitting with `--synthesis`; then converged → average, 2-of-3 → majorit
   `target_score`, no dimension blocked) -- copy the skill to its final location; **SHIP WITH CAVEATS** (>= `target_score -
   caveat_margin`) -- log concerns, proceed; **ITERATE** (below that) -- feed panel feedback to autoresearch; **BLOCK**
   (`block_majority` members score a dimension < `block_below`) -- address the blocking concern first; **ESCALATE** -- the
-  user decides. ITERATE, BLOCK and ESCALATE allow only `UNSHIPPED`. A 5.0 gold case with Δ <= 0 caps the verdict at SHIP
-  WITH CAVEATS until a re-run shows Δ > 0; record why that case cannot benefit. If ITERATE: turn each member's top
+  user decides. ITERATE, BLOCK and ESCALATE allow only `UNSHIPPED`. The 5.0 gold Δs cap it as metric-first does
+  (`GOLD GATE:` line): the lowest Δ <= 0 caps at SHIP WITH CAVEATS (record why that case cannot benefit), below
+  -`caveat_margin` allows only `UNSHIPPED`, until a re-run shows Δ > 0. If ITERATE: turn each member's top
   concern and every Devil's Advocate failure scenario into a hypothesis in `autoresearch.ideas.md`, log the panel scores
   and rationales in `work/experiments/craft-decisions.md`, and return to Phase 4, then 5.0-5.1.
 

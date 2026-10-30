@@ -11,7 +11,8 @@ uplift.json) covers exactly data-split.yaml's plugin_eval with >= 3 completed ru
 a numeric delta per gold case and every Skill indicator passing (phase-5.md 5.0). Prints `GATE VALID: ...` or
 `GATE INVALID: <reason>`; --json the same verdict with a stable `code`.
 --panel, --panel-receipt, --consensus: the panel on a valid gate (SKILL.md 5.2-5.3; scripts/panel.py); with
-`metric: answer-key` in rubric.yaml, --consensus also prints the metric-first `SHIP RULE:` line (ship_rule).
+`metric: answer-key` in rubric.yaml, --consensus also prints the metric-first `SHIP RULE:` line (ship_rule), else,
+with a gold delta <= 0, the `GOLD GATE:` cap --finish holds the verdict to (gate_level).
 --finish: BENCHMARK.md's verdict stands (SKILL.md 5.1, 5.4): `BUILD FINISHED: ...` or `BUILD UNFINISHED: <reason>`.
 --fast-path: at the end of 3.5, may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or
 `NO FAST PATH: <reason>`; it reads the baseline, the validation check and git, never the gate.
@@ -326,9 +327,11 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
         return False, verdict, (f"{BENCHMARK} lacks check_gate.py's current GATE VALID line beside the {verdict} "
                                 f"verdict; copy it in verbatim: {gate.line()}")
     checkable = panel.checkable(workspace)
-    if verdict == "SHIP" and gate.non_positive and not checkable:
-        return False, verdict, (f"gold delta<=0 on {', '.join(gate.non_positive)} caps the verdict at SHIP WITH "
-                                "CAVEATS (5.4); write that, with why the case cannot benefit")
+    capped, why_capped = gate_level(gate)
+    if not checkable and panel.RANK[verdict] > panel.RANK[capped]:
+        return False, verdict, (f"{why_capped}, caps the verdict at SHIP WITH CAVEATS (5.4); write that, with why "
+                                "the case cannot benefit" if capped == "SHIP WITH CAVEATS" else
+                                f"{why_capped}, below -caveat_margin, allows only UNSHIPPED (5.4); write that")
     consensus, why = panel.recorded(workspace, gate.skill, skill_sha256(workspace, gate.skill))
     if consensus is None:
         return (True, verdict, "ok") if unshipped else (
@@ -354,6 +357,15 @@ def _level(value: float | None, floor: float, margin: float) -> str:
     if value is None:
         return "UNSHIPPED"
     return "SHIP" if value + 1e-9 >= floor else "SHIP WITH CAVEATS" if value + 1e-9 >= floor - margin else "UNSHIPPED"
+
+
+def gate_level(gate: Verdict) -> tuple[str, str]:
+    """The verdict the gold deltas allow on either path (verdict-rules.json gold_gate): SHIP when every gold delta
+    is > 0, SHIP WITH CAVEATS when the lowest is >= -caveat_margin, else UNSHIPPED. Not _level: a delta of 0 caps."""
+    if not gate.non_positive:
+        return "SHIP", "every gold delta > 0"
+    level = "SHIP WITH CAVEATS" if gate.min_delta + 1e-9 >= -panel.rules()["caveat_margin"] else "UNSHIPPED"
+    return level, f"gold delta<=0 on {', '.join(gate.non_positive)}, lowest {gate.min_delta:+.3f}"
 
 
 def ship_metric(workspace: Path, skill: str) -> tuple[float | None, str]:
@@ -394,18 +406,14 @@ class ShipRule:
 
 def ship_rule(workspace: Path, gate: Verdict, consensus: panel.Consensus) -> ShipRule:
     """The verdict a checkable skill may carry (verdict-rules.json metric_first): the lower of the gate's level
-    (every gold delta > 0; the lowest within caveat_margin below 0) and the Phase 4 metric's against target_score,
-    UNSHIPPED on a panel veto. The panel's scores are a review and move nothing else."""
+    (gate_level) and the Phase 4 metric's against target_score, UNSHIPPED on a panel veto. The panel's scores are a
+    review and move nothing else."""
     margin, target = panel.rules()["caveat_margin"], consensus.target
-    if gate.non_positive:
-        gate_level = "SHIP WITH CAVEATS" if gate.min_delta + 1e-9 >= -margin else "UNSHIPPED"
-        gate_text = f"gold delta<=0 on {', '.join(gate.non_positive)}, lowest {gate.min_delta:+.3f}"
-    else:
-        gate_level, gate_text = "SHIP", "every gold delta > 0"
+    gate_cap, gate_text = gate_level(gate)
     value, how = ship_metric(workspace, gate.skill)
     metric_level = _level(value, target, margin)
     metric_text = f"{how} -> {value:.3f} target {target:.2f}" if value is not None else f"none ({how})"
-    levels = [gate_level, metric_level] + (["UNSHIPPED"] if consensus.vetoes else [])
+    levels = [gate_cap, metric_level] + (["UNSHIPPED"] if consensus.vetoes else [])
     return ShipRule(min(levels, key=panel.RANK.__getitem__), gate_text, metric_text,
                     ", ".join(consensus.vetoes) or "none")
 
@@ -657,6 +665,9 @@ def main(argv: list[str] | None = None) -> int:
             print(consensus.line())
             if consensus.checkable:
                 print(ship_rule(workspace, verdict, consensus).line())
+            elif verdict.non_positive:
+                cap, why = gate_level(verdict)
+                print(f"GOLD GATE: allows at most {cap}; {why}")
         elif args.panel:
             print(f"PANEL ROUND {panel.check_round(workspace, skill_sha)}: each role scores every dimension")
             print(f"panel: after scoring, each verifier runs `check_gate.py --panel-receipt <role> <scores.json>` "
