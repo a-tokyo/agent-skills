@@ -4,7 +4,7 @@ A receipt (work/experiments/panel/<role>.json, <role>.synthesis.json) binds a ve
 rubric hashes; each consensus is archived as a round under work/experiments/panel/rounds/<n>/ with a copy of
 SKILL.md and the final receipts. The thresholds and max_panel_rounds live in references/verdict-rules.json;
 the protocol in references/consensus-protocol.md; rubric.yaml's schema (read here by a small stdlib reader:
-target_score, and dimensions with name, weight, scale) in references/rubric-templates.md.
+target_score, plateau_window, and dimensions with name, weight, scale) in references/rubric-templates.md.
 """
 
 from __future__ import annotations
@@ -50,6 +50,7 @@ class Rubric:
     dimensions: list[Dimension]
     target_score: float
     sha256: str
+    plateau_window: int = 2
 
 
 def read_rubric(workspace: Path) -> Rubric:
@@ -57,6 +58,7 @@ def read_rubric(workspace: Path) -> Rubric:
     if not path.is_file():
         raise GateError(f"{RUBRIC} not found; 2.3 writes it (schema: references/rubric-templates.md)")
     target: float | None = None
+    window = 2
     items: list[dict[str, str]] = []
     in_dims = False
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -71,6 +73,10 @@ def read_rubric(workspace: Path) -> Rubric:
                     target = float(_unquote(value))
                 except ValueError as exc:
                     raise GateError(f"{RUBRIC}: target_score {value.strip()!r} is not a number") from exc
+            elif key.strip() == "plateau_window":
+                if not re.fullmatch(r"[1-9]\d*", _unquote(value)):
+                    raise GateError(f"{RUBRIC}: plateau_window {value.strip()!r} is not a whole number >= 1")
+                window = int(_unquote(value))
         elif in_dims:
             item = line.strip()
             if item.startswith("- "):
@@ -94,7 +100,7 @@ def read_rubric(workspace: Path) -> Rubric:
         raise GateError(f"{RUBRIC}: needs a `dimensions:` block list of uniquely named dimensions")
     if abs(sum(d.weight for d in dims) - 1) > 0.01:
         raise GateError(f"{RUBRIC}: dimension weights sum to {sum(d.weight for d in dims):g}, not 1.0")
-    return Rubric(dims, rules()["default_target_score"] if target is None else target, file_sha256(path))
+    return Rubric(dims, rules()["default_target_score"] if target is None else target, file_sha256(path), window)
 
 
 def _receipt_path(workspace: Path, role: str, synthesis: bool) -> Path:

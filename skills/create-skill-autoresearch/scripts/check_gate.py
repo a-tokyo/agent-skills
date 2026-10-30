@@ -46,6 +46,7 @@ EXPERIMENT_LOGS = (Path("autoresearch.jsonl"), Path("work") / "experiments" / "a
 TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
 VALIDATION_DROP = 0.05  # phase-4.md 4.2: validation this far below training is the overfitting warning
 NOISE_FLOOR = 0.01  # phase-4.md Loop Conventions: the noise threshold's absolute minimum
+NOISE_ESTIMATE = "noise_estimate"  # the jsonl line 3.5 logs: {"type": "noise_estimate", "noise_threshold": x}
 DISCARDED = {"discard", "discarded", "revert", "reverted", "crash"}  # experiment statuses that are not kept
 REOPENED = {"ITERATE", "BLOCK"}  # panel consensus labels that send the build back to Phase 4
 VERDICT_LINE = re.compile(r"(?im)^[#>*_\s-]*verdict[*_\s]*[:—–-][*_\s`]*"
@@ -464,14 +465,33 @@ def _description_only(workspace: Path, experiments: list[dict], skill: str | Non
     return str(kept[-1]["experiment"]) if _without_description(old.stdout) == _without_description(now) else None
 
 
+def noise_threshold(entries: list[dict]) -> float:
+    """The judge noise threshold: the latest noise_estimate line's `noise_threshold` (the baseline's measured
+    spread, phase-3.md 3.5), never below NOISE_FLOOR; NOISE_FLOOR when none is logged."""
+    found = [e.get("noise_threshold") for e in entries if e.get("type") == NOISE_ESTIMATE]
+    return max(NOISE_FLOOR, found[-1]) if found and is_number(found[-1]) else NOISE_FLOOR
+
+
+def _plateau(scored: list[dict], noise: float) -> int:
+    """How many experiments in a row, ending with the last, did not beat the best kept before each by more than
+    `noise` (experiment 0 sets the first best)."""
+    streak, bar = 0, None
+    for e in scored:
+        if bar is not None:
+            streak = streak + 1 if e["metric"] <= bar + noise + 1e-9 else 0
+        if str(e.get("status") or "").lower() not in DISCARDED:
+            bar = e["metric"] if bar is None else max(bar, e["metric"])
+    return streak
+
+
 def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
     """(the Phase 4 loop is over, why), from the experiment log (phase-4.md 4.3): the 3.5 fast path holds, the best
-    kept overall_score is at its maximum (1.0), or the last experiment brought the build to or kept it at
-    target_score with no gain above the noise floor (NOISE_FLOOR, the one noise value on disk) over the best kept
-    before it. It reopens for one more metric run when the panel's latest consensus is ITERATE or BLOCK and newer
+    kept overall_score is at its maximum (1.0), the last `plateau_window` (rubric.yaml) experiments each scored
+    within the noise threshold (noise_threshold) of the best kept before it, at any score, or the last experiment
+    brought the build to or kept it at target_score with no gain above that threshold. It reopens for one more metric run when the panel's latest consensus is ITERATE or BLOCK and newer
     than the log, when only experiment 0 is logged and a newer gate scored a gold case at delta <= 0 (phase-3.md
     3.5), or when only the description changed since the last kept experiment (4.6)."""
-    _, experiments, logged = _experiments(workspace)
+    entries, experiments, logged = _experiments(workspace)
     scored = [e for e in experiments if is_number(e.get("metric"))]
     if not scored:
         return False, "no scored experiment logged yet"
@@ -488,21 +508,26 @@ def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
         done = "experiment 0 meets target_score: the 3.5 fast path, so run 3.6 first"
     else:
         try:
-            target = panel.read_rubric(workspace).target_score
+            rubric = panel.read_rubric(workspace)
         except GateError as exc:
             return False, str(exc)
+        target, window, noise = rubric.target_score, rubric.plateau_window, noise_threshold(entries)
         kept = [e for e in scored if str(e.get("status") or "").lower() not in DISCARDED]
         best = max((e["metric"] for e in kept), default=None)
         last = scored[-1]
         prior = max((e["metric"] for e in kept if e is not last), default=None)
         if best is not None and best >= 1 - 1e-9:
             done = f"the best overall_score is {best:.3f}, its maximum"
+        elif (streak := _plateau(scored, noise)) >= window:
+            done = (f"a plateau: the last {streak} experiments each scored within the noise threshold {noise:.3f} "
+                    f"of the best kept before it (plateau_window {window}; best {best:.3f})")
         elif prior is not None and len(scored) > 1 and max(prior, last["metric"]) + 1e-9 >= target \
-                and last["metric"] <= prior + NOISE_FLOOR + 1e-9:
-            done = (f"experiment {last.get('experiment')} scored {last['metric']:.3f}, no gain above the "
-                    f"{NOISE_FLOOR} noise floor over the best {prior:.3f}, at target_score {target:.2f}")
+                and last["metric"] <= prior + noise + 1e-9:
+            done = (f"experiment {last.get('experiment')} scored {last['metric']:.3f}, no gain above the noise "
+                    f"threshold {noise:.3f} over the best {prior:.3f}, at target_score {target:.2f}")
         else:
-            return False, "no stop rule holds (fast path, the 1.0 ceiling, at target with no gain)"
+            return False, (f"no stop rule holds (fast path, the 1.0 ceiling, a plateau of {window}, at target with "
+                           "no gain)")
     if (experiment := _description_only(workspace, experiments, skill)) is not None:
         return False, f"only the description changed since experiment {experiment}: the 4.6 pass may score it"
     return True, done

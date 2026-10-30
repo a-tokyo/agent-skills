@@ -158,7 +158,8 @@ unreachable `target_score` burns the whole budget and reports "exit criteria not
   in the ideas backlog.
 - Never ask for repeated re-runs toward an unreachable number: report the ceiling, name the binding
   constraint (target too high, or gains below judge variance), and proceed.
-- **The loop guard enforces the fast path, the ceiling and the target rule** (noise floor 0.01): `python3
+- **The loop guard enforces the fast path, the ceiling, the plateau and the target rule**, with the noise threshold
+  from the latest `noise_estimate` line (never below 0.01) and `plateau_window` from `rubric.yaml`: `python3
   <skill-dir>/scripts/check_gate.py --loop` prints `LOOP DONE: <reason>` or `LOOP OPEN: <reason>`, and while it
   is done the kill guard denies the metric command. A panel ITERATE or BLOCK newer than the log reopens it for one
   experiment; a description-only change (4.6) may be scored.
@@ -179,7 +180,8 @@ adds the rest, and applies it in every experiment:
   experiment 0, so `HEAD~1` always exists.
 - **Noise threshold.** Keep a change only if `overall_score` beats the best by more than the judge
   noise threshold: the larger of 0.01 absolute minimum and the per-judge variance measured on the
-  baseline (re-run the baseline twice to estimate it). Gains inside the noise are discards.
+  baseline (re-run the baseline twice to estimate it; 3.5 logs it as a `noise_estimate` line, which the loop
+  guard reads). Gains inside the noise are discards.
 - **Plateau window.** `rubric.yaml` `plateau_window` (default 2) consecutive experiments within the noise
   threshold is a plateau, and 4.3 ends the loop there.
 - **Baseline failure.** If the metric command fails on experiment 0 (no `METRIC overall_score` line,

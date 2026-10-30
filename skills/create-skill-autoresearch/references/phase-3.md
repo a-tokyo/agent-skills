@@ -285,7 +285,9 @@ For each dimension:
 
 Run `evaluate.sh` on the draft, commit it (`git add output/<skill-name> && git commit -m "baseline"`; upstream autoresearch
 never commits one, and its `git reset --hard HEAD~1` needs that parent), log experiment 0 in `autoresearch.jsonl` ([phase-4.md](phase-4.md) 4.1)
-with that commit's hash (`git rev-parse HEAD`), report it.
+with that commit's hash (`git rev-parse HEAD`), report it. Unless the fast path below is taken, re-run `evaluate.sh` twice more on that commit before Phase 4 and append
+`{"type": "noise_estimate", "noise_threshold": <max - min of the three overall_score values>}`: the noise threshold
+the loop and its guard use (phase-4.md Loop Conventions; 0.01 when it is smaller or not logged).
 
 **Fast path, decided now.** With a `validation` list in data-split.yaml, score it (`evaluate.sh <case>` per case) and
 log the 4.2 `validation_check` with `"experiment": 0`. Then run `python3 <skill-dir>/scripts/check_gate.py --fast-path`.

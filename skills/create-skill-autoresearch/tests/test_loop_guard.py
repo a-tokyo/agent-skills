@@ -120,10 +120,63 @@ class LoopGuardTest(TempWorkspace):
         self.assertTrue(self.loop().startswith("LOOP OPEN:"), "a gain to target keeps it open")
         self.log(zero, {"experiment": 1, "commit": commit, "metric": 0.86, "status": "keep"},
                  {"experiment": 2, "commit": commit, "metric": 0.865, "status": "keep"})
-        self.assertEqual(self.loop(), "LOOP DONE: experiment 2 scored 0.865, no gain above the 0.01 noise floor over "
-                                      "the best 0.860, at target_score 0.85")
+        self.assertEqual(self.loop(), "LOOP DONE: experiment 2 scored 0.865, no gain above the noise threshold 0.010 "
+                                      "over the best 0.860, at target_score 0.85")
         self.log(zero, {"experiment": 1, "commit": commit, "metric": 0.81, "status": "discard"})
         self.assertTrue(self.loop().startswith("LOOP OPEN:"), "below target is not this rule")
+
+    def test_a_plateau_below_target_closes_the_loop(self) -> None:
+        """Round 6 adversary: target 0.85, plateau_window 2, measured noise 0.03, 0.700 -> 0.705 -> 0.704."""
+        commit = self.git("rev-parse", "HEAD")
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n# Edit\n")
+        zero = {"experiment": 0, "commit": commit, "metric": 0.7, "status": "baseline"}
+        noise = {"type": "noise_estimate", "noise_threshold": 0.03}
+        one = {"experiment": 1, "commit": commit, "metric": 0.705, "status": "discard"}
+        two = {"experiment": 2, "commit": commit, "metric": 0.704, "status": "discard"}
+        self.log(zero, noise, one)
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "one experiment inside the noise is not a plateau of 2")
+        self.log(zero, noise, one, two)
+        self.assertEqual(self.loop(), "LOOP DONE: a plateau: the last 2 experiments each scored within the noise "
+                                      "threshold 0.030 of the best kept before it (plateau_window 2; best 0.700)")
+        self.assertTrue(self.denied())
+        wider = ({**one, "metric": 0.72}, {**two, "metric": 0.719})  # within 0.03, not within 0.01
+        self.log(zero, noise, *wider)
+        self.assertTrue(self.loop().startswith("LOOP DONE: a plateau"))
+        self.log(zero, *wider)
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "with no estimate the 0.01 floor applies")
+        self.log(zero, {"type": "noise_estimate", "noise_threshold": 0.001}, one, two)
+        self.assertTrue(self.loop().startswith("LOOP DONE: a plateau"), "an estimate below the floor is raised to it")
+        self.log(zero, noise, {**one, "metric": 0.75, "status": "keep"}, {**two, "metric": 0.8, "status": "keep"})
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "gains above the noise are no plateau")
+        self.log(zero, noise, one, two, {**two, "experiment": 3, "metric": 0.74, "status": "keep"})
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "a gain resets the run")
+
+    def test_the_plateau_window_comes_from_the_rubric(self) -> None:
+        commit = self.git("rev-parse", "HEAD")
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n# Edit\n")
+        rubric = self.ws / "work" / "evaluation" / "rubric.yaml"
+        rubric.write_text(rubric.read_text() + "plateau_window: 3\n")
+        entries = [{"experiment": 0, "commit": commit, "metric": 0.7, "status": "baseline"},
+                   {"type": "noise_estimate", "noise_threshold": 0.02}]
+        entries += [{"experiment": i, "commit": commit, "metric": 0.7 + i / 1000, "status": "discard"} for i in (1, 2)]
+        self.log(*entries)
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "two of three")
+        self.log(*entries, {"experiment": 3, "commit": commit, "metric": 0.71, "status": "discard"})
+        self.assertIn("a plateau: the last 3 experiments", self.loop())
+        rubric.write_text(rubric.read_text().replace("plateau_window: 3", "plateau_window: two"))
+        self.assertIn("plateau_window 'two' is not a whole number", self.loop())
+
+    def test_above_target_a_plateau_and_the_target_rule_both_close_it(self) -> None:
+        commit = self.git("rev-parse", "HEAD")
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n# Edit\n")
+        zero = {"experiment": 0, "commit": commit, "metric": 0.8, "status": "baseline"}
+        noise = {"type": "noise_estimate", "noise_threshold": 0.03}
+        one = {"experiment": 1, "commit": commit, "metric": 0.9, "status": "keep"}
+        self.log(zero, noise, one)
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "a gain to target keeps it open")
+        self.log(zero, noise, one, {"experiment": 2, "commit": commit, "metric": 0.925, "status": "keep"})
+        self.assertEqual(self.loop(), "LOOP DONE: experiment 2 scored 0.925, no gain above the noise threshold 0.030 "
+                                      "over the best 0.900, at target_score 0.85")
 
     def test_an_iterate_consensus_reopens_it_for_one_experiment(self) -> None:
         commit = self.git("rev-parse", "HEAD")
