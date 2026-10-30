@@ -99,7 +99,7 @@ hand *will* drift.
 
 ## Checklist
 
-- [ ] `BENCHMARK.md` holds `check_gate.py`'s `GATE VALID:` and `PANEL CONSENSUS:` lines, verbatim, from after the last skill change
+- [ ] `BENCHMARK.md` holds `check_gate.py`'s `GATE VALID:` and `PANEL CONSENSUS:` lines (metric-first: and `SHIP RULE:`), verbatim, from after the last skill change
 - [ ] `check_gate.py --finish` exits 0: three role receipts and the consensus (`work/experiments/panel/`) match the skill shipped
 - [ ] `metadata.version` bumped (and a top-level `version`, where a registry reads one); `license` present
 - [ ] Body under 500 lines; references one level deep; TOC on any reference over ~100 lines

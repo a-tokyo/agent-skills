@@ -240,7 +240,7 @@ For each panel member (Verifier-A, Verifier-B, Devil's Advocate):
    c. Share with all members
    d. Each member re-submits: check_gate.py --panel-receipt <role> <its synthesis JSON> --synthesis
    e. check_gate.py --consensus again: the convergence test
-4. The PANEL CONSENSUS line names the label and the verdict it allows
+4. The PANEL CONSENSUS line names the label and the verdict it allows (metric-first: `review; veto: …`)
 5. If SHIP → output final skill
 6. If ITERATE (panel-verdict path) → structure feedback → return to autoresearch; the fixed skill's panel is a
    new round, where every role scores every dimension again, and past max_panel_rounds (verdict-rules.json, 3;
