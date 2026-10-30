@@ -10,7 +10,8 @@ skill, cases, splits, run-case.sh, gate inputs and artifact, and the mode's arti
 uplift.json) covers exactly data-split.yaml's plugin_eval with >= 3 completed runs per arm, `"partial": false`,
 a numeric delta per gold case and every Skill indicator passing (phase-5.md 5.0). Prints `GATE VALID: ...` or
 `GATE INVALID: <reason>`; --json the same verdict with a stable `code`.
---panel, --panel-receipt, --consensus: the panel on a valid gate (SKILL.md 5.2-5.3; scripts/panel.py).
+--panel, --panel-receipt, --consensus: the panel on a valid gate (SKILL.md 5.2-5.3; scripts/panel.py); with
+`metric: answer-key` in rubric.yaml, --consensus also prints the metric-first `SHIP RULE:` line (ship_rule).
 --finish: BENCHMARK.md's verdict stands (SKILL.md 5.1, 5.4): `BUILD FINISHED: ...` or `BUILD UNFINISHED: <reason>`.
 --fast-path: at the end of 3.5, may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or
 `NO FAST PATH: <reason>`; it reads the baseline, the validation check and git, never the gate.
@@ -69,6 +70,7 @@ class Verdict:
     cases: int = 0
     gold_cases: int = 0
     mean_delta: float | None = None
+    min_delta: float | None = None
     non_positive: list[str] = field(default_factory=list)
     triggers: dict[str, str] = field(default_factory=dict)
     near_misses: dict[str, str] = field(default_factory=dict)
@@ -275,7 +277,8 @@ def validate(workspace: Path, skill: str | None = None) -> Verdict:
         return Verdict(False, mode, None if rel is None else rel.as_posix(), exc.reason, code=exc.code)
     gold = [r for r in results if r.kind == "gold"]
     return Verdict(True, mode, rel.as_posix(), "ok", cases=len(results), gold_cases=len(gold),
-                   mean_delta=_mean([r.delta for r in gold]), non_positive=[r.name for r in gold if r.delta <= 0],
+                   mean_delta=_mean([r.delta for r in gold]), min_delta=min((r.delta for r in gold), default=None),
+                   non_positive=[r.name for r in gold if r.delta <= 0],
                    triggers={r.name: r.trigger for r in results if r.trigger is not None},
                    near_misses={r.name: r.near_miss for r in results if r.near_miss is not None},
                    skill=record["skill"])
@@ -322,20 +325,89 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
     if _spaced(gate.line()) not in _spaced(text):
         return False, verdict, (f"{BENCHMARK} lacks check_gate.py's current GATE VALID line beside the {verdict} "
                                 f"verdict; copy it in verbatim: {gate.line()}")
-    if verdict == "SHIP" and gate.non_positive:
+    checkable = panel.checkable(workspace)
+    if verdict == "SHIP" and gate.non_positive and not checkable:
         return False, verdict, (f"gold delta<=0 on {', '.join(gate.non_positive)} caps the verdict at SHIP WITH "
                                 "CAVEATS (5.4); write that, with why the case cannot benefit")
     consensus, why = panel.recorded(workspace, gate.skill, skill_sha256(workspace, gate.skill))
     if consensus is None:
         return (True, verdict, "ok") if unshipped else (
             False, verdict, f"{verdict} needs the panel's consensus on this skill: {why}")
-    if panel.RANK[verdict] > panel.RANK[consensus.allowed]:
+    rule = ship_rule(workspace, gate, consensus) if checkable else None
+    if rule and panel.RANK[verdict] > panel.RANK[rule.allowed]:
+        return False, verdict, (f"the metric-first rule allows at most {rule.allowed} ({rule.line()}); write that "
+                                "verdict (5.4: the panel does not send a checkable skill back to Phase 4)")
+    if not rule and panel.RANK[verdict] > panel.RANK[consensus.allowed]:
         return False, verdict, (f"the panel's consensus allows at most {consensus.allowed} ({consensus.line()}); "
                                 f"write that verdict, or return to Phase 4 and re-run 5.0-5.3")
     if _spaced(consensus.line()) not in _spaced(text):
         return False, verdict, (f"{BENCHMARK} lacks the panel's current PANEL CONSENSUS line beside the {verdict} "
                                 f"verdict; copy it in verbatim: {consensus.line()}")
+    if rule and _spaced(rule.line()) not in _spaced(text):
+        return False, verdict, (f"{BENCHMARK} lacks check_gate.py's current SHIP RULE line beside the {verdict} "
+                                f"verdict; copy it in verbatim: {rule.line()}")
     return True, verdict, "ok"
+
+
+def _level(value: float | None, floor: float, margin: float) -> str:
+    """SHIP at or above `floor`, SHIP WITH CAVEATS within `margin` below it, else UNSHIPPED (None: UNSHIPPED)."""
+    if value is None:
+        return "UNSHIPPED"
+    return "SHIP" if value + 1e-9 >= floor else "SHIP WITH CAVEATS" if value + 1e-9 >= floor - margin else "UNSHIPPED"
+
+
+def ship_metric(workspace: Path, skill: str) -> tuple[float | None, str]:
+    """(the Phase 4 metric the skill ships on, how it was read), or (None, why): the last kept experiment whose
+    commit output/<skill>/ still matches; with a validation split, the lower of its metric and that experiment's
+    validation_score (phase-4.md 4.2; verdict-rules.json metric_first)."""
+    entries, experiments, _ = _experiments(workspace)
+    kept = [e for e in experiments if is_number(e.get("metric")) and isinstance(e.get("commit"), str)
+            and e["commit"].strip() and str(e.get("status") or "").lower() not in DISCARDED]
+    match = next((e for e in reversed(kept) if _changed_since(workspace, e["commit"], skill) is None), None)
+    if match is None:
+        return None, (f"no kept experiment in autoresearch.jsonl scored output/{skill}/ as it is now (log the "
+                      "re-score of the shipped commit, 4.6's included, as an experiment line with its commit)")
+    n, metric = match.get("experiment"), match["metric"]
+    try:
+        validated = bool(read_data_split(workspace / DATA_SPLIT).gold.get("validation"))
+    except GateError as exc:
+        return None, str(exc)
+    if not validated:
+        return metric, f"experiment {n} {metric:.3f}"
+    checks = [e for e in entries if e.get("type") == "validation_check" and e.get("experiment") == n]
+    score = checks[-1].get("validation_score") if checks else None
+    if not is_number(score):
+        return None, f"no validation_check with a numeric validation_score for experiment {n} (phase-4.md 4.2)"
+    return min(metric, score), f"experiment {n} {metric:.3f}, validation {score:.3f}"
+
+
+@dataclass
+class ShipRule:
+    allowed: str
+    gate: str
+    metric: str
+    veto: str
+
+    def line(self) -> str:
+        return f"SHIP RULE: {self.allowed} (metric-first); gate: {self.gate}; metric: {self.metric}; veto: {self.veto}"
+
+
+def ship_rule(workspace: Path, gate: Verdict, consensus: panel.Consensus) -> ShipRule:
+    """The verdict a checkable skill may carry (verdict-rules.json metric_first): the lower of the gate's level
+    (every gold delta > 0; the lowest within caveat_margin below 0) and the Phase 4 metric's against target_score,
+    UNSHIPPED on a panel veto. The panel's scores are a review and move nothing else."""
+    margin, target = panel.rules()["caveat_margin"], consensus.target
+    if gate.non_positive:
+        gate_level = "SHIP WITH CAVEATS" if gate.min_delta + 1e-9 >= -margin else "UNSHIPPED"
+        gate_text = f"gold delta<=0 on {', '.join(gate.non_positive)}, lowest {gate.min_delta:+.3f}"
+    else:
+        gate_level, gate_text = "SHIP", "every gold delta > 0"
+    value, how = ship_metric(workspace, gate.skill)
+    metric_level = _level(value, target, margin)
+    metric_text = f"{how} -> {value:.3f} target {target:.2f}" if value is not None else f"none ({how})"
+    levels = [gate_level, metric_level] + (["UNSHIPPED"] if consensus.vetoes else [])
+    return ShipRule(min(levels, key=panel.RANK.__getitem__), gate_text, metric_text,
+                    ", ".join(consensus.vetoes) or "none")
 
 
 def _git(workspace: Path, *args: str) -> subprocess.CompletedProcess | None:
@@ -489,7 +561,7 @@ def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
     kept overall_score is at its maximum (1.0), the last `plateau_window` (rubric.yaml) experiments each scored
     within the noise threshold (noise_threshold) of the best kept before it, at any score, or the last experiment
     brought the build to or kept it at target_score with no gain above that threshold. It reopens for one more metric run when the panel's latest consensus is ITERATE or BLOCK and newer
-    than the log, when only experiment 0 is logged and a newer gate scored a gold case at delta <= 0 (phase-3.md
+    than the log (never on a checkable skill: metric-first, the panel is a review), when only experiment 0 is logged and a newer gate scored a gold case at delta <= 0 (phase-3.md
     3.5), or when only the description changed since the last kept experiment (4.6)."""
     entries, experiments, logged = _experiments(workspace)
     scored = [e for e in experiments if is_number(e.get("metric"))]
@@ -497,7 +569,7 @@ def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
         return False, "no scored experiment logged yet"
     consensus = read_json(workspace / panel.CONSENSUS)
     label = consensus.get("label") if consensus else None
-    if label in REOPENED and (workspace / panel.CONSENSUS).stat().st_mtime > logged:
+    if label in REOPENED and not panel.checkable(workspace) and (workspace / panel.CONSENSUS).stat().st_mtime > logged:
         return False, f"the panel's latest consensus, {label}, is newer than the last logged experiment"
     gate = workspace / GATE_RECORD
     if all(e.get("experiment") == 0 for e in experiments) and gate.is_file() and gate.stat().st_mtime > logged \
@@ -581,7 +653,10 @@ def main(argv: list[str] | None = None) -> int:
             print(f"PANEL RECEIPT: {path.relative_to(workspace).as_posix()} ({role}, round {2 if args.synthesis else 1})"
                   + (f" binds these scores to output/{verdict.skill}/ as it is now" if args.verbose else ""))
         elif args.consensus:
-            print(panel.write_consensus(workspace, verdict.skill, skill_sha).line())
+            consensus = panel.write_consensus(workspace, verdict.skill, skill_sha)
+            print(consensus.line())
+            if consensus.checkable:
+                print(ship_rule(workspace, verdict, consensus).line())
         elif args.panel:
             print(f"PANEL ROUND {panel.check_round(workspace, skill_sha)}: each role scores every dimension")
             print(f"panel: after scoring, each verifier runs `check_gate.py --panel-receipt <role> <scores.json>` "

@@ -156,13 +156,18 @@ unreachable `target_score` burns the whole budget and reports "exit criteria not
 - **Below target is a verdict, not a failure** -- Phase 5.4 grades it (SHIP WITH CAVEATS within
   `caveat_margin` of `target_score`). Honour `baseline_lock` in `state.yaml` the same way, logging the real target
   in the ideas backlog.
+- **With `metric: answer-key` this metric is the ship decision** (metric-first, SKILL.md 5.4): the last kept
+  experiment whose `commit` matches `output/<skill-name>/` as shipped -- with a validation split, the lower of its
+  `metric` and that experiment's `validation_score` -- is what `check_gate.py` sets against `target_score`. A skill
+  edited after its last scored experiment ships on no metric (`UNSHIPPED`), so log every re-score with its commit.
+  The panel never sends such a build back here.
 - Never ask for repeated re-runs toward an unreachable number: report the ceiling, name the binding
   constraint (target too high, or gains below judge variance), and proceed.
 - **The loop guard enforces the fast path, the ceiling, the plateau and the target rule**, with the noise threshold
   from the latest `noise_estimate` line (never below 0.01) and `plateau_window` from `rubric.yaml`: `python3
   <skill-dir>/scripts/check_gate.py --loop` prints `LOOP DONE: <reason>` or `LOOP OPEN: <reason>`, and while it
-  is done the kill guard denies the metric command. A panel ITERATE or BLOCK newer than the log reopens it for one
-  experiment; a description-only change (4.6) may be scored.
+  is done the kill guard denies the metric command. On the panel-verdict path a panel ITERATE or BLOCK newer than the
+  log reopens it for one experiment; a description-only change (4.6) may be scored.
 
 ## Loop Conventions the Factory Owns
 
@@ -202,7 +207,7 @@ adds the rest, and applies it in every experiment:
 Model-invoked skills only, after the loop ends: run **skill-creator**'s description optimizer
 (`scripts/run_loop.py`) on the best commit, with the 3.6 trigger and near-miss prompts as its seed queries. Keep the
 new description only if the 3.6 trigger cases still pass and `overall_score` does not drop; log the decision in
-`autoresearch.jsonl`. Read any absolute score skill-creator reports as a ranking, not a level — its grader passes
+`autoresearch.jsonl`, a kept description as an experiment line with its commit and score. Read any absolute score skill-creator reports as a ranking, not a level — its grader passes
 vague output — and its with/without Δ as the signal. Without skill-creator or `claude -p` (its trigger test needs
 Claude Code), revise by hand against the same queries and log that no trigger rate was measured.
 

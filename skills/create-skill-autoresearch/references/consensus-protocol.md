@@ -9,7 +9,7 @@ Structured multi-agent verification protocol for the factory's Phase 5. Three in
 - Scoring Rules
 - Disagreement Detection
 - Synthesis Round
-- Final Score Computation
+- Final Score Computation (thresholds; metric-first: the panel as a review)
 - Devil's Advocate Rules
 - Orchestrator Logic
 - Panel Prompt Templates (role receipts, Verifier-A/B, Devil's Advocate, synthesis round)
@@ -152,9 +152,26 @@ ESCALATE, BLOCK and ITERATE allow only `UNSHIPPED` as the build's terminal verdi
 rejects a BENCHMARK.md verdict above the label the consensus allows. A majority with two equally close pairs takes
 the lower pair (the conservative reading).
 
+### Metric-First: The Panel as a Review
+
+With `metric: answer-key` in `rubric.yaml` (checkable outputs) the table above is a review, not the verdict: the 5.0
+gate and the Phase 4 metric decide (`SHIP RULE:`, SKILL.md 5.4; verdict-rules.json `metric_first`). The panel runs
+one round, synthesis included (`max_panel_rounds` 1); its consensus line reads `(review; veto: …)`, and its scores and
+findings go to `BENCHMARK.md` and `craft-decisions.md`, never back to Phase 4. A member caps the verdict at `UNSHIPPED`
+only through its receipt's `veto`, which `--panel-receipt` checks like a score's evidence:
+
+| `kind` | Raised for |
+|--------|-----------|
+| `hard_constraint` | a phase-3.md 3.3 hard constraint the skill breaks |
+| `safety` | fetched content followed as instructions, a destructive command, or a like safety defect |
+| `escalate` | the Devil's Advocate's ESCALATE (beside its `escalation`), with a reproducible failure |
+
+Each needs `evidence` (a verbatim quote from the skill or `input/`) and `repro` (the input or command that shows the
+failure). An ESCALATE without a veto, a BLOCK, a deadlock or a low score is logged and moves nothing.
+
 ### ITERATE Feedback
 
-An ITERATE with no Phase 4 budget left, or after the plateau rule ended the loop, is terminal: the verdict
+Panel-verdict path only. An ITERATE with no Phase 4 budget left, or after the plateau rule ended the loop, is terminal: the verdict
 is `UNSHIPPED` (SKILL.md 5.4), not feedback. Otherwise, when the panel returns ITERATE, extract and
 structure the feedback:
 1. Top concerns from each panel member
@@ -225,9 +242,10 @@ For each panel member (Verifier-A, Verifier-B, Devil's Advocate):
    e. check_gate.py --consensus again: the convergence test
 4. The PANEL CONSENSUS line names the label and the verdict it allows
 5. If SHIP → output final skill
-6. If ITERATE → structure feedback → return to autoresearch; the fixed skill's panel is a new round,
-   where every role scores every dimension again, and past max_panel_rounds (verdict-rules.json, 3)
-   check_gate.py refuses one: UNSHIPPED on the last consensus
+6. If ITERATE (panel-verdict path) → structure feedback → return to autoresearch; the fixed skill's panel is a
+   new round, where every role scores every dimension again, and past max_panel_rounds (verdict-rules.json, 3;
+   metric-first 1) check_gate.py refuses one: UNSHIPPED on the last consensus
+   Metric-first: --consensus also prints the SHIP RULE line; log the review, then write the verdict it allows
 7. If BLOCK → highlight blocking dimension → user review
 8. If DA escalation or deadlock → surface to user
 ```
@@ -289,6 +307,7 @@ Assess STRUCTURAL QUALITY: correctness, completeness, clarity, spec adherence.
   },
   "overall_assessment": "<2-3 sentences>",
   "top_concern": "<single most important issue>",
+  "veto": null | { "kind": "hard_constraint|safety", "evidence": "\"<verbatim quote>\"", "repro": "<input or command>" },
   "pass_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"
 }
 ```
@@ -324,6 +343,7 @@ real-world usability, edge cases, integration quality, developer experience.
   "overall_assessment": "<2-3 sentences>",
   "top_concern": "<single most important issue>",
   "edge_cases_found": ["<list>"],
+  "veto": null | { "kind": "hard_constraint|safety", "evidence": "\"<verbatim quote>\"", "repro": "<input or command>" },
   "pass_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"
 }
 ```
@@ -374,6 +394,7 @@ Write "ESCALATE: <reason>" if you identify a concern that:
     { "scenario": "<concrete description>", "severity": "critical|high|medium|low" }
   ],
   "escalation": null | "ESCALATE: <reason>",
+  "veto": null | { "kind": "hard_constraint|safety|escalate", "evidence": "\"<verbatim quote>\"", "repro": "<input or command>" },
   "pass_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"
 }
 ```

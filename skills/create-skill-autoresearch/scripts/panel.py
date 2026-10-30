@@ -4,7 +4,10 @@ A receipt (work/experiments/panel/<role>.json, <role>.synthesis.json) binds a ve
 rubric hashes, once every quote its evidence gives is found verbatim in output/<skill>/ or input/ (_verify_quote); each consensus is archived as a round under work/experiments/panel/rounds/<n>/ with a copy of
 SKILL.md and the final receipts. The thresholds and max_panel_rounds live in references/verdict-rules.json;
 the protocol in references/consensus-protocol.md; rubric.yaml's schema (read here by a small stdlib reader:
-target_score, plateau_window, and dimensions with name, weight, scale) in references/rubric-templates.md.
+target_score, plateau_window, metric, and dimensions with name, weight, scale) in references/rubric-templates.md.
+With `metric: answer-key` the panel is a review: its consensus allows UNSHIPPED only on a veto (a hard defect a
+receipt cites), and check_gate.py decides the rest from the gate and the Phase 4 metric (verdict-rules.json
+metric_first).
 """
 
 from __future__ import annotations
@@ -27,11 +30,16 @@ RULES_PATH = Path(__file__).resolve().parent.parent / "references" / "verdict-ru
 DA = "devils-advocate"
 ROLES = ("verifier-a", "verifier-b", DA)
 RANK = {"UNSHIPPED": 0, "SHIP WITH CAVEATS": 1, "SHIP": 2}
+METRICS = {"answer-key": True, "llm-judge": False}  # rubric.yaml `metric:` -> checkable outputs (metric-first)
 QUOTED = re.compile(r'"([^"]+)"|\u201c([^\u201d]+)\u201d')  # "…" or “…”
 
 
 def rules() -> dict:
     return json.loads(RULES_PATH.read_text(encoding="utf-8"))
+
+
+def metric_first() -> dict:
+    return rules()["metric_first"]
 
 
 class RoundsExhausted(GateError):
@@ -52,6 +60,7 @@ class Rubric:
     target_score: float
     sha256: str
     plateau_window: int = 2
+    checkable: bool = False  # `metric: answer-key`: the gate and the Phase 4 metric decide the verdict
 
 
 def read_rubric(workspace: Path) -> Rubric:
@@ -60,6 +69,7 @@ def read_rubric(workspace: Path) -> Rubric:
         raise GateError(f"{RUBRIC} not found; 2.3 writes it (schema: references/rubric-templates.md)")
     target: float | None = None
     window = 2
+    checkable = False
     items: list[dict[str, str]] = []
     in_dims = False
     for raw in path.read_text(encoding="utf-8").splitlines():
@@ -78,6 +88,10 @@ def read_rubric(workspace: Path) -> Rubric:
                 if not re.fullmatch(r"[1-9]\d*", _unquote(value)):
                     raise GateError(f"{RUBRIC}: plateau_window {value.strip()!r} is not a whole number >= 1")
                 window = int(_unquote(value))
+            elif key.strip() == "metric":
+                if _unquote(value) not in METRICS:
+                    raise GateError(f"{RUBRIC}: metric {value.strip()!r} is not one of {', '.join(METRICS)}")
+                checkable = METRICS[_unquote(value)]
         elif in_dims:
             item = line.strip()
             if item.startswith("- "):
@@ -101,7 +115,21 @@ def read_rubric(workspace: Path) -> Rubric:
         raise GateError(f"{RUBRIC}: needs a `dimensions:` block list of uniquely named dimensions")
     if abs(sum(d.weight for d in dims) - 1) > 0.01:
         raise GateError(f"{RUBRIC}: dimension weights sum to {sum(d.weight for d in dims):g}, not 1.0")
-    return Rubric(dims, rules()["default_target_score"] if target is None else target, file_sha256(path), window)
+    return Rubric(dims, rules()["default_target_score"] if target is None else target, file_sha256(path), window,
+                  checkable)
+
+
+def checkable(workspace: Path) -> bool:
+    """rubric.yaml says `metric: answer-key`; False when it is missing or unreadable (the panel-verdict path)."""
+    try:
+        return read_rubric(workspace).checkable
+    except GateError:
+        return False
+
+
+def max_rounds(workspace: Path) -> int:
+    """max_panel_rounds for this build: metric_first's when its outputs are checkable, else the panel path's."""
+    return metric_first()["max_panel_rounds"] if checkable(workspace) else rules()["max_panel_rounds"]
 
 
 def _receipt_path(workspace: Path, role: str, synthesis: bool) -> Path:
@@ -192,6 +220,24 @@ def _synthesis_scores(raw: dict, first: dict, disputed: list[str], rubric: Rubri
     return out
 
 
+def _veto(raw: object, role: str, escalate: object, texts: list[str]) -> dict | None:
+    """A receipt's `veto` (null, or {kind, evidence, repro}): a hard defect that forces UNSHIPPED on a checkable
+    skill. Its evidence quote is verified like a score's; `repro` is the input or command that shows the failure."""
+    if raw is None:
+        return None
+    kinds = metric_first()["veto_kinds"]
+    if not isinstance(raw, dict) or raw.get("kind") not in kinds:
+        raise GateError(f"veto must be null or {{\"kind\": {' | '.join(kinds)}, \"evidence\", \"repro\"}}; got {raw!r}")
+    evidence, repro = raw.get("evidence"), raw.get("repro")
+    if not (isinstance(evidence, str) and evidence.strip()) or not (isinstance(repro, str) and repro.strip()):
+        raise GateError(f"a {raw['kind']} veto needs `evidence` (a verbatim quote) and `repro` (the input or command "
+                        "that reproduces the failure)")
+    if raw["kind"] == "escalate" and (role != DA or not (isinstance(escalate, str) and escalate.strip())):
+        raise GateError("an escalate veto is the Devil's Advocate's, beside its `escalation`")
+    _verify_quote("veto", evidence, texts)
+    return {"kind": raw["kind"], "evidence": evidence, "repro": repro}
+
+
 def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sha: str,
                   synthesis: bool = False) -> Path:
     """Validate a verifier's scoring JSON against the rubric and write its role receipt."""
@@ -214,12 +260,17 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
         receipt["scores"] = _synthesis_scores(raw, current[role], disputed, rubric, texts)
         recommendation = raw.get("final_recommendation") or current[role]["recommendation"]
         escalate = current[role].get("escalate") if "escalation" not in raw else raw.get("escalation")
+        veto = _veto(raw["veto"], role, escalate, texts) if "veto" in raw else current[role].get("veto")
+        if veto and veto["kind"] == "escalate" and not (isinstance(escalate, str) and escalate.strip()):
+            veto = None  # the escalation it rested on is withdrawn
     else:
         receipt["scores"] = _scores(raw.get("scores"), rubric, texts)
         recommendation, escalate = raw.get("pass_recommendation"), raw.get("escalation")
+        veto = _veto(raw.get("veto"), role, escalate, texts)
     receipt["recommendation"] = (re.sub(r"[ _]+", " ", recommendation.strip().upper())
                                  if isinstance(recommendation, str) and recommendation.strip() else None)
     receipt["escalate"] = escalate if isinstance(escalate, str) and escalate.strip() else None
+    receipt["veto"] = veto
     receipt["written"] = now()
     path = _receipt_path(workspace, role, synthesis)
     path.parent.mkdir(parents=True, exist_ok=True)
@@ -248,7 +299,7 @@ def check_round(workspace: Path, skill_sha: str) -> int:
     next), or RoundsExhausted when that would pass `max_panel_rounds`."""
     archive = rounds(workspace)
     n = len(archive) if archive and archive[-1].get("skill_sha256") == skill_sha else len(archive) + 1
-    if n > (cap := rules()["max_panel_rounds"]):
+    if n > (cap := max_rounds(workspace)):
         raise RoundsExhausted(f"the panel ran its {cap} rounds (max_panel_rounds) and the skill changed since round "
                               f"{n - 1}; no round {n} starts. End the build UNSHIPPED: write `Verdict: UNSHIPPED` "
                               f"in BENCHMARK.md beside the last round's line: {archive[-1].get('line')}")
@@ -258,7 +309,7 @@ def check_round(workspace: Path, skill_sha: str) -> int:
 def exhausted(workspace: Path) -> dict | None:
     """The last round when the panel ran all `max_panel_rounds` and the skill changed since, else None."""
     archive = rounds(workspace)
-    if len(archive) < rules()["max_panel_rounds"]:
+    if len(archive) < max_rounds(workspace):
         return None
     try:
         current = skill_sha256(workspace, check_skill_name(archive[-1].get("skill")))
@@ -303,10 +354,14 @@ class Consensus:
     rounds: int = 1
     panel_round: int = 1
     max_panel_rounds: int = 3
+    checkable: bool = False
+    vetoes: list[str] = field(default_factory=list)
 
     def line(self) -> str:
         overall = "n/a" if self.overall is None else f"{self.overall:.3f}"
-        return (f"PANEL CONSENSUS: {self.label} (allows {self.allowed}); overall={overall} "
+        allows = (f"review; veto: {', '.join(self.vetoes) or 'none'}" if self.checkable else
+                  f"allows {self.allowed}")
+        return (f"PANEL CONSENSUS: {self.label} ({allows}); overall={overall} "
                 f"target={self.target:.2f}; blocked: {', '.join(self.blocked) or 'none'}; "
                 f"deadlocked: {', '.join(self.deadlocked) or 'none'}; "
                 f"escalate: {'yes' if self.escalate else 'no'}")
@@ -338,7 +393,8 @@ def compute(workspace: Path, skill: str, skill_sha: str) -> Consensus:
             raise GateError(f"SYNTHESIS NEEDED on {', '.join(disputed)}: run one synthesis round (5.3); "
                             f"{', '.join(waiting)} still to submit `--panel-receipt <role> <file> --synthesis`")
     result = Consensus(label="", allowed="", overall=None, target=rubric.target_score, disputed=disputed,
-                       rounds=2 if disputed else 1, panel_round=panel_n, max_panel_rounds=r["max_panel_rounds"])
+                       rounds=2 if disputed else 1, panel_round=panel_n, max_panel_rounds=max_rounds(workspace),
+                       checkable=rubric.checkable)
     for d in rubric.dimensions:
         scores = [final[role]["scores"][d.name]["score"] for role in ROLES]
         value, how = _resolve(scores, r["agree_within"])
@@ -363,6 +419,9 @@ def compute(workspace: Path, skill: str, skill_sha: str) -> Consensus:
     else:
         result.label = "ITERATE"
     result.allowed = r["allowed_terminal"][result.label]
+    if rubric.checkable:  # a review: only a cited hard defect caps the verdict; check_gate.ship_rule decides the rest
+        result.vetoes = [f"{role} {final[role]['veto']['kind']}" for role in ROLES if final[role].get("veto")]
+        result.allowed = "UNSHIPPED" if result.vetoes else "SHIP"
     return result
 
 

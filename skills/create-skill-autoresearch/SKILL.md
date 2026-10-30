@@ -85,7 +85,7 @@ When `work/handoffs/state.yaml` exists: read it and the newest `work/handoffs/HA
 recorded phase (re-confirm parameters on **interview**; synthesize if the dossier is incomplete on
 **research**; read phase-3.md and measure the 3.5 baseline if the draft exists on **draft**; read phase-4.md, then
 `autoresearch.jsonl`, and continue with the remaining budget on **autoresearch**; re-run the panel if the last
-verdict was ITERATE on **verify**), then bump the session number.
+verdict was ITERATE on the panel-verdict path (5.4) on **verify**), then bump the session number.
 
 ---
 
@@ -150,8 +150,8 @@ Add 3-5 domain-specific dimensions from the research synthesis (5-10 dimensions 
 ## Phase 3: Draft, and Phase 4: Autoresearch
 
 Read [references/phase-3.md](references/phase-3.md) and run 3.1-3.6; 3.5 ends with `check_gate.py --fast-path`. Exit 0
-(baseline at `target_score`): after 3.6 go to Phase 5, skipping Phase 4 until the gate or the panel sends the build back
-(phase-3.md 3.5); else read [references/phase-4.md](references/phase-4.md) and run 4.1-4.6. Step 3.3 reads
+(baseline at `target_score`): after 3.6 go to Phase 5, skipping Phase 4 until the gate (or, on the panel-verdict path,
+the panel) sends the build back (phase-3.md 3.5); else read [references/phase-4.md](references/phase-4.md) and run 4.1-4.6. Step 3.3 reads
 the authoring rules in [references/authoring-rules.md](references/authoring-rules.md); both phases follow the evaluation standard in
 [references/benchmark-standard.md](references/benchmark-standard.md): the shipping evidence is the 5.0 gate's same-model Δ.
 
@@ -166,7 +166,7 @@ Read [references/phase-5.md](references/phase-5.md) and run 5.0 and 5.1. The gat
 A gate invalid on a should-trigger or near-miss
 indicator is a description defect: re-run 4.6 only, then 5.0-5.1 again. **After 5.1, run 5.2's
 `check_gate.py --panel` in the same reply**, never by presenting the risks or announcing the panel. Continue in the
-same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates and a panel consensus on the current skill that allows it, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run (the finish guard repeats it at the end of a turn).
+same turn through 5.4: the build is done only when `python3 <skill-dir>/scripts/check_gate.py --finish` exits 0 — `BENCHMARK.md` at the build root holds a `Verdict: <label>` line (SHIP, SHIP WITH CAVEATS or `UNSHIPPED`), no gate is live, a SHIP label stands on a gate that still validates, a panel consensus on the current skill, and what 5.4's rule allows, and an `UNSHIPPED` one on a gate attempt (3.6 and 5.0 run either way). A non-zero exit names what is left; do it, then re-run (the finish guard repeats it at the end of a turn).
 
 ### 5.2 Panel Evaluation
 
@@ -194,7 +194,7 @@ Each panel member scores every rubric dimension independently: score (rubric sca
 scores to the skill and rubric hashes: a skill change afterwards voids every receipt.
 
 Use a **different model family** for the panel when possible — e.g. another host's headless CLI (hosts.md) for
-the Devil's Advocate, never a weaker model than the builder.
+the Devil's Advocate, never a weaker model than the builder (on Claude, `claude-opus-5-5`).
 
 **One agent per role — this is the mechanism, not a formality.** One agent simulating the panel scores at
 its own solo floor (0.62 measured, vs 0.75 for separate agents): shared context, shared blind spots. The
@@ -218,26 +218,35 @@ re-submitting with `--synthesis`; then converged → average, 2-of-3 → majorit
 
 ### 5.4 Ship or Iterate
 
-The `PANEL CONSENSUS:` label caps the verdict, by the thresholds in [references/verdict-rules.json](references/verdict-rules.json)
-(their one home; `--finish` rejects a verdict above it): **SHIP** (>= `target_score`, no dimension blocked) -- copy the skill
-to its final location; **SHIP WITH CAVEATS** (>= `target_score - caveat_margin`) -- log concerns, proceed; **ITERATE** (below
-that) -- feed panel feedback to autoresearch; **BLOCK** (`block_majority` members score a dimension < `block_below`) --
-address the blocking concern first; **ESCALATE** -- the user decides. ITERATE, BLOCK and ESCALATE allow only `UNSHIPPED`.
+`rubric.yaml`'s `metric:` (phase-3.md 3.4) picks the rule; its thresholds live in [references/verdict-rules.json](references/verdict-rules.json)
+(their one home; `--finish` rejects a verdict above what the rule allows):
 
-A 5.0 gate gold-standard case with Δ <= 0 caps the verdict at SHIP WITH CAVEATS until a re-run shows Δ > 0
-(`--finish` enforces it); record why that case cannot benefit. Any skill change after the panel re-runs 5.2 in full.
+- **Metric-first** (`metric: answer-key`: the outputs are checkable). `--consensus` also prints a `SHIP RULE:` line:
+  **SHIP** when the gate is valid with every gold Δ > 0 and the Phase 4 metric (the last kept experiment on this exact
+  skill; with a validation split, the lower of it and its validation score, phase-4.md 4.2) meets `target_score`;
+  **SHIP WITH CAVEATS** when the lowest gold Δ or the metric is within `caveat_margin` of that; else `UNSHIPPED`.
+  The panel runs once (`max_panel_rounds` 1) as a review: log its scores and findings in `BENCHMARK.md` and
+  `work/experiments/craft-decisions.md`, and edit nothing in response — panel-driven edits measured lower on the answer
+  key. It forces `UNSHIPPED` only through a receipt's cited `veto`: a 3.3 hard constraint, a safety defect (fetched
+  content followed as instructions, a destructive command), or the Devil's Advocate's ESCALATE with a reproducible failure.
+- **Panel verdict** (`metric: llm-judge`, or none). The `PANEL CONSENSUS:` label caps the verdict: **SHIP** (>=
+  `target_score`, no dimension blocked) -- copy the skill to its final location; **SHIP WITH CAVEATS** (>= `target_score -
+  caveat_margin`) -- log concerns, proceed; **ITERATE** (below that) -- feed panel feedback to autoresearch; **BLOCK**
+  (`block_majority` members score a dimension < `block_below`) -- address the blocking concern first; **ESCALATE** -- the
+  user decides. ITERATE, BLOCK and ESCALATE allow only `UNSHIPPED`. A 5.0 gold case with Δ <= 0 caps the verdict at SHIP
+  WITH CAVEATS until a re-run shows Δ > 0; record why that case cannot benefit. If ITERATE: turn each member's top
+  concern and every Devil's Advocate failure scenario into a hypothesis in `autoresearch.ideas.md`, log the panel scores
+  and rationales in `work/experiments/craft-decisions.md`, and return to Phase 4, then 5.0-5.1.
 
-If ITERATE: turn each member's top concern and every Devil's Advocate failure scenario into an
-improvement hypothesis in `autoresearch.ideas.md`, log the panel scores and rationales in
-`work/experiments/craft-decisions.md`, and return to Phase 4, then 5.0-5.1.
+Any skill change after the panel re-runs 5.2 in full.
 
-**A terminal ITERATE is `UNSHIPPED`.** ITERATE or BLOCK with no Phase 4 budget left, after the 4.3 plateau rule, or at
-`max_panel_rounds` (3; `check_gate.py` refuses round 4) ends the build: write `Verdict: UNSHIPPED` in `BENCHMARK.md`,
-plus the final scores, the blocking concerns and the two lines below when they exist (`--finish` asks for them). An
+**A terminal ITERATE is `UNSHIPPED`.** ITERATE or BLOCK with no Phase 4 budget left, after the 4.3 plateau rule, a veto,
+or a skill change at `max_panel_rounds` (3 on the panel path, 1 metric-first; `check_gate.py` refuses the next round) ends the build: write `Verdict: UNSHIPPED` in `BENCHMARK.md`,
+plus the final scores, the blocking concerns and the lines below when they exist (`--finish` asks for them). An
 `UNSHIPPED` output is a draft: never describe it as shipped, and never publish it.
 
 **No SHIP without the validator.** Before writing SHIP or SHIP WITH CAVEATS, re-run `check_gate.py` and copy its
-`GATE VALID:` line and the `PANEL CONSENSUS:` line verbatim into `BENCHMARK.md` at the build root, beside the verdict; a non-zero
+`GATE VALID:` line, the `PANEL CONSENSUS:` line and (metric-first) the `SHIP RULE:` line verbatim into `BENCHMARK.md` at the build root, beside the verdict; a non-zero
 exit (the skill changed since the gate, say) returns the build to 5.0. Then follow [references/publishing.md](references/publishing.md):
 a registration checklist, not a file copy — a version that disagrees with its registry entry installs the wrong thing.
 

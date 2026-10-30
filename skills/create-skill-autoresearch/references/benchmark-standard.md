@@ -103,7 +103,7 @@ gate gold standards on the pinned model:
   --model <judge>`, `codex exec --skip-git-repo-check -m <judge>`, `opencode run -m <judge>`), the grader's
   body as the rubric and the run's output as the input, asking for PASS or FAIL; it passes on a majority of 3
   calls. `<judge>` is a model from a different family than the builder when the host offers one, else a small
-  model of the builder's family.
+  model of the builder's family (on Claude, `claude-haiku-5-5`).
 
 The build implements one run in `work/evaluation/run-case.sh <case> <with|without>` (executable, run from
 the workspace root, `GATE_MODEL`, `GATE_RUN` and `GATE_EXECUTOR` in its environment; `<case>` is a gate gold

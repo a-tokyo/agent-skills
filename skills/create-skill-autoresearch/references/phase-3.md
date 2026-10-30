@@ -113,6 +113,8 @@ its gold reference (fields, values, regex, structure) emit their METRIC lines di
 evaluator in the [evaluator comparison](benchmark-standard.md). An LLM judge scores only judgement
 dimensions (clarity, quality match): structured JSON per dimension, each independent, verbatim evidence for extreme
 scores, a different model family from the builder. With no LLM available, score deterministically and log a warning.
+Record which in `rubric.yaml`: `metric: answer-key` when the answer key alone yields `overall_score` (the gate and
+this metric then decide the ship verdict, SKILL.md 5.4), `metric: llm-judge` when any judge score feeds it.
 
 **Procedural / agentic skills (prefer this when it applies)**: a skill that drives a multi-step task on a
 real artifact (migrate, refactor, scaffold) or bundles `scripts/` cannot be scored by one system-prompt
@@ -214,11 +216,11 @@ When using multiple LLM judges for higher confidence scoring:
 ```yaml
 # work/evaluation/judges.yaml
 judges:
-  - model: "<model-1>"       # e.g., a strong reasoning model
+  - model: "claude-opus-5-5"     # a strong judge; the newest ids today: claude-opus-5-5, claude-sonnet-5-5, claude-haiku-5-5
     weight: 1.0
-  - model: "<model-2>"       # e.g., a different model family
+  - model: "<model-2>"           # a different model family from the builder
     weight: 1.0
-  - model: "<model-3>"       # optional third judge
+  - model: "claude-haiku-5-5"    # optional third judge
     weight: 0.5              # lower weight if less trusted
 aggregation: "mean"           # "mean" or "median"
 ```
@@ -293,10 +295,10 @@ the loop and its guard use (phase-4.md Loop Conventions; 0.01 when it is smaller
 log the 4.2 `validation_check` with `"experiment": 0`. Then run `python3 <skill-dir>/scripts/check_gate.py --fast-path`.
 Exit 0 — experiment 0 at `target_score`, its validation score at most 0.05 below it, `output/<skill-name>/` unchanged
 since its commit — skips the Phase 4 loop and 4.6: run 3.6, then Phase 5. The 5.0 gate still runs, and on this build
-(experiment 0 the only experiment logged) a gold case with Δ <= 0 or a panel ITERATE returns it to Phase 4 for the
+(experiment 0 the only experiment logged) a gold case with Δ <= 0 or (panel-verdict path) a panel ITERATE returns it to Phase 4 for the
 loop, 4.6, then 5.0 again; from then on 5.4 applies as on any build (`max_panel_rounds`, Δ <= 0 caps the verdict).
 Non-zero names why: run 3.6, then Phase 4. Taken, the loop guard (hosts.md) denies `evaluate.sh` with no case
-argument until a gold Δ <= 0 or a panel ITERATE reopens the loop.
+argument until a gold Δ <= 0 or (panel-verdict path) a panel ITERATE reopens the loop.
 
 ## 3.6 Scaffold the Eval Suite
 
