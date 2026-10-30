@@ -1,9 +1,0 @@
-{
-  "carrier_id": "C01",
-  "service": "standard",
-  "billable_kg": 95.0,
-  "surcharge_codes": [],
-  "total_eur": 88.71,
-  "delivery_date": "2026-04-07",
-  "exceptions": []
-}

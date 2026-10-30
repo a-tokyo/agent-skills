@@ -32,7 +32,7 @@ fi
 case "$TASK_NAME" in
   task)   OUT="conventional-commits"; SCORER="score.mjs"; EXTRA=() ;;
   task-2) OUT="purchase-order-builder"; SCORER="score-task2.mjs"; EXTRA=(--runs "$EXEC_RUNS") ;;
-  task-3) OUT="freight-quote-builder"; SCORER="score-task3.mjs"; EXTRA=(--runs "$EXEC_RUNS") ;;
+  task-3) OUT="student-aid-index"; SCORER="score-task3.mjs"; EXTRA=(--runs "$EXEC_RUNS") ;;
 esac
 RUN="$RUNS_ROOT/$RUN_ID"
 BUILD_DIR="$RUN/ws"; [ -d "$BUILD_DIR" ] || BUILD_DIR="$RUN/work"  # run dirs from before the ws/ rename

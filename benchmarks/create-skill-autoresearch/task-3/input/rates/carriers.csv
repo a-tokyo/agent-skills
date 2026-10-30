@@ -1,5 +1,0 @@
-carrier_id,name,status,currency,dim_divisor,round_step_kg,heavy_kg,oversize_cm,girth_cm,owt_kg,fuel_pct,cutoff,preferred
-C01,Atlas Parcel,active,EUR,5000,0.5,20,120,300,30,12.5,16:00,Y
-C02,Nordic Express,active,GBP,4000,0.5,20,120,300,30,9,17:30,N
-C03,Iberia Freight,active,EUR,6000,0.5,20,120,300,30,15,14:00,N
-C04,Orion Logistics,suspended,EUR,5000,0.5,20,120,300,30,10,17:00,N

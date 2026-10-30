@@ -1,13 +1,13 @@
 #!/usr/bin/env node
-// score-task3.mjs — arm-independent scorer for a produced freight-quote-builder skill (task-3).
+// score-task3.mjs — arm-independent scorer for a produced student-aid-index skill (task-3).
 //
 // Usage: node score-task3.mjs <path-to-skill-dir> [--executor-out <dir>] [--runs <n>]
 //
 // Scoring (weights fixed before any task-3 run):
 //   execution  0.80  — a fixed AGENTIC executor (Haiku via `claude -p`, tools on) gets the produced
 //                      skill installed as a user-level skill in a scratch HOME and a workspace holding
-//                      one holdout shipment.md + the HOLDOUT rate tables (never seen by any builder).
-//                      It must write quote.json, which is checked field-by-field against
+//                      one holdout applicant.md (never seen by any builder). It must write sai.json,
+//                      which is checked field-by-field (exact integers, nulls included) against
 //                      task-3/holdout/answer-key.json. No LLM judge anywhere.
 //   compliance 0.15  — deterministic platform + brief constraints on the skill files
 //   craft      0.05  — deterministic hybrid-architecture and description checks
@@ -28,13 +28,17 @@ const HERE = dirname(fileURLToPath(import.meta.url));
 const TASK = join(HERE, "..", "task-3");
 export const EXECUTOR_MODEL = "claude-haiku-5-5";
 export const WEIGHTS = { execution: 0.8, compliance: 0.15, craft: 0.05 };
-const MONEY_TOLERANCE = 0.011;
+// Every answer-key field is an exact integer, string or null: the methodology rounds every step to whole dollars.
+export const FIELDS = ["dependency", "formula", "family_size", "max_pell_indicator", "min_pell_indicator",
+  "income_protection_allowance", "payroll_tax_allowance", "available_income", "contribution_from_assets",
+  "contribution", "sai"];
 
-const near = (a, b) => typeof a === "number" && typeof b === "number" && Math.abs(a - b) <= MONEY_TOLERANCE;
-const sameList = (a, b) => Array.isArray(a) && a.length === b.length && a.every((x, i) => x === b[i]);
+const same = (got, want) => (want === null ? got === null
+  : typeof want === "number" ? got !== null && got !== "" && typeof got !== "boolean" && Number(got) === want
+  : String(got ?? "").trim().toLowerCase() === String(want).toLowerCase());
 
-// Pure: score one emitted quote against one expected quote.
-export function checkQuote(raw, expected) {
+// Pure: score one emitted sai.json against one expected result.
+export function checkResult(raw, expected) {
   const checks = {};
   let q = null;
   try {
@@ -43,42 +47,25 @@ export function checkQuote(raw, expected) {
     q = null;
   }
   checks.valid_json = !!q && typeof q === "object" && !Array.isArray(q);
-  checks.carrier = q?.carrier_id === expected.carrier_id;
-  checks.service = q?.service === expected.service;
-  checks.billable_kg = near(Number(q?.billable_kg), expected.billable_kg);
-  checks.base = near(Number(q?.base_eur), expected.base_eur);
-  const got = Array.isArray(q?.surcharges) ? q.surcharges : null;
-  const want = expected.surcharges;
-  const byCode = (list) => Object.fromEntries(list.map((s) => [s?.code, Number(s?.amount_eur)]));
-  checks.surcharge_codes = !!got && sameList(got.map((s) => s?.code).sort(), want.map((s) => s.code).sort());
-  checks.surcharge_amounts = checks.surcharge_codes && (() => {
-    const g = byCode(got);
-    return want.every((s) => near(g[s.code], s.amount_eur));
-  })();
-  checks.fuel = near(Number(q?.fuel_eur), expected.fuel_eur);
-  checks.total = near(Number(q?.total_eur), expected.total_eur);
-  checks.delivery_date = q?.delivery_date === expected.delivery_date;
-  const codes = Array.isArray(q?.exceptions) ? q.exceptions.map((e) => e?.code) : null;
-  checks.exception_codes = sameList(codes, expected.exceptions.map((e) => e.code));
-  const details = Array.isArray(q?.exceptions) ? q.exceptions.map((e) => String(e?.detail ?? "").trim().toLowerCase()) : null;
-  checks.exception_details = sameList(details, expected.exceptions.map((e) => e.detail.toLowerCase()));
+  for (const f of FIELDS) checks[f] = checks.valid_json && same(q[f], expected[f]);
   const names = Object.keys(checks);
   const passed = names.filter((n) => checks[n]).length;
   return { checks, passed, total: names.length, score: passed / names.length };
 }
 
-// Training rate-table values a script must read at run time, never embed: carrier ids and names, holiday dates.
+// Gold-applicant literals a script must never embed: applicant ids and the gold SAI values.
 function goldLiterals() {
-  const lits = new Set();
-  const rates = join(TASK, "input", "rates");
-  const rows = (f) => readFileSync(join(rates, f), "utf8").trim().split("\n").slice(1).map((l) => l.split(","));
-  for (const [id, name] of rows("carriers.csv")) {
-    lits.add(`"${id}"`);
-    lits.add(`'${id}'`);
-    lits.add(name);
+  const lits = [];
+  const dir = join(TASK, "input");
+  for (const f of readdirSync(dir).filter((n) => /^applicant-\d+\.md$/.test(n))) {
+    const id = readFileSync(join(dir, f), "utf8").match(/^Applicant: (\S+)/m)?.[1];
+    if (id) lits.push(new RegExp(`["']${id}["']`));
   }
-  for (const [day] of rows("holidays.csv")) lits.add(day);
-  return [...lits];
+  for (const f of readdirSync(dir).filter((n) => /^result-\d+\.json$/.test(n))) {
+    const sai = JSON.parse(readFileSync(join(dir, f), "utf8")).sai;
+    if (Math.abs(sai) >= 100) lits.push(new RegExp(`(?<![0-9.,])${sai}(?![0-9])`));
+  }
+  return lits;
 }
 
 // Pure given file contents: platform + brief compliance.
@@ -102,9 +89,9 @@ export function checkCompliance(skillDir) {
   const refsDir = join(skillDir, "references");
   checks.refs_one_level = !existsSync(refsDir) || readdirSync(refsDir).every((f) => text.includes(`references/${f}`));
   const lits = goldLiterals();
-  checks.no_hardcoded_rate_data = scripts.length > 0 && scripts.every((f) => {
+  checks.no_gold_answers = scripts.length > 0 && scripts.every((f) => {
     const src = readFileSync(f, "utf8");
-    return !lits.some((l) => src.includes(l));
+    return !lits.some((l) => l.test(src));
   });
   const names = Object.keys(checks);
   const passed = names.filter((n) => checks[n]).length;
@@ -132,8 +119,8 @@ export function checkCraft(skillDir) {
 }
 
 const EXECUTOR_PROMPT =
-  "Use the freight-quote-builder skill to quote the shipment in shipment.md, using the rate tables in rates/. " +
-  "Write the result to quote.json in the current directory. Do not ask questions; work non-interactively.";
+  "Use the student-aid-index skill to compute the 2027-28 Student Aid Index for the FAFSA summary in applicant.md. " +
+  "Write the result to sai.json in the current directory. Do not ask questions; work non-interactively.";
 
 function runAgent(skillDir, skillName, caseInput, auth) {
   const root = mkdtempSync(join(tmpdir(), "csa-t3-exec-"));
@@ -142,8 +129,7 @@ function runAgent(skillDir, skillName, caseInput, auth) {
   mkdirSync(join(home, ".claude", "skills"), { recursive: true });
   cpSync(skillDir, join(home, ".claude", "skills", skillName), { recursive: true });
   mkdirSync(work);
-  cpSync(join(TASK, "holdout", "rates"), join(work, "rates"), { recursive: true });
-  cpSync(join(TASK, "holdout", caseInput), join(work, "shipment.md"));
+  cpSync(join(TASK, "holdout", caseInput), join(work, "applicant.md"));
   return new Promise((resolve) => {
     const env = { PATH: process.env.PATH, HOME: home, TERM: "dumb", LANG: "en_US.UTF-8", DISABLE_AUTOUPDATER: "1" };
     if (auth.apiKey) env.ANTHROPIC_API_KEY = auth.apiKey;
@@ -161,8 +147,8 @@ function runAgent(skillDir, skillName, caseInput, auth) {
       settled = true;
       clearTimeout(timer);
       if (!spawnError) killOwned(child);
-      const outPath = join(work, "quote.json");
-      // runWithRetry/isExecutorFault read `poWritten`: here it means quote.json was written.
+      const outPath = join(work, "sai.json");
+      // runWithRetry/isExecutorFault read `poWritten`: here it means sai.json was written.
       const poWritten = existsSync(outPath);
       const raw = poWritten ? readFileSync(outPath, "utf8") : "";
       if (spawnError) transcript += `\n[spawn error] ${spawnError.message}`;
@@ -181,7 +167,7 @@ export async function scoreSkill(skillDir, { apiKey, oauthToken, executorOut, ru
   let executionScore = 0;
   if (compliance.checks.skill_md_exists && (apiKey || oauthToken)) {
     const fm = parseFrontmatter(readFileSync(join(skillDir, "SKILL.md"), "utf8"));
-    const skillName = /^[a-z0-9-]+$/.test(fm?.fm.name ?? "") ? fm.fm.name : "freight-quote-builder";
+    const skillName = /^[a-z0-9-]+$/.test(fm?.fm.name ?? "") ? fm.fm.name : "student-aid-index";
     const key = JSON.parse(readFileSync(join(TASK, "holdout", "answer-key.json"), "utf8"));
     const jobs = [];
     for (const [id, c] of Object.entries(key)) {
@@ -194,11 +180,11 @@ export async function scoreSkill(skillDir, { apiKey, oauthToken, executorOut, ru
           const stem = `${id}-r${r}${n ? "-retry" : ""}`;
           mkdirSync(join(executorOut, "executor"), { recursive: true });
           writeFileSync(join(executorOut, "executor", `${stem}.txt`), out.transcript);
-          writeFileSync(join(executorOut, "executor", `${stem}.quote.json`), out.raw);
+          writeFileSync(join(executorOut, "executor", `${stem}.sai.json`), out.raw);
         }
         return out;
       });
-      return { id, r, envFailure: run.envFailure, result: checkQuote(run.raw, c.expected) };
+      return { id, r, envFailure: run.envFailure, result: checkResult(run.raw, c.expected) };
     }));
     const execution = aggregateExecution(results);
     executionScore = execution.score;

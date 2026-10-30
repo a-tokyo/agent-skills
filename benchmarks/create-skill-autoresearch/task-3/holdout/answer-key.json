@@ -1,126 +1,98 @@
 {
-  "h1": {
-    "input": "shipment-h1.md",
+  "H-1": {
+    "input": "applicant-h1.md",
     "expected": {
-      "carrier_id": "K14",
-      "service": "standard",
-      "billable_kg": 88.0,
-      "base_eur": 79.2,
-      "surcharges": [
-        {
-          "code": "RES",
-          "amount_eur": 7.13
-        },
-        {
-          "code": "REM",
-          "amount_eur": 51.04
-        }
-      ],
-      "fuel_eur": 23.35,
-      "total_eur": 160.72,
-      "delivery_date": "2026-12-07",
-      "exceptions": []
+      "dependency": "dependent",
+      "formula": "A",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": null,
+      "income_protection_allowance": 37720,
+      "payroll_tax_allowance": 14784,
+      "available_income": 111446,
+      "contribution_from_assets": 18036,
+      "contribution": 51761,
+      "sai": 55505
     }
   },
-  "h2": {
-    "input": "shipment-h2.md",
+  "H-2": {
+    "input": "applicant-h2.md",
     "expected": {
-      "carrier_id": "K12",
-      "service": "standard",
-      "billable_kg": 34.0,
-      "base_eur": 58.75,
-      "surcharges": [
-        {
-          "code": "REM",
-          "amount_eur": 18.7
-        },
-        {
-          "code": "DG",
-          "amount_eur": 32.17
-        },
-        {
-          "code": "SIG",
-          "amount_eur": 3.59
-        }
-      ],
-      "fuel_eur": 11.23,
-      "total_eur": 124.44,
-      "delivery_date": "2026-12-09",
-      "exceptions": []
+      "dependency": "independent",
+      "formula": "B",
+      "family_size": 2,
+      "max_pell_indicator": 3,
+      "min_pell_indicator": null,
+      "income_protection_allowance": 30470,
+      "payroll_tax_allowance": 2654,
+      "available_income": -7761,
+      "contribution_from_assets": 8200,
+      "contribution": -3881,
+      "sai": 0
     }
   },
-  "h3": {
-    "input": "shipment-h3.md",
+  "H-3": {
+    "input": "applicant-h3.md",
     "expected": {
-      "carrier_id": "K11",
-      "service": "standard",
-      "billable_kg": 81.0,
-      "base_eur": 66.11,
-      "surcharges": [
-        {
-          "code": "RES",
-          "amount_eur": 3.35
-        },
-        {
-          "code": "REM",
-          "amount_eur": 37.78
-        },
-        {
-          "code": "OVS",
-          "amount_eur": 36.82
-        },
-        {
-          "code": "DG",
-          "amount_eur": 37.59
-        }
-      ],
-      "fuel_eur": 15.85,
-      "total_eur": 197.5,
-      "delivery_date": "2026-10-08",
-      "exceptions": [
-        {
-          "code": "SERVICE_UPGRADED",
-          "detail": "economy->standard"
-        }
-      ]
+      "dependency": "independent",
+      "formula": "C",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": 3,
+      "income_protection_allowance": 71040,
+      "payroll_tax_allowance": 7000,
+      "available_income": -909,
+      "contribution_from_assets": 3584,
+      "contribution": 589,
+      "sai": 589
     }
   },
-  "h4": {
-    "input": "shipment-h4.md",
+  "H-4": {
+    "input": "applicant-h4.md",
     "expected": {
-      "carrier_id": "K12",
-      "service": "economy",
-      "billable_kg": 100.0,
-      "base_eur": 73.0,
-      "surcharges": [
-        {
-          "code": "SIG",
-          "amount_eur": 3.59
-        }
-      ],
-      "fuel_eur": 10.59,
-      "total_eur": 87.18,
-      "delivery_date": "2026-11-17",
-      "exceptions": []
+      "dependency": "dependent",
+      "formula": null,
+      "family_size": null,
+      "max_pell_indicator": 1,
+      "min_pell_indicator": null,
+      "income_protection_allowance": null,
+      "payroll_tax_allowance": null,
+      "available_income": null,
+      "contribution_from_assets": null,
+      "contribution": null,
+      "sai": -1500
     }
   },
-  "h5": {
-    "input": "shipment-h5.md",
+  "H-5": {
+    "input": "applicant-h5.md",
     "expected": {
-      "carrier_id": "K12",
-      "service": "express",
-      "billable_kg": 20.0,
-      "base_eur": 66.92,
-      "surcharges": [],
-      "fuel_eur": 9.7,
-      "total_eur": 76.62,
-      "delivery_date": "2026-12-02",
-      "exceptions": [
-        {
-          "code": "DEADLINE_MISSED",
-          "detail": "2026-12-01"
-        }
-      ]
+      "dependency": "dependent",
+      "formula": "A",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": null,
+      "income_protection_allowance": 37720,
+      "payroll_tax_allowance": 18819,
+      "available_income": 136361,
+      "contribution_from_assets": 11340,
+      "contribution": 60323,
+      "sai": 60403
+    }
+  },
+  "H-6": {
+    "input": "applicant-h6.md",
+    "expected": {
+      "dependency": "dependent",
+      "formula": "A",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": 1,
+      "income_protection_allowance": 37720,
+      "payroll_tax_allowance": 0,
+      "available_income": -42420,
+      "contribution_from_assets": 1188,
+      "contribution": -1958,
+      "sai": -1438
     }
   }
 }

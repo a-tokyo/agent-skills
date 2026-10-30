@@ -1,16 +1,15 @@
 ---
-name: freight-quote-builder
-description: Builds a parcel freight quote JSON from a free-text shipment request and carrier rate tables. Use when asked to quote a shipment or turn a shipment request into a freight quote.
+name: student-aid-index
+description: Computes the federal Student Aid Index (SAI) and Pell indicators from a FAFSA submission summary. Use when asked to compute an SAI, a Student Aid Index or Pell eligibility for an applicant.
 ---
 
-# Freight quote builder (follows the written rating guide only)
+# Student Aid Index
 
-Run the bundled tool from the directory holding `shipment.md` and `rates/`:
+Run the bundled tool from the directory holding `applicant.md`:
 
 ```bash
-python3 ~/.claude/skills/freight-quote-builder/scripts/quote_tools.py rates shipment.md \
-  --stale divisor,cutoff,holidays,whole_kg,per_kg_total,fuel_base,girth,selection,dg_upgrade,deadline > quote.json
+python3 ~/.claude/skills/student-aid-index/scripts/sai_tools.py applicant.md --edition 2627 > sai.json
 ```
 
-`scripts/quote_tools.py` applies the two-year-old written guide's rules everywhere the desk's practice
-has moved on. It is the known-bad baseline: what a builder gets by trusting the guide over the gold quotes.
+`scripts/sai_tools.py` parses the summary and applies last year's federal methodology (stale baseline): dependency, family size, Pell
+indicators and Formula A, B or C. Check that `sai.json` is valid JSON before finishing.

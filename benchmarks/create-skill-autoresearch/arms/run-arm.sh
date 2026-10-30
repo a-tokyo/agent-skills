@@ -4,7 +4,7 @@
 #   arm     bare | skill-creator | factory | factory-v021
 #   model   haiku | sonnet | opus   (builder model; the scorer's executor model is fixed separately)
 #   run-id  unique id; everything lands in runs/<run-id>/
-#   task    task (conventional-commits, default) | task-2 (purchase-order-builder) | task-3 (freight-quote-builder)
+#   task    task (conventional-commits, default) | task-2 (purchase-order-builder) | task-3 (student-aid-index)
 #
 #   FACTORY_DIR / COMPANIONS_DIR override where the factory arms load the skill and its companions;
 #   factory-v021 requires both (the pinned v0.2.1 archive, agent-skills commit 99652ee).
@@ -41,7 +41,7 @@ TASK_NAME="${4:-task}"
 case "$TASK_NAME" in
   task)   SKILL_OUT="conventional-commits" ;;
   task-2) SKILL_OUT="purchase-order-builder" ;;
-  task-3) SKILL_OUT="freight-quote-builder" ;;
+  task-3) SKILL_OUT="student-aid-index" ;;
   *) echo "unknown task: $TASK_NAME" >&2; exit 2 ;;
 esac
 TASK_DIR="$BENCH/$TASK_NAME"

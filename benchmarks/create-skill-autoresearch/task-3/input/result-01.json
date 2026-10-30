@@ -1,0 +1,8 @@
+{
+  "dependency": "dependent",
+  "formula": "A",
+  "family_size": 3,
+  "max_pell_indicator": 2,
+  "min_pell_indicator": null,
+  "sai": 0
+}

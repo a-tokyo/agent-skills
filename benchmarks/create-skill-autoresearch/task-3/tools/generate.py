@@ -1,303 +1,262 @@
 #!/usr/bin/env python3
-"""Deterministic generator for task-3 (synthetic, generic data). Never shown to any arm.
+"""Deterministic generator for task-3 (student-aid-index). Never shown to any arm.
 
-Usage: generate.py   (writes ../input, ../holdout; idempotent for fixed seeds)
+Usage: generate.py   (writes ../input and ../holdout; idempotent)
 
-The holdout rate tables use other carriers, divisors, cutoffs, fuel rates, currencies, holidays, zones
-and remote areas than the training tables, and they vary what every training table holds constant
-(rounding and size thresholds, surcharge units, holiday countries, zone postcode ranges, box-weight
-limits). After writing, it checks where every rule in solve.py shows and exits non-zero unless:
-  - each class-B rule (stale guide) changes at least one gold quote,
-  - no class-C rule (current guide, constant in training) changes any gold quote,
-  - every class-B and class-C rule changes the SCORE of at least one holdout, not only its JSON,
-  - among every combination of the class-B and class-A switches, only the true rules reproduce all
-    eight gold quotes as the desk log records them (the learnability proof).
-
-The gold quotes are desk-log summaries (carrier, service, billable weight, surcharge codes, total,
-delivery date, exceptions): base, fuel and per-surcharge amounts are not shown, so the money rules
-have to be inferred jointly from the totals. The holdout answer key keeps the full schema.
+Applicants are hand-specified records rendered to the FAFSA-summary format in ../materials/format.md.
+After writing, it exits non-zero unless:
+  - the solver reproduces the published Formula A exemplar of the 2027-28 guide line by line,
+  - the prior edition (--edition 2627) gets the SAI of every gold applicant wrong (gold cannot be
+    met from a stale recollection, so a builder has to research),
+  - every naive clause in solve.NAIVE changes the score of at least one holdout, and at least
+    MIN_UNTAUGHT of them change no gold SAI (gold confirms the tables, it does not teach the clauses).
+Sources and clause map: ../NOTES.md.
 """
 from __future__ import annotations
 
-import csv
-import itertools
 import json
-import random
-import shutil
 import sys
 from pathlib import Path
 
-from solve import Rates, solve
+from solve import NAIVE, solve
 
 HERE = Path(__file__).resolve().parent
 TASK = HERE.parent
+MIN_UNTAUGHT = 6
 
-CLASS_B = ["divisor", "cutoff", "holidays", "whole_kg", "per_kg_total", "fuel_base", "girth", "selection",
-           "dg_upgrade", "deadline"]
-CLASS_C = ["c_round", "c_size", "c_owt", "unit_by_code", "hol_any", "hol_pt", "zone_first", "zone_last", "max_box"]
-CLASS_A = ["sum_round", "owt_billable", "fx_total"]
-COUNTRIES = ["FR", "DE", "ES", "IT", "BE", "AT"]
-FLAT_BREAKS = {"train": [1, 2, 5, 10, 15, 20, 30, 50, 70], "holdout": [0.5, 1, 3, 5, 10, 20, 25, 40, 60]}
-CARRIER_COLUMNS = ["carrier_id", "name", "status", "currency", "dim_divisor", "round_step_kg", "heavy_kg",
-                   "oversize_cm", "girth_cm", "owt_kg", "fuel_pct", "cutoff", "preferred"]
-DEFAULT_UNITS = {"RES": "shipment", "REM": "kg", "OVS": "package", "OWT": "package", "DG": "shipment", "SIG": "shipment"}
-
-DATASETS: dict[str, dict[str, object]] = {
-    "train": {
-        "seed": 31,
-        "out": TASK / "input" / "rates",
-        # every training carrier holds the same thresholds (the guide's), so gold cannot separate them
-        "carriers": [
-            ("C01", "Atlas Parcel", "active", "EUR", "5000", "0.5", "20", "120", "300", "30", "12.5", "16:00", "Y"),
-            ("C02", "Nordic Express", "active", "GBP", "4000", "0.5", "20", "120", "300", "30", "9", "17:30", "N"),
-            ("C03", "Iberia Freight", "active", "EUR", "6000", "0.5", "20", "120", "300", "30", "15", "14:00", "N"),
-            ("C04", "Orion Logistics", "suspended", "EUR", "5000", "0.5", "20", "120", "300", "30", "10", "17:00", "N"),
-        ],
-        # carrier, service, transit_days, dg_allowed, price level, max_box_kg
-        "services": [
-            ("C01", "express", 1, "Y", 1.9, 70), ("C01", "standard", 3, "Y", 1.0, 70),
-            ("C01", "economy", 5, "N", 0.75, 70),
-            ("C02", "express", 2, "Y", 1.45, 70), ("C02", "standard", 4, "Y", 0.8, 70),
-            ("C03", "standard", 3, "Y", 0.9, 70), ("C03", "economy", 6, "N", 0.62, 70),
-            ("C04", "express", 1, "Y", 1.2, 70), ("C04", "standard", 2, "Y", 0.5, 70),
-            ("C04", "economy", 4, "Y", 0.4, 70),
-        ],
-        "zone_ranges": [],
-        "units": {},
-        "remote": [("C01", "FR", 20000, 20999), ("C02", "FR", 20000, 20999), ("C03", "FR", 20000, 20999),
-                   ("C01", "IT", 7000, 9999), ("C02", "IT", 7000, 9999), ("C03", "IT", 8000, 9999),
-                   ("C01", "ES", 7000, 7999), ("C03", "ES", 7000, 7999), ("C02", "AT", 6500, 6999)],
-        "holidays": [("2026-04-03", "PT", "Good Friday"), ("2026-04-25", "PT", "Freedom Day"),
-                     ("2026-05-01", "PT", "Labour Day"), ("2026-06-04", "PT", "Corpus Christi"),
-                     ("2026-06-10", "PT", "Portugal Day")],
-        "fx": {"EUR": "1", "GBP": "1.17", "USD": "0.92"},
-    },
-    "holdout": {
-        "seed": 47,
-        "out": TASK / "holdout" / "rates",
-        "carriers": [
-            ("K11", "Kestrel Cargo", "active", "CHF", "4500", "0.5", "20", "120", "300", "30", "11", "15:30", "N"),
-            ("K12", "Delta Courier", "active", "EUR", "6000", "1", "20", "150", "330", "32", "14.5", "18:00", "Y"),
-            ("K13", "Polar Post", "suspended", "EUR", "5000", "0.5", "20", "120", "300", "30", "8", "17:00", "N"),
-            ("K14", "Meridian Freight", "active", "EUR", "5500", "0.5", "25", "100", "260", "25", "17", "13:30", "N"),
-        ],
-        "services": [
-            ("K11", "express", 2, "Y", 1.5, 70), ("K11", "standard", 3, "Y", 0.85, 70),
-            ("K11", "economy", 6, "N", 0.6, 70),
-            ("K12", "express", 1, "Y", 1.85, 70), ("K12", "standard", 2, "Y", 1.05, 70),
-            ("K12", "economy", 5, "N", 0.72, 70),
-            ("K13", "express", 1, "Y", 1.1, 70), ("K13", "standard", 2, "Y", 0.5, 70),
-            ("K13", "economy", 3, "Y", 0.4, 70),
-            ("K14", "standard", 4, "Y", 0.8, 20), ("K14", "economy", 7, "N", 0.55, 70),
-        ],
-        # carrier, country, postcode_from, postcode_to, zone — listed after the carrier's country row
-        "zone_ranges": [("K12", "IT", 9000, 9999, "Z4"), ("K11", "DE", 18000, 18999, "Z4"),
-                        ("K14", "FR", 20000, 20999, "Z4"), ("K12", "FR", 20000, 20999, "Z4"),
-                        ("K12", "AT", 4000, 4999, "Z3")],
-        "units": {("K12", "RES"): ("pct_base", "6"), ("K14", "RES"): ("pct_base", "9"), ("K11", "SIG"): ("package", None)},
-        "remote": [("K11", "IT", 9000, 9999), ("K12", "IT", 9000, 9999), ("K14", "IT", 9000, 9999),
-                   ("K11", "DE", 18500, 18599), ("K12", "DE", 18500, 18599), ("K14", "DE", 18000, 18999),
-                   ("K11", "ES", 35000, 35999), ("K12", "ES", 35000, 35999), ("K14", "ES", 35000, 35999),
-                   ("K12", "FR", 20000, 20999)],
-        "holidays": [("2026-10-05", "PT", "Republic Day"), ("2026-10-12", "ES", "National Day"),
-                     ("2026-11-01", "PT", "All Saints"), ("2026-11-11", "FR", "Armistice"),
-                     ("2026-11-11", "BE", "Armistice"), ("2026-12-01", "PT", "Restoration"),
-                     ("2026-12-07", "ES", "Constitution Day (moved)"), ("2026-12-08", "PT", "Immaculate Conception"),
-                     ("2026-12-08", "IT", "Immaculate Conception"), ("2026-12-08", "AT", "Immaculate Conception"),
-                     ("2026-12-25", "PT", "Christmas Day"), ("2026-12-25", "FR", "Christmas Day")],
-        "fx": {"EUR": "1", "GBP": "1.15", "CHF": "1.06", "USD": "0.89"},
-    },
+DEP_NO = {
+    "Enrolled in a master's or doctoral program in 2027-28": "No",
+    "Active duty in the U.S. Armed Forces": "No",
+    "Veteran of the U.S. Armed Forces": "No",
+    "Has children or other dependents who get more than half their support from the student": "No",
+    "Parents deceased, in foster care, or ward of the court since age 13": "No",
+    "Emancipated minor or in legal guardianship (court-determined)": "No",
+    "Homelessness determination": "None",
 }
+TAX_FIELDS = ["Tax filing status", "Adjusted gross income", "Income earned from work", "Income tax paid",
+              "Exemptions on tax return", "Deductible payments to IRA/Keogh/other", "Tax-exempt interest income",
+              "Untaxed portions of IRA distributions", "IRA rollover", "Untaxed portions of pensions", "Pension rollover",
+              "Foreign income exclusion", "Taxable college grant and scholarship aid", "Education credits",
+              "Federal work-study", "Received earned income tax credit"]
+ASSET_FIELDS = ["Cash, savings and checking", "Net worth of current investments",
+                "Net worth of businesses and/or farms", "Annual child support received"]
 
-# ship date, destination, service, contents, notes, package lines
-GOLD_REQUESTS = [
-    ("2026-03-10 14:30", "69003 Lyon, FR (business)", "standard", "office supplies", "",
-     ["2 x 50x40x30 cm, 6.2 kg each"]),
-    ("2026-03-12 15:20", "80331 Munich, DE (residential)", "express", "spare parts", "signature required",
-     ["1 x 24x16x12 in, 14 lb"]),
-    ("2026-04-01 09:30", "28013 Madrid, ES (business)", "standard", "machine parts", "",
-     ["3 x 60x50x50 cm, 66 kg total", "1 x 40x30x20 cm, 4.1 kg"]),
-    ("2026-04-14 10:00", "20090 Ajaccio, FR (residential)", "cheapest", "lithium batteries", "",
-     ["1 x 100x70x60 cm, 18.4 kg"]),
-    ("2026-05-20 13:15", "1050 Brussels, BE (business)", "economy", "lithium batteries", "signature required",
-     ["2 x 30x25x20 cm, 17.2 kg each"]),
-    ("2026-05-27 16:40", "1010 Vienna, AT (business)", "deliver by 2026-06-02", "textiles", "",
-     ["4 x 60x40x40 cm, 9.5 kg each"]),
-    ("2026-06-08 10:20", "08100 Sassari, IT (residential)", "standard", "furniture", "",
-     ["1 x 130x60x40 cm, 34 kg", "2 x 70x50x35 cm, 12.4 kg each"]),
-    ("2026-06-15 16:30", "50667 Cologne, DE (business)", "deliver by 2026-06-16", "documents", "",
-     ["1 x 35x25x10 cm, 1.2 kg"]),
+
+def fmt(v):
+    if isinstance(v, int):
+        return f"-${-v:,}" if v < 0 else f"${v:,}"
+    return str(v)
+
+
+def person(title: str, d: dict, assets: bool) -> list[str]:
+    lines = [f"## {title}", ""]
+    head = [k for k in d if k not in TAX_FIELDS and k not in ASSET_FIELDS]
+    for k in head:
+        lines.append(f"- {k}: {fmt(d[k])}")
+    if "Filed a 2025 federal income tax return" in d and d["Filed a 2025 federal income tax return"] == "Yes":
+        for k in TAX_FIELDS:
+            v = d.get(k, "No" if k == "Received earned income tax credit" else 0)
+            if k == "Exemptions on tax return":
+                lines.append(f"- {k}: {v}")
+            else:
+                lines.append(f"- {k}: {fmt(v)}")
+    if assets:
+        for k in ASSET_FIELDS:
+            lines.append(f"- {k}: {fmt(d.get(k, 0))}")
+    return lines + [""]
+
+
+def render(case: dict) -> str:
+    out = [f"# FAFSA submission summary, 2027-28 award year", "", f"Applicant: {case['id']}", ""]
+    first = {k: case["student"][k] for k in ("Date of birth", "Marital status") if k in case["student"]}
+    stu = {**first, **DEP_NO, **case["student"]}
+    out += person("Student", stu, assets=True)
+    if "spouse" in case:
+        out += person("Student's spouse", case["spouse"], assets=False)
+    if "parent" in case:
+        out += person("Parent", case["parent"], assets=True)
+    if "parent_spouse" in case:
+        out += person("Parent's spouse or partner", case["parent_spouse"], assets=False)
+    return "\n".join(out).rstrip() + "\n"
+
+
+def filer(status, agi, iefw, tax, ex, **kw):
+    return {"Filed a 2025 federal income tax return": "Yes", "Tax filing status": status, "Adjusted gross income": agi,
+            "Income earned from work": iefw, "Income tax paid": tax, "Exemptions on tax return": ex, **kw}
+
+
+NONFILER = {"Filed a 2025 federal income tax return": "No"}
+JOINT = {"Included on the joint return above": "Yes"}
+
+# The guide's Formula A exemplar (2027-28 guide, Appendix K, Tables 10-11), as an applicant record.
+EXEMPLAR = {
+    "id": "EXEMPLAR",
+    "student": {"Date of birth": "2008-05-01", "Marital status": "Single", "State of residence": "Ohio",
+                **filer("Single", 5723, 6755, 0, 0)},
+    "parent": {"Parents' marital status": "Married", "State of residence": "Ohio", "Family size reported on the FAFSA": 7,
+               **filer("Single", 86334, 95456, 28334, 3, **{"Untaxed portions of IRA distributions": 2000, "IRA rollover": 1000}),
+               "Cash, savings and checking": 24789, "Net worth of current investments": 48574},
+    "parent_spouse": filer("Qualifying surviving spouse", 79998, 85002, 11992, 3,
+                           **{"Untaxed portions of IRA distributions": 1000, "IRA rollover": 2000}),
+}
+EXEMPLAR_EXPECT = {"income_protection_allowance": 71550, "payroll_tax_allowance": 2617 + 11188, "available_income": 36451,
+                   "contribution_from_assets": 8804, "contribution": 12198, "sai": 12198, "family_size": 7, "formula": "A"}
+
+GOLD = [
+    {   # dependent, unmarried single parent (HoH) in Hawaii; low AGI -> max Pell 2, SAI floored at 0 from positive
+        "id": "G-1",
+        "student": {"Date of birth": "2008-02-11", "Marital status": "Single", "State of residence": "Hawaii",
+                    **filer("Single", 7400, 7400, 0, 0), "Cash, savings and checking": 1800},
+        "parent": {"Parents' marital status": "Divorced", "State of residence": "Hawaii",
+                   **filer("Head of household", 67500, 69000, 3300, 3), "Cash, savings and checking": 9500,
+                   "Net worth of current investments": 4000, "Annual child support received": 6000},
+    },
+    {   # dependent, married parents on a joint return; student works; full Formula A
+        "id": "G-2",
+        "student": {"Date of birth": "2007-09-30", "Marital status": "Single", "State of residence": "Texas",
+                    **filer("Single", 16850, 16850, 610, 0), "Cash, savings and checking": 5200,
+                    "Net worth of current investments": 1500},
+        "parent": {"Parents' marital status": "Married", "State of residence": "Texas",
+                   **filer("Married filing jointly", 118400, 112000, 9800, 5,
+                           **{"Deductible payments to IRA/Keogh/other": 6000, "Education credits": 1500}),
+                   "Cash, savings and checking": 21000, "Net worth of current investments": 38000},
+        "parent_spouse": JOINT,
+    },
+    {   # independent: married, joint return, one child -> Formula C, minimum Pell 4
+        "id": "G-3",
+        "student": {"Date of birth": "1999-04-17", "Marital status": "Married", "State of residence": "Oregon",
+                    **{k: "Yes" if k.startswith("Has children") else v for k, v in DEP_NO.items()},
+                    **filer("Married filing jointly", 78600, 81000, 4100, 3), "Cash, savings and checking": 7400,
+                    "Net worth of current investments": 12000},
+        "spouse": JOINT,
+    },
 ]
 
-HOLDOUT_REQUESTS = [
-    ("2026-11-27 14:10", "09120 Cagliari, IT (residential)", "standard", "garden tools", "",
-     ["three x 70x50x40 cm, 41.4 kg total", "1 x 20x14x10 in, 22 lb"]),
-    ("2026-12-04 15:45", "18546 Sassnitz, DE (business)", "deliver by 2026-12-09", "lithium batteries",
-     "signature required", ["2 x 55x45x35 cm, 16.3 kg each"]),
-    ("2026-10-02 11:30", "35001 Las Palmas, ES (residential)", "economy", "lithium batteries", "",
-     ["1 x 110x60x55 cm, 24.2 kg"]),
-    ("2026-11-09 09:00", "75011 Paris, FR (business)", "cheapest", "display stands", "signature required",
-     ["2 x 125x40x30 cm, 31.5 kg each", "1 x 60x60x60 cm, 12 kg"]),
-    ("2026-11-30 16:05", "4020 Linz, AT (business)", "deliver by 2026-12-01", "laptops", "",
-     ["5 x 18x13x4 in, 7.5 lb each"]),
+HOLDOUT = [
+    {   # born 1 Jan 2004 (dependent, not "before"); married parents on separate returns with different statuses
+        # (each filer's own rates);
+        # business net worth in band 2; negative foreign income exclusion; student earns over the student IPA
+        "id": "H-1",
+        "student": {"Date of birth": "2004-01-01", "Marital status": "Single", "State of residence": "Colorado",
+                    **filer("Single", 21400, 22900, 1180, 0), "Cash, savings and checking": 3100},
+        "parent": {"Parents' marital status": "Married", "State of residence": "Colorado",
+                   **filer("Married filing separately", 38900, 41250, 2350, 0,
+                           **{"Untaxed portions of pensions": 2500, "Pension rollover": 4000,
+                              "Untaxed portions of IRA distributions": 1800}),
+                   "Cash, savings and checking": 15800, "Net worth of current investments": 22500,
+                   "Net worth of businesses and/or farms": 260000},
+        "parent_spouse": filer("Head of household", 141300, 152000, 21900, 3,
+                               **{"Foreign income exclusion": -8400, "Untaxed portions of IRA distributions": 3000,
+                                  "IRA rollover": 3000, "Untaxed portions of pensions": 3000}),
+    },
+    {   # independent, married, separate returns; low income -> max Pell 3, negative SAI kept (not floored at 0)
+        "id": "H-2",
+        "student": {"Date of birth": "2005-06-02", "Marital status": "Married", "State of residence": "Alaska",
+                    **filer("Married filing separately", 14903, 15600, 0, 1, **{"Federal work-study": 2400}),
+                    "Cash, savings and checking": 41000},
+        "spouse": filer("Married filing separately", 18300, 19100, 240, 1),
+    },
+    {   # independent single parent (HoH) of two; above 225% poverty -> no max Pell; min Pell 3 (<= 400%);
+        # self-reported family size overrides exemptions; Formula C with 7% asset rate and EEA cap
+        "id": "H-3",
+        "student": {"Date of birth": "1994-11-23", "Marital status": "Divorced", "State of residence": "Hawaii",
+                    "Family size reported on the FAFSA": 3,
+                    **{k: "Yes" if k.startswith("Has children") else v for k, v in DEP_NO.items()},
+                    **filer("Head of household", 88731, 91500, 6400, 2), "Cash, savings and checking": 18000,
+                    "Net worth of current investments": 26000, "Annual child support received": 7200},
+    },
+    {   # separated student (still dependent); parents unmarried and living together, both non-filers -> SAI -1500
+        "id": "H-4",
+        "student": {"Date of birth": "2005-03-09", "Marital status": "Separated", "State of residence": "Georgia",
+                    **filer("Single", 9800, 9800, 0, 0), "Cash, savings and checking": 12500},
+        "parent": {"Parents' marital status": "Unmarried and both legal parents living together",
+                   "State of residence": "Georgia", **NONFILER, "Cash, savings and checking": 2000},
+        "parent_spouse": NONFILER,
+    },
+    {   # homeless determination before 1 July 2026 does not make the student independent; parents on a joint
+        # return with two exemptions (assumed family size 3); joint OASDI base above the single base; negative AGI
+        # student; parents' AAI in the top band
+        "id": "H-5",
+        "student": {"Date of birth": "2006-12-14", "Marital status": "Single", "State of residence": "Illinois",
+                    "Homelessness determination": "Determined at risk of homelessness by the high school district on 2026-04-20",
+                    **filer("Single", -1200, 0, 0, 0), "Cash, savings and checking": 400},
+        "parent": {"Parents' marital status": "Remarried", "State of residence": "Illinois",
+                   **filer("Married filing jointly", 238000, 246000, 41200, 2, **{"Tax-exempt interest income": 1300}),
+                   "Cash, savings and checking": 30500, "Net worth of current investments": 64000},
+        "parent_spouse": JOINT,
+    },
+    {   # parent's AGI is negative (business loss): no max Pell (AGI must be > 0) but min Pell 1; negative parents'
+        # AAI becomes an allowance against the student's income
+        "id": "H-6",
+        "student": {"Date of birth": "2006-07-28", "Marital status": "Single", "State of residence": "Maine",
+                    **filer("Single", 31800, 31800, 1900, 0), "Cash, savings and checking": 2600},
+        "parent": {"Parents' marital status": "Widowed", "State of residence": "Maine",
+                   **filer("Qualifying surviving spouse", -4700, 0, 0, 3), "Cash, savings and checking": 3900,
+                   "Net worth of businesses and/or farms": 15000},
+    },
 ]
 
-
-def write_csv(path: Path, header: list[str], rows: list[list[object]]) -> None:
-    with path.open("w", newline="", encoding="utf-8") as fh:
-        writer = csv.writer(fh)
-        writer.writerow(header)
-        writer.writerows(rows)
-
-
-def build_dataset(name: str, ds: dict[str, object]) -> Path:
-    rng = random.Random(ds["seed"])  # type: ignore[arg-type]
-    out = Path(ds["out"])  # type: ignore[arg-type]
-    if out.exists():
-        shutil.rmtree(out)
-    out.mkdir(parents=True)
-    carriers: list[tuple] = ds["carriers"]  # type: ignore[assignment]
-    write_csv(out / "carriers.csv", CARRIER_COLUMNS, [list(c) for c in carriers])
-    currency = {c[0]: c[3] for c in carriers}
-    fx = {k: float(v) for k, v in ds["fx"].items()}  # type: ignore[union-attr]
-    services, zones, rates = [], [], []
-    ranges: list[tuple] = ds["zone_ranges"]  # type: ignore[assignment]
-    for cid, *_ in carriers:
-        for country in COUNTRIES:
-            zones.append([cid, country, "", "", f"Z{rng.randint(1, 3)}"])
-            zones += [[c, k, lo, hi, z] for c, k, lo, hi, z in ranges if (c, k) == (cid, country)]
-    zone_names = {(z[0], z[4]) for z in zones}
-    for cid, svc, transit, dg, level, max_box in ds["services"]:  # type: ignore[union-attr]
-        min_charge = round(level * rng.uniform(9, 13) / fx[currency[cid]], 2)
-        services.append([cid, svc, transit, f"{min_charge:.2f}", dg, max_box])
-        for zone in sorted(z for c, z in zone_names if c == cid):
-            zf = 1 + 0.18 * (int(zone[1]) - 1)
-            start = level * zf * rng.uniform(7, 9)
-            slope = level * zf * rng.uniform(1.1, 1.5)
-            for brk in FLAT_BREAKS[name]:
-                price = (start + slope * brk ** 0.9) / fx[currency[cid]]
-                rates.append([cid, svc, zone, brk, f"{price:.2f}", "flat"])
-            last = FLAT_BREAKS[name][-1]
-            per_kg = (start + slope * last ** 0.9) / last * rng.uniform(0.78, 0.9) / fx[currency[cid]]
-            rates.append([cid, svc, zone, "", f"{per_kg:.2f}", "per_kg"])
-    write_csv(out / "services.csv", ["carrier_id", "service", "transit_days", "min_charge", "dg_allowed", "max_box_kg"],
-              services)
-    write_csv(out / "zones.csv", ["carrier_id", "country", "postcode_from", "postcode_to", "zone"], zones)
-    write_csv(out / "rates.csv", ["carrier_id", "service", "zone", "max_kg", "price", "rate_type"], rates)
-    units: dict = ds["units"]  # type: ignore[assignment]
-    sur = []
-    for cid, *_ in carriers:
-        f = fx[currency[cid]]
-        amounts = {"RES": (rng.uniform(3, 6) / f, ""), "REM": (rng.uniform(0.35, 0.6) / f, rng.uniform(12, 20) / f),
-                   "OVS": (rng.uniform(22, 40) / f, ""), "OWT": (rng.uniform(14, 24) / f, ""),
-                   "DG": (rng.uniform(28, 45) / f, ""), "SIG": (rng.uniform(2, 4) / f, "")}
-        for code, (amount, minimum) in amounts.items():
-            unit, override = units.get((cid, code), (DEFAULT_UNITS[code], None))
-            amount_s = override if override is not None else f"{amount:.2f}"
-            sur.append([cid, code, amount_s, unit, f"{minimum:.2f}" if minimum != "" else ""])
-    write_csv(out / "surcharges.csv", ["carrier_id", "code", "amount", "unit", "min"], sur)
-    write_csv(out / "remote_areas.csv", ["carrier_id", "country", "postcode_from", "postcode_to"],
-              [list(r) for r in ds["remote"]])  # type: ignore[union-attr]
-    write_csv(out / "holidays.csv", ["date", "country", "name"], [list(h) for h in ds["holidays"]])  # type: ignore[union-attr]
-    write_csv(out / "fx.csv", ["currency", "rate_to_eur"], [[k, v] for k, v in ds["fx"].items()])  # type: ignore[union-attr]
-    return out
-
-
-def request_md(n: str, req: tuple) -> str:
-    ship, dest, service, contents, notes, pkgs = req
-    lines = [f"# Shipment request {n}", "", f"Ship date: {ship}", f"Destination: {dest}", f"Service: {service}",
-             f"Contents: {contents}"]
-    if notes:
-        lines.append(f"Notes: {notes}")
-    lines += ["", "Packages:"] + [f"- {p}" for p in pkgs]
-    return "\n".join(lines) + "\n"
+GOLD_FIELDS = ["dependency", "formula", "family_size", "max_pell_indicator", "min_pell_indicator", "sai"]
 
 
 def score(got: dict, want: dict) -> float:
-    """Mirror of scoring/score-task3.mjs checkQuote, for the coverage proof only."""
-    near = lambda a, b: isinstance(a, (int, float)) and abs(a - b) <= 0.011  # noqa: E731
-    gs, ws = {s["code"]: s["amount_eur"] for s in got["surcharges"]}, {s["code"]: s["amount_eur"] for s in want["surcharges"]}
-    checks = [True, got["carrier_id"] == want["carrier_id"], got["service"] == want["service"],
-              near(got["billable_kg"], want["billable_kg"]), near(got["base_eur"], want["base_eur"]),
-              sorted(gs) == sorted(ws), sorted(gs) == sorted(ws) and all(near(gs[c], ws[c]) for c in ws),
-              near(got["fuel_eur"], want["fuel_eur"]), near(got["total_eur"], want["total_eur"]),
-              got["delivery_date"] == want["delivery_date"],
-              [e["code"] for e in got["exceptions"]] == [e["code"] for e in want["exceptions"]],
-              [e["detail"] for e in got["exceptions"]] == [e["detail"] for e in want["exceptions"]]]
-    return sum(checks) / len(checks)
+    keys = list(want)
+    return sum(got.get(k) == want[k] for k in keys) / len(keys)
 
 
-def desk_log(q: dict) -> dict:
-    """What the desk log records of a full quote: no base, fuel or per-surcharge amounts."""
-    return {"carrier_id": q["carrier_id"], "service": q["service"], "billable_kg": q["billable_kg"],
-            "surcharge_codes": [s["code"] for s in q["surcharges"]], "total_eur": q["total_eur"],
-            "delivery_date": q["delivery_date"], "exceptions": q["exceptions"]}
+def main() -> int:
+    fails = []
+    ex = solve(render(EXEMPLAR))
+    for k, v in EXEMPLAR_EXPECT.items():
+        if ex[k] != v:
+            fails.append(f"exemplar {k}: {ex[k]} != {v}")
 
+    inp, hold = TASK / "input", TASK / "holdout"
+    for d in (inp, hold):
+        for f in d.glob("*"):
+            f.unlink()
+    gold_texts = {}
+    for i, case in enumerate(GOLD, 1):
+        text = render(case)
+        gold_texts[case["id"]] = text
+        (inp / f"applicant-{i:02d}.md").write_text(text)
+        full = solve(text)
+        (inp / f"result-{i:02d}.json").write_text(json.dumps({k: full[k] for k in GOLD_FIELDS}, indent=2) + "\n")
+        stale = solve(text, "2627")
+        if stale["sai"] == full["sai"]:
+            fails.append(f"{case['id']}: prior edition reproduces the gold SAI")
+    key, hold_texts = {}, {}
+    for i, case in enumerate(HOLDOUT, 1):
+        text = render(case)
+        hold_texts[case["id"]] = text
+        name = f"applicant-h{i}.md"
+        (hold / name).write_text(text)
+        key[case["id"]] = {"input": name, "expected": solve(text)}
+    (hold / "answer-key.json").write_text(json.dumps(key, indent=2) + "\n")
 
-def unique_fit(train: Path, gold_texts: dict[str, str]) -> list[frozenset[str]]:
-    """Every non-empty combination of class-B and class-A switches that reproduces all gold desk logs."""
-    rates = Rates(train)
-    want = {k: desk_log(solve(train, t, rates=rates)) for k, t in gold_texts.items()}
-    rules = CLASS_B + CLASS_A
-    fits = []
-    for n in range(1, len(rules) + 1):
-        for combo in itertools.combinations(rules, n):
-            stale = frozenset(combo)
-            if all(desk_log(solve(train, t, stale, rates)) == want[k] for k, t in gold_texts.items()):
-                fits.append(stale)
-    return fits
-
-
-def main() -> None:
-    train = build_dataset("train", DATASETS["train"])
-    hold = build_dataset("holdout", DATASETS["holdout"])
-    inp, hdir = TASK / "input", TASK / "holdout"
-    for old in list(inp.glob("shipment-*.md")) + list(inp.glob("quote-*.json")) + list(hdir.glob("shipment-*.md")):
-        old.unlink()
-    gold_texts, hold_texts = {}, {}
-    for i, req in enumerate(GOLD_REQUESTS, 1):
-        text = request_md(f"{i:02d}", req)
-        gold_texts[f"{i:02d}"] = text
-        (inp / f"shipment-{i:02d}.md").write_text(text, encoding="utf-8")
-        (inp / f"quote-{i:02d}.json").write_text(json.dumps(desk_log(solve(train, text)), indent=2) + "\n",
-                                                 encoding="utf-8")
-    key = {}
-    for i, req in enumerate(HOLDOUT_REQUESTS, 1):
-        text = request_md(f"h{i}", req)
-        hold_texts[f"h{i}"] = text
-        (hdir / f"shipment-h{i}.md").write_text(text, encoding="utf-8")
-        key[f"h{i}"] = {"input": f"shipment-h{i}.md", "expected": solve(hold, text)}
-    (hdir / "answer-key.json").write_text(json.dumps(key, indent=2) + "\n", encoding="utf-8")
-    for k, t in {**gold_texts, **hold_texts}.items():
-        q = solve(hold if k.startswith("h") else train, t)
-        print(k, q["carrier_id"], q["service"], q["billable_kg"], q["total_eur"], q["delivery_date"],
-              [s["code"] for s in q["surcharges"]], [e["code"] for e in q["exceptions"]])
-    problems = []
-    for rule in CLASS_B + CLASS_C + CLASS_A:
-        cls = "B" if rule in CLASS_B else "C" if rule in CLASS_C else "A"
-        gold = [k for k, t in gold_texts.items()
-                if desk_log(solve(train, t, frozenset({rule}))) != desk_log(solve(train, t))]
-        hits = {k: score(solve(hold, t, frozenset({rule})), key[k]["expected"]) for k, t in hold_texts.items()}
-        hits = {k: s for k, s in hits.items() if s < 1}
-        mean = 1 - sum(1 - s for s in hits.values()) / len(hold_texts)
-        print(f"{cls} {rule:13s} gold={','.join(gold) or '-':24s} holdout={','.join(hits) or '-':16s} "
-              f"execution if only this is wrong={mean:.3f}")
-        if cls == "B" and not gold:
-            problems.append(f"class-B rule {rule} is not visible in any gold quote")
-        if cls == "C" and gold:
-            problems.append(f"class-C rule {rule} changes gold quote(s) {gold}")
-        if cls != "A" and not hits:
-            problems.append(f"rule {rule} changes no holdout score")
-    others = unique_fit(train, gold_texts)
-    print(f"learnability: {len(others)} wrong rule combinations reproduce every gold desk log")
-    for combo in others:
-        if not combo <= set(CLASS_A):
-            problems.append(f"gold desk logs do not rule out {sorted(combo)}")
-    if problems:
-        print("COVERAGE FAIL\n- " + "\n- ".join(problems))
-        sys.exit(1)
-    print("COVERAGE OK")
+    untaught = []
+    for n in NAIVE:
+        hit = [h for h, t in hold_texts.items() if score(solve(t, naive={n}), key[h]["expected"]) < 1]
+        gold_hit = [g for g, t in gold_texts.items() if solve(t, naive={n})["sai"] != solve(t)["sai"]]
+        print(f"# naive {n:22s} holdouts={hit} gold={gold_hit}")
+        if not hit:
+            fails.append(f"naive {n} changes no holdout score")
+        if not gold_hit:
+            untaught.append(n)
+    if len(untaught) < MIN_UNTAUGHT:
+        fails.append(f"only {len(untaught)} clauses untaught by gold (< {MIN_UNTAUGHT})")
+    stale = [score(solve(t, "2627"), key[h]["expected"]) for h, t in hold_texts.items()]
+    allnaive = [score(solve(t, naive=set(NAIVE)), key[h]["expected"]) for h, t in hold_texts.items()]
+    print(f"# stale edition holdout field score: {[round(s, 2) for s in stale]} mean={sum(stale) / len(stale):.3f}")
+    print(f"# all-naive holdout field score:    {[round(s, 2) for s in allnaive]} mean={sum(allnaive) / len(allnaive):.3f}")
+    for h, c in key.items():
+        print(f"# {h}: {json.dumps(c['expected'])}")
+    if fails:
+        print("GENERATE FAIL\n- " + "\n- ".join(fails))
+        return 1
+    print("GENERATE OK")
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
