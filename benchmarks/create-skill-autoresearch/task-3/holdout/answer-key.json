@@ -1,0 +1,134 @@
+{
+  "h1": {
+    "input": "shipment-h1.md",
+    "expected": {
+      "carrier_id": "K12",
+      "service": "standard",
+      "billable_kg": 82.0,
+      "base_eur": 95.12,
+      "surcharges": [
+        {
+          "code": "RES",
+          "amount_eur": 5.72
+        },
+        {
+          "code": "REM",
+          "amount_eur": 40.18
+        }
+      ],
+      "fuel_eur": 20.45,
+      "total_eur": 161.47,
+      "delivery_date": "2026-12-02",
+      "exceptions": []
+    }
+  },
+  "h2": {
+    "input": "shipment-h2.md",
+    "expected": {
+      "carrier_id": "K11",
+      "service": "express",
+      "billable_kg": 39.0,
+      "base_eur": 64.15,
+      "surcharges": [
+        {
+          "code": "REM",
+          "amount_eur": 19.02
+        },
+        {
+          "code": "DG",
+          "amount_eur": 29.95
+        },
+        {
+          "code": "SIG",
+          "amount_eur": 2.83
+        }
+      ],
+      "fuel_eur": 9.15,
+      "total_eur": 125.1,
+      "delivery_date": "2026-12-10",
+      "exceptions": []
+    }
+  },
+  "h3": {
+    "input": "shipment-h3.md",
+    "expected": {
+      "carrier_id": "K12",
+      "service": "standard",
+      "billable_kg": 61.0,
+      "base_eur": 50.63,
+      "surcharges": [
+        {
+          "code": "RES",
+          "amount_eur": 5.72
+        },
+        {
+          "code": "REM",
+          "amount_eur": 29.89
+        },
+        {
+          "code": "OVS",
+          "amount_eur": 32.76
+        },
+        {
+          "code": "DG",
+          "amount_eur": 36.63
+        }
+      ],
+      "fuel_eur": 17.26,
+      "total_eur": 172.89,
+      "delivery_date": "2026-10-07",
+      "exceptions": [
+        {
+          "code": "SERVICE_UPGRADED",
+          "detail": "economy->standard"
+        }
+      ]
+    }
+  },
+  "h4": {
+    "input": "shipment-h4.md",
+    "expected": {
+      "carrier_id": "K14",
+      "service": "economy",
+      "billable_kg": 104.0,
+      "base_eur": 55.12,
+      "surcharges": [
+        {
+          "code": "OVS",
+          "amount_eur": 71.18
+        },
+        {
+          "code": "OWT",
+          "amount_eur": 35.04
+        },
+        {
+          "code": "SIG",
+          "amount_eur": 2.93
+        }
+      ],
+      "fuel_eur": 27.43,
+      "total_eur": 191.7,
+      "delivery_date": "2026-12-31",
+      "exceptions": []
+    }
+  },
+  "h5": {
+    "input": "shipment-h5.md",
+    "expected": {
+      "carrier_id": "K12",
+      "service": "express",
+      "billable_kg": 17.5,
+      "base_eur": 49.53,
+      "surcharges": [],
+      "fuel_eur": 7.18,
+      "total_eur": 56.71,
+      "delivery_date": "2026-12-02",
+      "exceptions": [
+        {
+          "code": "DEADLINE_MISSED",
+          "detail": "2026-12-01"
+        }
+      ]
+    }
+  }
+}

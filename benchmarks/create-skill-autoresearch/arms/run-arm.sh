@@ -4,7 +4,7 @@
 #   arm     bare | skill-creator | factory | factory-v021
 #   model   haiku | sonnet | opus   (builder model; the scorer's executor model is fixed separately)
 #   run-id  unique id; everything lands in runs/<run-id>/
-#   task    task (conventional-commits, default) | task-2 (purchase-order-builder)
+#   task    task (conventional-commits, default) | task-2 (purchase-order-builder) | task-3 (freight-quote-builder)
 #
 #   FACTORY_DIR / COMPANIONS_DIR override where the factory arms load the skill and its companions;
 #   factory-v021 requires both (the pinned v0.2.1 archive, agent-skills commit 99652ee).
@@ -41,6 +41,7 @@ TASK_NAME="${4:-task}"
 case "$TASK_NAME" in
   task)   SKILL_OUT="conventional-commits" ;;
   task-2) SKILL_OUT="purchase-order-builder" ;;
+  task-3) SKILL_OUT="freight-quote-builder" ;;
   *) echo "unknown task: $TASK_NAME" >&2; exit 2 ;;
 esac
 TASK_DIR="$BENCH/$TASK_NAME"
@@ -322,7 +323,7 @@ mkdir -p "$BENCH/results"
 echo "$RUN_ID,$ARM,$MODEL_ALIAS,$EXIT_CODE,$WALL,$ENV_FAILURE,$TASK_NAME,$IN_TOKENS,$OUT_TOKENS" >> "$RESULTS"
 
 echo "# run $RUN_ID finished: exit=$EXIT_CODE wall=${WALL}s env_failure=$ENV_FAILURE in_tokens=${IN_TOKENS:-?} out_tokens=${OUT_TOKENS:-?}" >&2
-SCORER="score.mjs"; [ "$TASK_NAME" = "task-2" ] && SCORER="score-task2.mjs"
+SCORER="score.mjs"; [ "$TASK_NAME" = "task-2" ] && SCORER="score-task2.mjs"; [ "$TASK_NAME" = "task-3" ] && SCORER="score-task3.mjs"
 echo "# score: node $BENCH/scoring/$SCORER $RUN/ws/output/$SKILL_OUT" >&2
 [ "$ENV_FAILURE" = "1" ] && exit 75
 exit "$EXIT_CODE"

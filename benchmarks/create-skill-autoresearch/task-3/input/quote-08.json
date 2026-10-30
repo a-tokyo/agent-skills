@@ -1,0 +1,16 @@
+{
+  "carrier_id": "C02",
+  "service": "express",
+  "billable_kg": 2.5,
+  "base_eur": 19.35,
+  "surcharges": [],
+  "fuel_eur": 1.74,
+  "total_eur": 21.09,
+  "delivery_date": "2026-06-17",
+  "exceptions": [
+    {
+      "code": "DEADLINE_MISSED",
+      "detail": "2026-06-16"
+    }
+  ]
+}

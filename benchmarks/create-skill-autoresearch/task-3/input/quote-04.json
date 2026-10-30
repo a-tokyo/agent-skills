@@ -1,0 +1,28 @@
+{
+  "carrier_id": "C03",
+  "service": "standard",
+  "billable_kg": 70.0,
+  "base_eur": 57.16,
+  "surcharges": [
+    {
+      "code": "RES",
+      "amount_eur": 5.65
+    },
+    {
+      "code": "REM",
+      "amount_eur": 28.0
+    },
+    {
+      "code": "OVS",
+      "amount_eur": 27.53
+    },
+    {
+      "code": "DG",
+      "amount_eur": 43.63
+    }
+  ],
+  "fuel_eur": 17.75,
+  "total_eur": 179.72,
+  "delivery_date": "2026-04-17",
+  "exceptions": []
+}

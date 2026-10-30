@@ -1,0 +1,12 @@
+carrier_id,service,transit_days,min_charge,dg_allowed
+K11,express,2,15.91,Y
+K11,standard,3,7.53,Y
+K11,economy,6,5.34,N
+K12,express,1,20.23,Y
+K12,standard,2,12.98,Y
+K12,economy,5,6.97,N
+K13,express,1,13.43,Y
+K13,standard,2,6.40,Y
+K13,economy,3,3.76,Y
+K14,standard,4,7.65,Y
+K14,economy,7,5.05,N

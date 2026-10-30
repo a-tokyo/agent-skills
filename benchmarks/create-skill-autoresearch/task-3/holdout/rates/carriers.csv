@@ -1,0 +1,5 @@
+carrier_id,name,status,currency,dim_divisor,fuel_pct,cutoff,preferred
+K11,Kestrel Cargo,active,CHF,4500,11,15:30,N
+K12,Delta Courier,active,EUR,6000,14.5,18:00,Y
+K13,Polar Post,suspended,EUR,5000,8,17:00,N
+K14,Meridian Freight,active,EUR,5500,17,13:30,N

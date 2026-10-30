@@ -1,0 +1,5 @@
+carrier_id,name,status,currency,dim_divisor,fuel_pct,cutoff,preferred
+C01,Atlas Parcel,active,EUR,5000,12.5,16:00,Y
+C02,Nordic Express,active,GBP,4000,9,17:30,N
+C03,Iberia Freight,active,EUR,6000,15,14:00,N
+C04,Orion Logistics,suspended,EUR,5000,10,17:00,N
