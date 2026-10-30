@@ -26,6 +26,8 @@ mode line, and the recorded case list.
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import os
 import re
 import shutil
@@ -382,6 +384,7 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
                   "model_invoked": invoked, "force_manual": args.force_manual, "fresh_baseline": args.fresh_baseline,
                   "skill": skill, "model": args.model, "runs": args.runs, "in_sample": args.in_sample,
                   "executor": args.executor, "cases": cases, "artifact": artifact.as_posix(),
+                  "options_sha256": options_sha256(args),
                   **_input_hashes(ws, skill, cases), "started": now(), "finished": None}
         write_json(ws / GATE_RECORD, record)
         if (ws / artifact).exists():  # set aside, so a stale artifact can never pass
@@ -483,13 +486,24 @@ def wait_gate(ws: Path, timeout: float | None, proc: subprocess.Popen | None = N
 # A gate.json in these states does not describe a finished gate on the workspace as it is now.
 RERUN_CODES = {"no_split", "no_gate_record", "bad_gate_record", "gate_unfinished", "gate_unhashed", "stale_skill",
                "stale_cases", "stale_inputs"}
-SAME_OPTIONS = ("model", "runs", "executor", "in_sample", "force_manual", "fresh_baseline")
+# Every option that changes what the gate runs or how (--skill is checked by the validator; the rest only wait).
+GATE_OPTIONS = ("backend", "force_manual", "model", "runs", "jobs", "allow_tools", "executor", "timeout",
+                "case_timeout", "in_sample", "fresh_baseline")
+
+
+def options_sha256(args: argparse.Namespace) -> str:
+    """sha256 of GATE_OPTIONS as given, plus the backend the environment picks when --backend is not given."""
+    canonical = {key: getattr(args, key) for key in GATE_OPTIONS}
+    canonical |= {"allow_tools": sorted(args.allow_tools), "default_backend": default_backend(),
+                  "timeout": float(args.timeout), "case_timeout": float(args.case_timeout)}  # as the job re-parses them
+    return hashlib.sha256(json.dumps(canonical, sort_keys=True).encode()).hexdigest()
 
 
 def _settled(ws: Path, args: argparse.Namespace) -> bool:
-    """The last gate finished on the workspace as it is now, with these options: its result stands."""
+    """The last gate finished on the workspace as it is now, with the same options: its result stands. A record
+    without an options hash (an older gate.py) never does."""
     record = read_json(ws / GATE_RECORD)
-    if not record or not record.get("finished") or any(record.get(k) != getattr(args, k) for k in SAME_OPTIONS):
+    if not record or not record.get("finished") or record.get("options_sha256") != options_sha256(args):
         return False
     return check_gate.validate(ws, args.skill).code not in RERUN_CODES
 

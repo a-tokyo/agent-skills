@@ -25,7 +25,8 @@ python3 <skill-dir>/scripts/gate.py --detach --wait --model <model the skill tar
 Exit 124 (still running): re-issue the same command and nothing else — it waits on the running gate, and if the gate
 finished in between it reports that result; never poll `run_owned.py status`, never sleep between calls. Any other exit
 is the gate's own: 0 valid; non-zero names what to fix — fix it and re-issue (a changed skill or gate input starts a
-new gate; `--restart` in place of `--detach` re-runs an unchanged one).
+new gate, as does any other option: gate.json records a hash of every option that changes the run; `--restart` in
+place of `--detach` re-runs an unchanged one).
 
 `gate.py` runs as the owned job `gate`, as `run_owned.py start gate -- python3 <skill-dir>/scripts/gate.py …`
 would (log `work/pids/gate.log`), and refuses a second start while it runs. To restart the gate, run

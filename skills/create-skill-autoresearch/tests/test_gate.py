@@ -561,6 +561,16 @@ class GateLifecycleTest(TempWorkspace):
         self.assertEqual((out.returncode, runs), (0, 0), "without the job record, the validator's line")
         self.assertTrue(out.stdout.startswith("GATE VALID"), out.stdout)
         self.assertEqual(gate(model="m2")[1], 6, "other options run a new gate")
+        self.assertEqual(gate(model="m2")[1], 0)
+        for extra in (["--jobs", "2"], ["--case-timeout", "600"], ["--allow-tools", "Bash", "Write", "Read"],
+                      ["--backend", "manual"]):
+            with self.subTest(extra=extra):
+                self.assertEqual(gate(*extra, model="m2")[1], 6, f"{extra} runs a new gate")
+                self.assertEqual(gate(*extra, model="m2")[1], 0, f"{extra} again: settled")
+        record = json.loads((self.ws / "work" / "evaluation" / "gate.json").read_text())
+        (self.ws / "work" / "evaluation" / "gate.json").write_text(
+            json.dumps({k: v for k, v in record.items() if k != "options_sha256"}))
+        self.assertEqual(gate("--backend", "manual", model="m2")[1], 6, "a record without the options hash re-runs")
         self.assertEqual(gate("--restart")[1], 6, "--restart always runs it again")
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndisable-model-invocation: true\n"
                                                               "description: Edited.\n---\n")
