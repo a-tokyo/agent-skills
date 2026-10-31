@@ -20,12 +20,12 @@ The main session runs every phase itself. On entering a phase, read that phase's
 | Phase | What happens | Who | Detail |
 |---|---|---|---|
 | 1. Interview | purpose, gold standards, scope | main | [references/phase-1-2.md](references/phase-1-2.md) |
-| 2. Research | study materials, synthesis, rubric | researchers (2-7) or main inline | below |
+| 2. Research | study materials, synthesis, rubric | researchers (2-7) or main inline | phase-1-2.md |
 | 3. Draft | design, author, `evaluate.sh`, split, baseline, eval suite | main | [references/phase-3.md](references/phase-3.md) |
 | 4. Autoresearch | iterate against gold standards, description pass | main + autoresearch skill | [references/phase-4.md](references/phase-4.md) |
 | 5. Verify | 5.0 gate, 5.1 premortem; 5.2-5.4 panel, ship | main; PANEL (3 subagents) | [references/phase-5.md](references/phase-5.md) |
 
-BUILDER and PANEL never share context: the panel gets only the skill, gold standards, rubric and premortem risks.
+BUILDER and PANEL never share context (5.2).
 
 **Reading.** Before Phase 1, and on each resume, read [references/operating-rules.md](references/operating-rules.md)
 (paths, scripts, background jobs, unattended runs, git, 4.4 handoff and 4.5 resume).
@@ -47,7 +47,7 @@ named below serves one branch: read it only when that branch applies.
 
 Read [references/standalone-fallback.md](references/standalone-fallback.md) only when skill-creator or writing-for-agents is missing.
 Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>`; on Windows, run inside WSL.
-Read [references/hosts.md](references/hosts.md) only when the host is not Claude Code or its hooks need installing.
+Read [references/hosts.md](references/hosts.md) only when the host is not Claude Code, its hooks need installing, or a panel role runs on another host's CLI.
 
 Hooks (`hooks/`) back these rules in a build: the kill guard (pattern kills; as the loop guard, the Phase 4 metric
 after `check_gate.py --loop` says done), the subagent guard (background subagents) and the finish guard (sends the
@@ -116,8 +116,10 @@ python3 <skill-dir>/scripts/check_gate.py --panel-receipt <role> <scores.json>  
 Then spawn 3 verifier subagents **in parallel** (one message), one agent per role. Each gets ONLY the skill's SKILL.md (a reference only when it asks for one by name), the gold standards, the rubric and the premortem risks: never research notes, `autoresearch.jsonl` or
 builder context. The roles (`<role>`): Verifier-A, quality (`verifier-a`); Verifier-B, utility (`verifier-b`);
 Devil's Advocate, adversarial, always tries to smuggle an instruction in through content the skill fetches
-(`devils-advocate`). Each member's prompt gives its role, the input paths
-and `<skill-dir>`, and tells it to read its template and the role-receipt paragraph in "Panel Prompt Templates" of `<skill-dir>/references/consensus-protocol.md` (read only as a panel member).
+(`devils-advocate`). Each member's prompt gives its role, the input paths, the
+skill under test (`output/<skill-name>/`, the templates' `{{skill_dir}}`) and this factory's `<skill-dir>`, and tells
+it to read its template and the role-receipt paragraph in "Panel Prompt Templates" of
+`<skill-dir>/references/consensus-protocol.md` (read only as a panel member).
 It scores every dimension independently (score, confidence 0-1, evidence: a verbatim quote in double quotes) and ends
 with `--panel-receipt`, which binds the scores to the skill and rubric hashes: a skill change voids every receipt.
 

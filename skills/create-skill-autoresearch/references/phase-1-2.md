@@ -23,7 +23,7 @@ Present the parameters as a table and wait for explicit confirmation. Then creat
 `output/<skill-name>/` (the publish-ready skill, never evaluation scripts) and `BENCHMARK.md` (Phase 5). A working directory already dedicated to the build (it holds the brief and inputs) is the workspace: create `work/`
 and `output/<skill-name>/` in place. The workspace is its own git repository (the Phase 4 loop resets it): `git init`
 unless `git rev-parse --show-toplevel` already prints its root; inside a parent project, gitignore it there. `work/`
-is committed except `work/pids/` (`run_owned.py` ignores it), so no credential goes in it. The human may correct
+is committed except `work/pids/`, so no credential goes in it. The human may correct
 `work/manifest.yaml`, `evaluation/rubric.yaml`, `evaluation/judges.yaml` and `evaluation/data-split.yaml` (`gate.py
 record` owns `plugin_eval`) at phase boundaries. Only `output/<skill-name>/` ships; its uplift benchmark belongs
 outside it, at `benchmarks/<skill-name>/`.

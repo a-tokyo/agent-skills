@@ -33,7 +33,7 @@ what it tried in `autoresearch.ideas.md` (read it every THINK); `results.tsv` st
   realistic inputs from the study materials with the reference outputs their rules give, varied beyond the gold. `strategy: "synthetic-holdout"`, listed under `validation` (the gold standards are
   `training`); never edited during the loop.
 - **100+**: score a rotating sample of 10-15 training cases per experiment, the full set only on kept experiments
-  and at phase boundaries (evaluation cost).
+  and at phase boundaries.
 
 **The held-out score.** Every experiment line (experiment 0, each experiment kept or not, each 4.6 re-score)
 carries `held_out`: that commit's `overall_score` on cases it was not tuned on, measured in MEASURE before the

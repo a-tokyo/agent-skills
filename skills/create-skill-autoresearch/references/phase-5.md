@@ -1,7 +1,6 @@
 # Phase 5.0-5.1: Eval Gate and Premortem
 
-Inputs: `work/evaluation/data-split.yaml` and `output/<skill-name>/`. The panel (SKILL.md 5.2-5.4) follows 5.1 in the
-same turn.
+Inputs: `work/evaluation/data-split.yaml` and `output/<skill-name>/`.
 
 ## 5.0 Eval Gate
 
