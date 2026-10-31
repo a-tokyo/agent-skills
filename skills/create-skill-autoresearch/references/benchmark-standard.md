@@ -7,6 +7,8 @@ what the model does**. Answer it before shipping.
 ## Contents
 - [The gate: same-model uplift](#the-gate-same-model-uplift)
 - [Arms](#arms)
+- [Choosing the evaluator](#choosing-the-evaluator)
+- [Manual with/without protocol](#manual-withwithout-protocol)
 - [Score by executing, not by reading](#score-by-executing-not-by-reading)
 - [Unit-test the scorer](#unit-test-the-scorer)
 - [Sample size, and why per-model](#sample-size-and-why-per-model)
@@ -47,6 +49,99 @@ from reality silently.
 
 Hold everything else fixed: same model, same temperature, same task text, same scorer. If the arms
 differ in more than one respect, the delta is not attributable.
+
+## Choosing the evaluator
+
+Four evaluators were compared on one task (six skills from bad to reference, two repeats, Haiku 5.5 as
+executor and judge), against an answer-key scorer's ranking as ground truth
+([full comparison](https://github.com/a-tokyo/agent-skills/blob/main/benchmarks/create-skill-autoresearch/EVALUATORS.md)):
+
+| | Answer-key scorer | Plugin eval, `regex` graders | Plugin eval, `llm` grader | skill-creator eval |
+|---|---|---|---|---|
+| Rank agreement (Spearman) | 1.000 (test-retest) | 0.955 | 0.955 | 1.000 |
+| Separates bad from good | 0.785 | 0.900 | 0.967 | 0.463 |
+| Repeat-to-repeat drift | 0.012 | 0.036 | 0.022 | 0.017 |
+| Reports uplift | no | yes | yes | yes |
+| Cost per skill | $0.07 | $0.14 | $0.16 | $0.07 |
+
+What the factory uses where:
+
+- **Phase 4 metric** (3.4): the answer-key scorer whenever outputs are checkable — the most stable and
+  cheapest, but absolute only. Without a checkable output, an LLM judge or skill-creator-style grading,
+  read as a ranking.
+- **5.0 gate** (3.6): `claude plugin eval` with deterministic graders (`regex`, `file_exists`) — the one
+  method that both separates sharply and reports uplift. An `llm` grader only where no deterministic check
+  exists: its 2-of-3 vote turns partly correct runs into fails (it scored a middling skill 0.20, truth 0.82).
+- **Description work** (4.6): skill-creator. Its grader is lenient (a generic skill scored 0.54, truth
+  0.14), so read its absolute scores as a ranking and its with/without Δ as the signal.
+
+Limits: one task, six skills, two repeats, one model family as executor and judge.
+
+## Manual with/without protocol
+
+`scripts/gate.py` (phase-5.md 5.0) runs this instead of `claude plugin eval` whenever the build runs outside
+Claude Code (`$CLAUDECODE` unset: another host targets its own model), `claude plugin eval --help` does not
+exit 0, the skill is user-invoked (it never fires through the Skill tool, so plugin eval's with-arm measures
+nothing), or `--backend manual --force-manual "<host>: <why>"` asks for it on another host whose shell inherits
+`$CLAUDECODE` (a Claude Code build never passes `--backend manual`: for a model-invoked skill plugin eval can run,
+`gate.py` refuses it). It calls no `claude` command. It runs the
+gate gold standards on the pinned model:
+
+- **Arms**: *with* gets the shipped `SKILL.md` as its system prompt; *without* gets no system prompt.
+- **Runs**: 3 per case per arm.
+- **Executor**: single-call (system prompt plus the case prompt, one completion: an API call, an SDK, or the
+  host's headless CLI) when the skill only produces text; **agentic** (a fresh tool-using agent in a scratch
+  copy of the case's fixtures, the skill directory beside them: the host's headless CLI from
+  [hosts.md](hosts.md), e.g. `cursor-agent -p --force --trust`, `codex exec --skip-git-repo-check`,
+  `opencode run`, `claude -p`) when the skill bundles `scripts/` or acts on files — one call cannot run a
+  script or write a file; it runs with the factory's kill guard loaded (`CSA_EXECUTOR=1 claude -p --plugin-dir
+  <skill-dir>`, [phase-3.md](phase-3.md) 3.4). Pass the choice to `gate.py --executor`.
+- **Score**: each run is the fraction of the case's graders that pass (0-1), skill-fired indicators excluded:
+  the 3.6 suite's graders where one exists, else the checks `run-case.sh` applies to the gold standard
+  (deterministic first). Mechanical graders (`regex`, file checks) are applied directly. An `llm` grader is
+  judged by the host's headless CLI with the judge model (`claude -p --model <judge>`, `cursor-agent -p
+  --model <judge>`, `codex exec --skip-git-repo-check -m <judge>`, `opencode run -m <judge>`), the grader's
+  body as the rubric and the run's output as the input, asking for PASS or FAIL; it passes on a majority of 3
+  calls. `<judge>` is a model from a different family than the builder when the host offers one, else a small
+  model of the builder's family (on Claude, `claude-haiku-5-5`).
+
+The build implements one run in `work/evaluation/run-case.sh <case> <with|without>` (executable, run from
+the workspace root, `GATE_MODEL`, `GATE_RUN` and `GATE_EXECUTOR` in its environment; `<case>` is a gate gold
+standard's entry as data-split.yaml lists it, which `gate.py record` copies into `plugin_eval`): it executes the case on
+that arm the way `$GATE_EXECUTOR` names (`single-call` or `agentic`), applies the graders, and prints
+`EXECUTOR=<the executor it ran>` and `SCORE=<0..1>` — `gate.py` reads the last of each. The executor line is a
+format check, self-attested by the adapter, not proof of what ran: a run that prints none, or another executor,
+fails, so the label `uplift.json` records is one the adapter acknowledged, but an adapter that ignores
+`$GATE_EXECUTOR` and echoes a constant still passes; the panel reads `run-case.sh` to check it. A non-zero exit, a timeout or a missing `SCORE` or `EXECUTOR` line is a
+failed run, not a score of 0: `gate.py` retries it once, then records it under `errors` and marks the artifact
+partial. Keep the adapter's scratch files outside `work/evaluation/`: a gate input that changes while the gate runs
+leaves no finished run.
+
+`gate.py` writes the result to `work/evaluation/uplift.json`; `delta` is mean(with) − mean(without),
+read exactly as plugin eval's Δ:
+
+```json
+{
+  "cases": [
+    { "case": "holdout-03", "with": [1.0, 0.8, 1.0], "without": [0.6, 0.6, 0.4], "delta": 0.4 }
+  ],
+  "summary": { "model": "<model>", "executor": "agentic", "runs_per_case": 3, "in_sample": true,
+               "mean_with": 0.93, "mean_without": 0.53, "mean_delta": 0.4 },
+  "partial": false,
+  "errors": []
+}
+```
+
+`in_sample` is true when the gate cases are also training cases (3-9 gold standards, phase-4.md 4.2).
+
+**The without arm is cached.** It never reads the skill, so a re-gate after a skill edit re-runs only the
+*with* arm. `gate.py` stores each complete without arm in `work/evaluation/baseline-cache/<key>.json`, the key a
+sha256 of the case, model, executor, `run-case.sh`, the case's suite directory and every gate input (gold
+standards, fixtures, scorers, graders): change any of them and the cache misses. A reused case carries
+`"without_cache": {"key": ..., "sha256": ...}` in `uplift.json`; `check_gate.py` recomputes the key, re-hashes
+the entry and compares its scores, failing `stale_baseline` on any mismatch. `gate.py --fresh-baseline` re-runs
+every without arm. Plugin mode caches nothing: `claude plugin eval --ablation` offers `none` or
+`with-without`, no without-only arm.
 
 ## Score by executing, not by reading
 

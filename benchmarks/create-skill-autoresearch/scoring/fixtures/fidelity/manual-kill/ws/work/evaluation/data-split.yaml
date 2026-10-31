@@ -1,0 +1,2 @@
+plugin_eval_available: 0  # user-invoked skill, so the manual protocol applies
+plugin_eval: [input-01]

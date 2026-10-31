@@ -3,6 +3,11 @@
 Shipping is not a file copy. A skill that is installed but unregistered is invisible; a skill whose
 version disagrees with its registry entry installs the wrong thing. This is the checklist.
 
+Only a SHIP or SHIP WITH CAVEATS build reaches it, and only with evidence: `BENCHMARK.md` carries the
+`GATE VALID:` line that `scripts/check_gate.py` printed, copied verbatim, from a run made after the last
+change to the skill. No such line — or a `GATE INVALID:` one — means the verdict is not a shipped one:
+return to 5.0. An `UNSHIPPED` build is never published.
+
 ## Contents
 - [What ships and what does not](#what-ships-and-what-does-not)
 - [Frontmatter](#frontmatter)
@@ -37,15 +42,18 @@ Build-workspace material — research notes, experiment journals, handoffs, craf
 
 ## Frontmatter
 
-`name` and `description` are required by the platform. Beyond those, carry:
+`name` and `description` are required by the platform. Beyond those, carry (phase-3.md 3.3):
 
 ```yaml
-version: 0.2.0      # semver — bump whenever behaviour changes
-license: MIT        # or whatever applies
+license: MIT          # or whatever applies
+metadata:
+  version: "0.2.0"    # semver, the spec's portable form; bump whenever behaviour changes
 ```
 
-Bump `version` on every behavioural change: patch for wording and fixes, minor for new capability.
-The version is what a registry entry has to agree with, so a forgotten bump becomes a mismatch.
+Add a top-level `version:` too only where a registry or tool reads it there (it is a registry convention,
+not a spec field), and keep the two equal. Bump the version on every behavioural change: patch for wording
+and fixes, minor for new capability. The version is what a registry entry has to agree with, so a forgotten
+bump becomes a mismatch.
 
 ## Register it, in every place that lists skills
 
@@ -91,7 +99,9 @@ hand *will* drift.
 
 ## Checklist
 
-- [ ] `version` bumped in frontmatter; `license` present
+- [ ] `BENCHMARK.md` holds `check_gate.py`'s `GATE VALID:` and `PANEL CONSENSUS:` lines (metric-first: and `SHIP RULE:`), verbatim, from after the last skill change
+- [ ] `check_gate.py --finish` exits 0: three role receipts and the consensus (`work/experiments/panel/`) match the skill shipped
+- [ ] `metadata.version` bumped (and a top-level `version`, where a registry reads one); `license` present
 - [ ] Body under 500 lines; references one level deep; TOC on any reference over ~100 lines
 - [ ] Benchmark exists at `benchmarks/<skill-name>/`, outside the skill directory
 - [ ] Catalogue row added

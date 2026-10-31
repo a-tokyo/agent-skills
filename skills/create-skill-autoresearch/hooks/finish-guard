@@ -1,0 +1,17 @@
+#!/bin/sh
+# Runs finish_guard.py (beside this file) with the first Python 3.9+ it finds, as hooks/kill-guard does;
+# `--subagent` runs it as the subagent guard. With none, the turn is allowed to end and the subagent to start:
+# every host reads `{}` as "nothing to add", except a Cursor permission hook, which must answer JSON.
+guard="${0%finish-guard}finish_guard.py"
+for py in python3 python; do
+  if $py -c 'import sys; sys.exit(sys.version_info < (3, 9))' </dev/null >/dev/null 2>&1; then
+    exec $py "$guard" "$@"
+  fi
+done
+echo "finish guard: no Python 3.9+ found (python3, python); turn or subagent allowed" >&2
+input=$(cat)
+case $1:$input in
+  --subagent:*'"preToolUse"'*) echo '{"permission": "allow"}' ;;
+  *) echo '{}' ;;
+esac
+exit 0

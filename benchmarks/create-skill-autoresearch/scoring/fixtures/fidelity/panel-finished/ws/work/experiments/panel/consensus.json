@@ -1,0 +1,22 @@
+{
+  "skill": "demo",
+  "skill_sha256": "ff6b40b8d1493e0b8ce20c59aa5febded3176b92ff94b08a7cef4311e0a953db",
+  "rubric_sha256": "1c38559e2045ee9f4b0ca484fb5858c553a75861fc13ff83531d94b65fb82dc0",
+  "receipts_sha256": "db64ff468dde5623ddfc019cc5a569f024ddddad4c727bb0a6f027dc34a694a4",
+  "line": "PANEL CONSENSUS: SHIP WITH CAVEATS (allows SHIP WITH CAVEATS); overall=0.800 target=0.85; blocked: none; deadlocked: none; escalate: no",
+  "label": "SHIP WITH CAVEATS",
+  "allowed": "SHIP WITH CAVEATS",
+  "overall": 0.8,
+  "target": 0.85,
+  "dimensions": {
+    "correctness": 8.0,
+    "clarity": 8.0
+  },
+  "blocked": [],
+  "deadlocked": [],
+  "dissent": {},
+  "disputed": [],
+  "escalate": null,
+  "rounds": 1,
+  "written": "2026-10-19T22:40:35+00:00"
+}

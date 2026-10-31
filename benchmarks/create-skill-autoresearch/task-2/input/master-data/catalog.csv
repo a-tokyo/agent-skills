@@ -1,0 +1,302 @@
+sku,name,aliases,category,vendor_id,unit_price,currency,min_order_qty,preferred,status
+GEN-0210,Router T730,router t730,consumables,V004,444.32,EUR,1,N,active
+GEN-0051,Stapler X88,stapler x88,facilities,V010,602.25,EUR,5,N,discontinued
+GEN-0199,Gasket D826,gasket d826,hardware,V009,228.09,USD,1,N,active
+GEN-0137,Stapler M725,stapler m725,hardware,V012,873.54,EUR,1,N,active
+GEN-0180,Bracket A924,bracket a924,consumables,V011,72.42,EUR,1,N,active
+GEN-0145,Patch Panel C58,patch panel c58,facilities,V005,327.81,USD,10,N,active
+GEN-0088,Gasket V798,gasket v798,hardware,V001,185.46,EUR,1,N,active
+GEN-0094,Stapler A886,stapler a886,facilities,V004,811.58,EUR,1,Y,discontinued
+MON-575B,Monitor model B,27-inch monitor|27 inch monitor|monitor 27,hardware,V002,282.87,EUR,1,N,active
+GEN-0167,Router Y556,router y556,consumables,V004,582.34,USD,1,Y,active
+GEN-0009,Reagent H990,reagent h990,facilities,V002,448.53,GBP,1,N,active
+GEN-0005,Valve Z142,valve z142,consumables,V006,78.26,GBP,1,N,active
+GEN-0213,Cable Tie Y721,cable tie y721,hardware,V011,550.32,EUR,5,N,active
+GEN-0100,Shredder L953,shredder l953,consumables,V010,15.85,GBP,10,Y,active
+GEN-0084,Pallet S918,pallet s918,consumables,V006,594.90,EUR,5,N,discontinued
+GEN-0078,Router A835,router a835,consumables,V014,82.15,GBP,10,Y,active
+GEN-0188,Battery Pack W106,battery pack w106,consumables,V006,193.82,EUR,1,N,active
+GEN-0124,Battery Pack Z989,battery pack z989,consumables,V007,72.93,EUR,1,N,active
+HEA-690C,Headset model C,headset|noise-cancelling headset,hardware,V014,141.37,EUR,1,N,active
+GEN-0147,Gasket M150,gasket m150,hardware,V012,755.72,EUR,1,N,discontinued
+GEN-0158,Router C944,router c944,consumables,V005,51.05,GBP,10,N,discontinued
+GEN-0027,Shredder G430,shredder g430,facilities,V002,453.85,GBP,1,Y,active
+DOC-130B,Dock model B,usb-c dock|docking station,hardware,V010,170.71,USD,1,N,active
+GEN-0070,Router Y753,router y753,consumables,V006,815.84,USD,5,Y,active
+GEN-0055,Patch Panel Y409,patch panel y409,hardware,V006,674.03,EUR,10,Y,active
+GEN-0230,Battery Pack R129,battery pack r129,hardware,V005,752.41,EUR,1,Y,discontinued
+GEN-0237,Valve S59,valve s59,consumables,V010,77.25,EUR,1,Y,active
+GEN-0002,Kettle V144,kettle v144,hardware,V006,126.29,GBP,1,Y,active
+GEN-0245,Router V161,router v161,consumables,V012,882.59,USD,1,Y,discontinued
+GEN-0170,Pallet Z660,pallet z660,consumables,V006,644.72,USD,1,N,active
+TON-333A,Toner model A,printer toner|toner cartridge,hardware,V009,42.15,EUR,5,Y,active
+GEN-0247,Switch H743,switch h743,hardware,V007,817.45,EUR,10,N,discontinued
+DES-679C,Desk model C,standing desk|sit-stand desk,furniture,V013,723.79,EUR,1,N,active
+GEN-0119,Cable Tie A342,cable tie a342,hardware,V002,397.81,GBP,10,N,active
+GEN-0062,Lanyard T678,lanyard t678,hardware,V011,37.48,EUR,1,N,active
+GEN-0007,Bracket X128,bracket x128,consumables,V007,655.93,GBP,10,N,discontinued
+WEB-564A,Webcam model A,webcam|usb webcam,hardware,V002,63.58,EUR,1,N,active
+GEN-0241,Sensor G109,sensor g109,consumables,V006,483.62,EUR,1,N,discontinued
+GEN-0255,Pallet K65,pallet k65,consumables,V013,327.69,EUR,5,N,active
+CON-403A,Consulting model A,consulting day|consultant day,services,V002,784.19,EUR,1,N,active
+GEN-0178,Patch Panel D165,patch panel d165,consumables,V001,244.63,EUR,1,Y,discontinued
+GEN-0253,Cable Tie K268,cable tie k268,facilities,V003,237.83,EUR,1,N,active
+GEN-0095,Cable Tie L783,cable tie l783,consumables,V009,600.69,USD,1,N,discontinued
+GEN-0064,Lanyard X392,lanyard x392,consumables,V008,319.98,USD,1,N,active
+GEN-0173,Pallet Z287,pallet z287,consumables,V005,569.05,GBP,5,Y,active
+GEN-0258,Router E72,router e72,facilities,V011,62.95,EUR,5,Y,active
+GEN-0034,Kettle G881,kettle g881,facilities,V010,528.81,EUR,1,Y,active
+GEN-0012,Battery Pack G149,battery pack g149,hardware,V008,316.97,EUR,1,N,active
+GEN-0203,Valve M988,valve m988,hardware,V014,261.08,GBP,1,Y,discontinued
+GEN-0197,Gasket U489,gasket u489,consumables,V005,664.72,USD,1,Y,discontinued
+GEN-0192,Shredder P809,shredder p809,facilities,V003,731.70,EUR,5,N,active
+GEN-0206,Binder Z224,binder z224,hardware,V013,116.97,GBP,1,N,active
+GEN-0122,Shredder A186,shredder a186,facilities,V012,895.87,EUR,10,Y,active
+GEN-0076,Sensor X442,sensor x442,hardware,V012,199.96,USD,5,N,active
+GEN-0242,Patch Panel B928,patch panel b928,consumables,V007,181.86,GBP,5,N,discontinued
+GEN-0116,Valve S721,valve s721,hardware,V009,819.13,USD,5,N,active
+GEN-0052,Shredder F886,shredder f886,consumables,V009,550.83,EUR,5,N,discontinued
+GEN-0029,Patch Panel N285,patch panel n285,hardware,V008,444.75,USD,5,N,active
+TRA-621B,Tracker model B,jira seat|issue tracker seat,software,V002,97.17,EUR,1,N,active
+GEN-0068,Patch Panel V591,patch panel v591,consumables,V014,617.42,USD,1,N,active
+GEN-0218,Switch X964,switch x964,hardware,V009,890.80,EUR,5,N,active
+HDM-317A,Hdmi model A,hdmi cable|hdmi lead,hardware,V014,7.31,EUR,10,Y,active
+GEN-0215,Stapler G100,stapler g100,consumables,V001,338.29,USD,1,Y,active
+GEN-0037,Binder N653,binder n653,facilities,V013,17.95,EUR,10,Y,active
+GEN-0168,Kettle E908,kettle e908,hardware,V002,736.42,USD,1,N,discontinued
+GEN-0118,Sensor T821,sensor t821,hardware,V002,794.19,GBP,1,N,active
+GEN-0152,Kettle M241,kettle m241,hardware,V005,334.68,EUR,1,N,active
+GEN-0183,Label Roll A977,label roll a977,hardware,V009,108.66,EUR,1,N,active
+GEN-0174,Valve F740,valve f740,hardware,V014,40.07,USD,1,Y,active
+GEN-0041,Stapler C793,stapler c793,hardware,V006,353.01,GBP,10,N,discontinued
+GEN-0142,Stapler N967,stapler n967,hardware,V007,342.10,EUR,1,N,active
+CON-495B,Consulting model B,consulting day|consultant day,services,V001,923.24,EUR,1,Y,active
+GEN-0163,Shredder A163,shredder a163,facilities,V004,244.27,USD,1,N,active
+HDM-100B,Hdmi model B,hdmi cable|hdmi lead,hardware,V003,8.09,EUR,20,N,active
+GEN-0165,Pallet M116,pallet m116,hardware,V006,725.43,EUR,5,Y,active
+GEN-0157,Patch Panel E499,patch panel e499,facilities,V005,631.83,USD,1,N,active
+GEN-0103,Pallet U934,pallet u934,consumables,V009,212.06,EUR,10,Y,active
+DOC-395A,Dock model A,usb-c dock|docking station,hardware,V008,165.74,EUR,1,N,active
+GEN-0077,Battery Pack L698,battery pack l698,hardware,V008,440.26,EUR,10,N,discontinued
+GEN-0185,Lanyard S418,lanyard s418,consumables,V013,479.17,EUR,5,N,discontinued
+GEN-0082,Shredder B330,shredder b330,hardware,V004,167.72,EUR,10,N,discontinued
+GEN-0181,Binder P505,binder p505,hardware,V007,317.56,GBP,10,N,active
+GEN-0121,Shredder E966,shredder e966,consumables,V004,184.02,EUR,1,N,active
+GEN-0151,Switch E911,switch e911,hardware,V014,253.75,GBP,5,N,discontinued
+GEN-0249,Valve Z370,valve z370,facilities,V003,497.25,USD,5,N,discontinued
+HEA-757B,Headset model B,headset|noise-cancelling headset,hardware,V012,120.24,EUR,1,N,active
+LAP-770B,Laptop model B,14-inch laptop|laptop 14,hardware,V012,1489.64,EUR,1,N,active
+GEN-0154,Sensor M250,sensor m250,facilities,V005,82.72,GBP,1,N,discontinued
+GEN-0146,Pallet T412,pallet t412,facilities,V011,644.24,USD,1,N,active
+GEN-0160,Label Roll X490,label roll x490,consumables,V010,308.61,USD,1,Y,active
+GEN-0186,Pallet W34,pallet w34,hardware,V010,128.42,USD,5,Y,active
+GEN-0017,Bracket Y212,bracket y212,hardware,V014,428.68,EUR,1,N,active
+GEN-0221,Patch Panel U584,patch panel u584,facilities,V002,699.05,EUR,1,Y,active
+GEN-0202,Valve U937,valve u937,hardware,V013,847.61,USD,1,N,active
+GEN-0091,Kettle S171,kettle s171,consumables,V006,281.05,EUR,10,N,discontinued
+GEN-0234,Battery Pack F519,battery pack f519,hardware,V009,683.10,USD,1,N,active
+GEN-0096,Sensor L327,sensor l327,consumables,V010,423.90,USD,5,N,active
+GEN-0190,Patch Panel A19,patch panel a19,consumables,V009,48.89,EUR,1,Y,active
+GEN-0219,Kettle N108,kettle n108,facilities,V013,77.02,EUR,10,Y,active
+GEN-0217,Reagent N453,reagent n453,hardware,V011,488.14,EUR,1,N,discontinued
+GEN-0083,Kettle H462,kettle h462,hardware,V005,363.43,USD,10,Y,discontinued
+GEN-0182,Pallet J203,pallet j203,consumables,V014,226.12,GBP,10,Y,active
+GEN-0129,Stapler V403,stapler v403,hardware,V008,56.08,EUR,10,Y,active
+GEN-0073,Switch U168,switch u168,facilities,V010,161.20,EUR,5,N,active
+GEN-0109,Cable Tie Y877,cable tie y877,facilities,V007,554.47,EUR,1,N,discontinued
+CHA-117A,Chair model A,ergonomic chair|office chair,furniture,V004,275.45,EUR,1,N,active
+MON-434C,Monitor model C,27-inch monitor|27 inch monitor|monitor 27,hardware,V001,322.39,EUR,1,Y,active
+CON-175C,Consulting model C,consulting day|consultant day,services,V003,1139.31,EUR,1,N,active
+GEN-0042,Binder W392,binder w392,hardware,V011,631.53,EUR,1,N,discontinued
+GEN-0141,Binder B174,binder b174,consumables,V010,585.51,EUR,1,Y,active
+GEN-0143,Lanyard F822,lanyard f822,facilities,V013,149.15,EUR,5,N,discontinued
+TON-937B,Toner model B,printer toner|toner cartridge,hardware,V012,45.82,EUR,20,N,active
+GEN-0079,Kettle M737,kettle m737,hardware,V013,100.71,GBP,1,N,active
+GEN-0061,Pallet J634,pallet j634,facilities,V012,509.27,EUR,1,N,active
+GEN-0117,Router U441,router u441,facilities,V013,149.38,GBP,10,N,active
+GEN-0179,Pallet L243,pallet l243,hardware,V008,182.59,USD,10,N,active
+GEN-0031,Gasket H22,gasket h22,facilities,V005,291.23,USD,1,Y,discontinued
+GEN-0211,Bracket Y673,bracket y673,consumables,V004,840.45,GBP,1,Y,discontinued
+GEN-0169,Valve F646,valve f646,consumables,V014,434.81,USD,1,N,discontinued
+GEN-0223,Lanyard V433,lanyard v433,consumables,V001,890.83,GBP,1,Y,active
+GEN-0201,Pallet X254,pallet x254,hardware,V002,500.39,GBP,1,N,discontinued
+GEN-0166,Binder F173,binder f173,consumables,V010,620.96,USD,1,N,active
+GEN-0250,Router K110,router k110,hardware,V013,142.26,EUR,10,Y,active
+GEN-0033,Reagent N658,reagent n658,consumables,V014,477.35,EUR,10,N,active
+GEN-0150,Patch Panel S567,patch panel s567,facilities,V003,466.23,USD,1,Y,discontinued
+GEN-0000,Lanyard S582,lanyard s582,facilities,V014,555.05,EUR,1,N,active
+PRO-170B,Projector model B,projector|meeting room projector,hardware,V008,763.34,EUR,1,N,active
+WEB-701C,Webcam model C,webcam|usb webcam,hardware,V005,86.81,EUR,1,N,active
+GEN-0200,Battery Pack J540,battery pack j540,consumables,V008,188.27,EUR,5,N,discontinued
+GEN-0254,Pallet T165,pallet t165,consumables,V003,740.08,EUR,10,N,active
+GEN-0164,Switch A255,switch a255,facilities,V008,764.38,EUR,10,Y,active
+GEN-0135,Cable Tie P53,cable tie p53,facilities,V006,738.05,USD,10,N,active
+PDF-344B,Pdf model B,pdf editor license,software,V012,60.62,EUR,1,N,discontinued
+GEN-0248,Kettle R406,kettle r406,consumables,V002,209.73,EUR,1,Y,active
+WEB-230B,Webcam model B,webcam|usb webcam,hardware,V014,71.70,EUR,1,Y,active
+GEN-0220,Shredder D453,shredder d453,consumables,V003,16.19,USD,1,N,active
+GEN-0139,Switch U315,switch u315,consumables,V007,842.14,EUR,10,N,active
+GEN-0191,Reagent F338,reagent f338,hardware,V013,530.99,USD,5,N,active
+GEN-0099,Patch Panel C359,patch panel c359,consumables,V009,126.87,EUR,1,Y,discontinued
+GEN-0104,Kettle Z733,kettle z733,hardware,V010,850.51,EUR,1,N,active
+GEN-0175,Switch L936,switch l936,hardware,V014,489.22,GBP,1,N,active
+GEN-0008,Stapler U95,stapler u95,facilities,V013,464.05,USD,10,N,discontinued
+GEN-0239,Label Roll C461,label roll c461,facilities,V013,127.74,GBP,5,N,discontinued
+GEN-0107,Battery Pack W159,battery pack w159,hardware,V014,5.41,USD,1,Y,active
+GEN-0225,Patch Panel W636,patch panel w636,facilities,V002,373.21,EUR,1,N,active
+GEN-0133,Battery Pack E632,battery pack e632,hardware,V010,447.50,GBP,10,N,active
+GEN-0140,Pallet D575,pallet d575,hardware,V007,416.48,EUR,1,N,active
+GEN-0046,Label Roll C826,label roll c826,consumables,V005,423.02,EUR,1,Y,active
+GEN-0040,Sensor G186,sensor g186,hardware,V005,834.35,EUR,10,N,active
+GEN-0227,Switch P316,switch p316,hardware,V004,236.22,EUR,5,N,discontinued
+GEN-0085,Valve G980,valve g980,hardware,V013,718.85,USD,1,Y,active
+GEN-0114,Patch Panel A338,patch panel a338,hardware,V005,653.57,GBP,5,Y,active
+GEN-0128,Bracket F301,bracket f301,hardware,V004,163.04,EUR,1,N,active
+GEN-0123,Binder B675,binder b675,hardware,V005,653.75,USD,1,N,active
+PDF-361A,Pdf model A,pdf editor license,software,V009,53.53,EUR,1,N,discontinued
+GEN-0252,Cable Tie W888,cable tie w888,facilities,V005,101.16,USD,1,N,active
+GEN-0067,Patch Panel X388,patch panel x388,facilities,V002,416.89,USD,1,Y,active
+GEN-0259,Kettle U89,kettle u89,consumables,V009,612.15,EUR,10,Y,active
+GEN-0127,Stapler T85,stapler t85,facilities,V001,8.27,USD,10,N,discontinued
+GEN-0153,Shredder V21,shredder v21,facilities,V005,595.06,EUR,1,Y,active
+GEN-0086,Reagent S936,reagent s936,consumables,V008,717.50,GBP,10,N,discontinued
+DES-174B,Desk model B,standing desk|sit-stand desk,furniture,V005,603.14,EUR,1,N,active
+GEN-0205,Binder U694,binder u694,consumables,V007,15.80,USD,1,Y,active
+GEN-0080,Switch Y181,switch y181,consumables,V004,351.62,USD,1,N,discontinued
+GEN-0136,Kettle F397,kettle f397,consumables,V004,145.51,GBP,1,N,discontinued
+GEN-0110,Stapler B156,stapler b156,facilities,V007,108.21,GBP,1,N,active
+GEN-0102,Sensor U396,sensor u396,hardware,V009,300.81,USD,1,Y,active
+GEN-0032,Sensor S758,sensor s758,facilities,V002,767.02,USD,1,Y,discontinued
+GEN-0056,Bracket H449,bracket h449,facilities,V008,227.33,EUR,1,Y,active
+GEN-0155,Valve S402,valve s402,consumables,V005,448.41,USD,1,N,discontinued
+GEN-0233,Reagent Z617,reagent z617,consumables,V004,330.34,USD,1,N,active
+GEN-0162,Stapler R401,stapler r401,consumables,V001,723.84,USD,1,N,active
+GEN-0138,Gasket R544,gasket r544,facilities,V001,5.00,GBP,10,N,active
+GEN-0066,Switch E387,switch e387,hardware,V011,753.04,USD,1,Y,active
+GEN-0216,Shredder C380,shredder c380,hardware,V008,456.17,GBP,10,N,active
+GEN-0058,Sensor G891,sensor g891,hardware,V006,476.23,EUR,1,N,active
+TRA-558A,Tracker model A,jira seat|issue tracker seat,software,V014,77.04,EUR,1,N,active
+DES-352C,Design model C,figma license|design tool license,software,V006,172.84,EUR,1,N,active
+GEN-0050,Pallet J292,pallet j292,consumables,V009,487.36,GBP,10,Y,active
+GEN-0243,Kettle S117,kettle s117,facilities,V012,769.73,USD,1,N,active
+GEN-0198,Switch B898,switch b898,hardware,V013,891.08,GBP,1,N,active
+WHI-497B,Whiteboard model B,whiteboard|mobile whiteboard,furniture,V011,318.87,EUR,1,N,active
+GEN-0101,Lanyard Y633,lanyard y633,facilities,V001,236.12,EUR,1,N,discontinued
+GEN-0187,Kettle Y293,kettle y293,consumables,V011,574.95,USD,1,N,active
+CHA-801C,Chair model C,ergonomic chair|office chair,furniture,V008,464.01,EUR,1,N,active
+GEN-0228,Binder X917,binder x917,facilities,V003,511.99,EUR,5,Y,active
+GEN-0072,Router M34,router m34,consumables,V011,357.26,GBP,1,Y,active
+GEN-0021,Sensor X956,sensor x956,facilities,V002,193.54,GBP,1,N,active
+GEN-0087,Label Roll L158,label roll l158,consumables,V014,729.39,EUR,10,N,active
+GEN-0134,Reagent C127,reagent c127,hardware,V010,576.60,EUR,10,N,active
+TRA-295C,Tracker model C,jira seat|issue tracker seat,software,V001,105.90,EUR,1,N,active
+HEA-716A,Headset model A,headset|noise-cancelling headset,hardware,V006,113.97,EUR,1,N,active
+GEN-0097,Sensor E646,sensor e646,hardware,V003,610.57,EUR,1,N,discontinued
+GEN-0022,Pallet Z886,pallet z886,hardware,V006,455.24,EUR,5,N,discontinued
+DOC-171C,Dock model C,usb-c dock|docking station,hardware,V002,213.20,GBP,1,N,active
+GEN-0193,Router T20,router t20,hardware,V012,571.98,GBP,1,N,active
+GEN-0257,Bracket K933,bracket k933,hardware,V002,840.25,EUR,1,N,active
+GEN-0196,Kettle B550,kettle b550,facilities,V008,403.24,EUR,10,N,active
+GEN-0148,Stapler C885,stapler c885,consumables,V006,232.13,EUR,1,N,active
+GEN-0043,Router M425,router m425,hardware,V010,150.24,EUR,1,N,discontinued
+GEN-0089,Pallet W743,pallet w743,facilities,V002,800.91,GBP,1,Y,active
+GEN-0240,Battery Pack C865,battery pack c865,hardware,V014,321.62,EUR,1,N,active
+GEN-0222,Bracket V253,bracket v253,hardware,V011,81.35,USD,1,N,active
+GEN-0212,Lanyard R665,lanyard r665,hardware,V006,378.35,USD,10,N,active
+GEN-0238,Binder V569,binder v569,hardware,V014,663.75,GBP,1,Y,active
+GEN-0176,Cable Tie R829,cable tie r829,facilities,V005,202.86,GBP,1,Y,discontinued
+LAP-384C,Laptop model C,14-inch laptop|laptop 14,hardware,V005,1714.95,EUR,1,N,active
+GEN-0105,Shredder V437,shredder v437,facilities,V006,297.61,USD,1,N,active
+GEN-0024,Battery Pack Y816,battery pack y816,hardware,V008,135.51,GBP,5,Y,active
+GEN-0106,Stapler E254,stapler e254,facilities,V009,492.44,EUR,10,N,active
+GEN-0194,Stapler Z653,stapler z653,consumables,V009,872.48,EUR,1,Y,discontinued
+GEN-0226,Switch F311,switch f311,facilities,V010,27.63,EUR,5,N,active
+GEN-0025,Lanyard R549,lanyard r549,facilities,V005,748.38,EUR,10,Y,active
+GEN-0115,Cable Tie V908,cable tie v908,hardware,V004,113.75,GBP,1,Y,discontinued
+GEN-0126,Kettle H318,kettle h318,hardware,V011,204.90,EUR,1,N,active
+GEN-0132,Shredder J46,shredder j46,hardware,V010,873.63,EUR,10,N,active
+GEN-0204,Reagent Y641,reagent y641,consumables,V008,66.55,EUR,10,Y,active
+GEN-0006,Shredder V24,shredder v24,facilities,V011,345.34,EUR,10,N,active
+GEN-0195,Patch Panel Y488,patch panel y488,consumables,V014,347.41,EUR,5,Y,active
+GEN-0159,Battery Pack J84,battery pack j84,hardware,V001,313.68,USD,10,N,active
+GEN-0251,Sensor F793,sensor f793,hardware,V010,153.23,USD,1,N,active
+GEN-0081,Cable Tie D320,cable tie d320,facilities,V003,698.79,EUR,1,N,active
+GEN-0074,Lanyard T69,lanyard t69,facilities,V003,511.58,EUR,5,N,active
+GEN-0023,Pallet S951,pallet s951,hardware,V004,728.61,EUR,5,N,active
+GEN-0013,Sensor R492,sensor r492,consumables,V004,748.14,GBP,10,N,active
+PRO-837A,Projector model A,projector|meeting room projector,hardware,V014,624.46,EUR,1,N,active
+GEN-0010,Cable Tie E704,cable tie e704,facilities,V004,467.52,USD,5,N,active
+GEN-0232,Shredder H542,shredder h542,facilities,V009,439.69,EUR,1,N,active
+GEN-0065,Bracket D468,bracket d468,facilities,V014,692.34,EUR,5,N,active
+GEN-0184,Cable Tie C536,cable tie c536,consumables,V001,798.04,EUR,1,N,active
+GEN-0019,Bracket P964,bracket p964,facilities,V007,118.66,GBP,1,Y,active
+GEN-0125,Pallet F747,pallet f747,hardware,V009,598.80,USD,1,Y,active
+GEN-0075,Bracket L93,bracket l93,consumables,V012,96.65,USD,1,N,active
+GEN-0049,Sensor H272,sensor h272,consumables,V007,455.28,EUR,5,N,active
+GEN-0131,Patch Panel H694,patch panel h694,consumables,V009,696.18,EUR,1,N,active
+GEN-0092,Bracket M86,bracket m86,facilities,V003,96.97,GBP,5,Y,active
+GEN-0235,Pallet V286,pallet v286,consumables,V011,774.33,GBP,1,N,active
+GEN-0144,Cable Tie S467,cable tie s467,consumables,V011,611.92,GBP,1,Y,discontinued
+GEN-0093,Stapler A894,stapler a894,consumables,V012,639.59,EUR,1,Y,active
+GEN-0053,Cable Tie T418,cable tie t418,facilities,V005,330.29,USD,5,Y,active
+GEN-0108,Label Roll F621,label roll f621,facilities,V013,70.49,EUR,5,N,active
+GEN-0231,Battery Pack N848,battery pack n848,hardware,V011,91.07,USD,1,N,active
+GEN-0026,Cable Tie Y400,cable tie y400,facilities,V004,275.40,EUR,10,Y,active
+GEN-0020,Switch U592,switch u592,facilities,V009,717.50,USD,5,N,active
+GEN-0156,Binder S796,binder s796,hardware,V006,599.35,EUR,10,N,active
+GEN-0189,Cable Tie Y220,cable tie y220,hardware,V006,97.03,EUR,1,N,active
+LAP-568A,Laptop model A,14-inch laptop|laptop 14,hardware,V009,1262.68,EUR,1,N,active
+GEN-0059,Patch Panel R625,patch panel r625,consumables,V011,524.85,GBP,1,Y,active
+GEN-0047,Lanyard J977,lanyard j977,facilities,V005,305.36,GBP,10,N,active
+GEN-0015,Cable Tie X820,cable tie x820,facilities,V001,577.61,GBP,5,N,active
+GEN-0044,Binder T608,binder t608,consumables,V013,686.63,USD,1,Y,active
+GEN-0048,Switch T519,switch t519,facilities,V004,631.72,GBP,10,N,active
+GEN-0063,Patch Panel A648,patch panel a648,hardware,V002,201.86,USD,1,N,active
+GEN-0018,Label Roll H288,label roll h288,consumables,V009,628.19,EUR,5,Y,active
+GEN-0256,Router G976,router g976,facilities,V009,245.11,USD,1,N,active
+GEN-0161,Bracket X58,bracket x58,facilities,V009,371.04,GBP,1,N,active
+GEN-0069,Binder Y628,binder y628,hardware,V012,274.82,USD,1,N,active
+WHI-803A,Whiteboard model A,whiteboard|mobile whiteboard,furniture,V004,259.75,EUR,1,N,active
+GEN-0149,Shredder B202,shredder b202,hardware,V009,536.66,EUR,1,N,discontinued
+MON-896A,Monitor model A,27-inch monitor|27 inch monitor|monitor 27,hardware,V010,221.93,EUR,1,N,active
+GEN-0001,Reagent C285,reagent c285,consumables,V008,225.66,EUR,1,N,active
+GEN-0054,Cable Tie Y743,cable tie y743,facilities,V005,26.12,EUR,10,N,active
+GEN-0035,Label Roll L627,label roll l627,consumables,V004,197.89,EUR,1,N,active
+GEN-0229,Pallet W274,pallet w274,hardware,V006,77.84,GBP,5,N,discontinued
+GEN-0171,Gasket V440,gasket v440,facilities,V012,114.76,USD,1,N,active
+DES-529A,Desk model A,standing desk|sit-stand desk,furniture,V001,565.62,EUR,1,N,active
+GEN-0113,Patch Panel P130,patch panel p130,facilities,V002,814.91,USD,10,Y,discontinued
+GEN-0111,Pallet H591,pallet h591,consumables,V001,578.25,EUR,1,N,discontinued
+GEN-0016,Pallet H807,pallet h807,hardware,V013,44.15,EUR,5,N,active
+GEN-0014,Stapler L86,stapler l86,hardware,V005,785.80,EUR,1,Y,active
+DES-237B,Design model B,figma license|design tool license,software,V005,154.67,EUR,1,Y,active
+GEN-0039,Reagent B790,reagent b790,facilities,V010,464.31,GBP,1,N,active
+GEN-0224,Stapler E881,stapler e881,hardware,V013,765.40,EUR,1,Y,active
+GEN-0003,Valve A496,valve a496,consumables,V012,282.00,EUR,1,Y,active
+GEN-0045,Switch E928,switch e928,consumables,V009,625.93,GBP,1,N,active
+GEN-0120,Router Z609,router z609,hardware,V001,276.99,GBP,1,N,active
+GEN-0209,Patch Panel M849,patch panel m849,facilities,V007,252.76,EUR,10,N,active
+CHA-967B,Chair model B,ergonomic chair|office chair,furniture,V002,411.64,EUR,1,N,active
+GEN-0177,Binder U299,binder u299,hardware,V008,159.22,EUR,10,N,discontinued
+GEN-0038,Router D731,router d731,facilities,V011,682.82,EUR,1,N,active
+GEN-0236,Bracket N240,bracket n240,consumables,V006,31.22,EUR,1,N,active
+GEN-0036,Gasket C275,gasket c275,consumables,V002,392.45,GBP,10,Y,active
+GEN-0098,Valve R616,valve r616,facilities,V002,92.19,EUR,1,N,discontinued
+GEN-0071,Stapler T832,stapler t832,consumables,V008,287.22,GBP,10,N,active
+GEN-0130,Battery Pack Y505,battery pack y505,hardware,V009,263.72,EUR,10,N,active
+GEN-0090,Reagent G436,reagent g436,hardware,V011,83.67,GBP,1,N,discontinued
+GEN-0112,Sensor S363,sensor s363,consumables,V010,821.92,GBP,1,N,discontinued
+GEN-0028,Kettle N567,kettle n567,facilities,V002,442.95,EUR,1,Y,discontinued
+GEN-0004,Shredder C758,shredder c758,consumables,V006,124.67,EUR,1,N,active
+GEN-0246,Lanyard X277,lanyard x277,consumables,V012,370.92,EUR,1,N,active
+GEN-0244,Label Roll X368,label roll x368,consumables,V010,723.05,GBP,5,Y,discontinued
+DES-220A,Design model A,figma license|design tool license,software,V013,132.55,EUR,1,N,active
+GEN-0208,Binder Z378,binder z378,consumables,V013,368.62,EUR,1,Y,active
+PRO-229C,Projector model C,projector|meeting room projector,hardware,V006,856.55,EUR,1,N,active
+GEN-0057,Stapler E992,stapler e992,hardware,V010,636.35,EUR,10,N,discontinued
+GEN-0207,Sensor J973,sensor j973,consumables,V010,561.32,USD,1,N,active
+GEN-0030,Sensor G439,sensor g439,facilities,V001,832.89,EUR,1,N,active
+GEN-0172,Switch W695,switch w695,consumables,V004,587.50,EUR,5,Y,active
+GEN-0011,Battery Pack N691,battery pack n691,consumables,V004,571.49,EUR,1,N,active
+GEN-0060,Cable Tie E254,cable tie e254,consumables,V002,453.65,USD,10,Y,active
+GEN-0214,Pallet N440,pallet n440,consumables,V006,93.66,EUR,10,Y,active

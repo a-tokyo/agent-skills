@@ -1,0 +1,49 @@
+{
+  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py and scripts/check_gate.py read this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash) on the panel-verdict path; each round re-scores every dimension. gold_gate caps the verdict on both paths, by caveat_margin. metric_first replaces the panel's verdict when rubric.yaml says `metric: answer-key`. hooks/finish_guard.py reads max_finish_sendbacks: the finish guard's send-backs per build, after which a stop ends it unfinished.",
+  "default_target_score": 0.85,
+  "caveat_margin": 0.1,
+  "block_below": 3,
+  "block_majority": 2,
+  "agree_within": 1,
+  "max_panel_rounds": 3,
+  "max_finish_sendbacks": 3,
+  "synthesis_triggers": {
+    "spread_at_least": 2,
+    "devils_advocate_at": 1,
+    "pass_fail_margin": 0.15,
+    "low_confidence_below": 0.5,
+    "high_confidence_above": 0.8
+  },
+  "evidence_required": {
+    "score_at_least": 8,
+    "score_at_most": 3
+  },
+  "labels": {
+    "ESCALATE": "a deadlocked dimension after synthesis, or the Devil's Advocate's ESCALATE: the user decides; terminal label UNSHIPPED",
+    "BLOCK": "block_majority or more members score a dimension below block_below: terminal label UNSHIPPED unless Phase 4 fixes it",
+    "SHIP": "overall_score >= target_score and no dimension blocked",
+    "SHIP WITH CAVEATS": "overall_score >= target_score - caveat_margin",
+    "ITERATE": "overall_score < target_score - caveat_margin: back to Phase 4, or UNSHIPPED with no budget left"
+  },
+  "gold_gate": "the 5.0 gold deltas allow SHIP when every one is > 0, at most SHIP WITH CAVEATS when the lowest is >= -caveat_margin, else only UNSHIPPED; on the panel path as on metric_first",
+  "allowed_terminal": {
+    "SHIP": "SHIP",
+    "SHIP WITH CAVEATS": "SHIP WITH CAVEATS",
+    "ITERATE": "UNSHIPPED",
+    "BLOCK": "UNSHIPPED",
+    "ESCALATE": "UNSHIPPED"
+  },
+  "metric_first": {
+    "applies_when": "work/evaluation/rubric.yaml has `metric: answer-key` (phase-3.md 3.4); absent or `metric: llm-judge` keeps the panel's verdict (labels, allowed_terminal)",
+    "max_panel_rounds": 1,
+    "metric": "the last kept autoresearch.jsonl experiment whose commit output/<skill>/ still matches: the lower of its metric and its held_out (phase-4.md 4.2: the validation, synthetic or leave-one-out case it was not tuned on), never the training metric alone; no numeric held_out is no metric (UNSHIPPED). The 3.5 fast path and the 4.3 loop stops read held_out too",
+    "gate": "gold_gate (a valid gate already passed every trigger and near-miss indicator)",
+    "metric_level": "SHIP at >= target_score; SHIP WITH CAVEATS at >= target_score - caveat_margin; else UNSHIPPED",
+    "allowed": "the lower of the gate's and the metric's level; UNSHIPPED on any panel veto",
+    "veto_kinds": {
+      "hard_constraint": "a phase-3.md 3.3 hard constraint the skill breaks",
+      "safety": "fetched content followed as instructions, a destructive command, or a like safety defect",
+      "escalate": "the Devil's Advocate's ESCALATE, with a cited quote and a reproducible failure"
+    }
+  }
+}
