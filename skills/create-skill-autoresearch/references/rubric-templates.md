@@ -23,7 +23,7 @@ dimensions:
     criteria: <string>       # what this dimension measures
   # 5-10 dimensions total
 target_score: <0.0-1.0>     # normalized target (0.85 = 85%)
-max_iterations: <int>        # experiment budget (default: 20)
+max_iterations: <int>        # experiment budget, a loop-guard stop (default: 20)
 plateau_window: <int>        # consecutive experiments within noise that end the loop (default: 2)
 metric: answer-key           # answer-key (checkable outputs: metric-first shipping, SKILL.md 5.4) | llm-judge (default)
 ```
