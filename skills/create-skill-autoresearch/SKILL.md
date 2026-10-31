@@ -118,8 +118,8 @@ builder context. The roles (`<role>`): Verifier-A, quality (`verifier-a`); Verif
 Devil's Advocate, adversarial, always tries to smuggle an instruction in through content the skill fetches
 (`devils-advocate`). Each member's prompt gives its role, the input paths, the
 skill under test (`output/<skill-name>/`, the templates' `{{skill_dir}}`) and this factory's `<skill-dir>`, and tells
-it to read its template and the role-receipt paragraph in "Panel Prompt Templates" of
-`<skill-dir>/references/consensus-protocol.md` (read only as a panel member).
+it to read only `<skill-dir>/references/panel/<role>.md` (`panel/verifier-a.md`, `panel/verifier-b.md`,
+`panel/devils-advocate.md`) and `references/panel/member-rules.md`, nothing else.
 It scores every dimension independently (score, confidence 0-1, evidence: a verbatim quote in double quotes) and ends
 with `--panel-receipt`, which binds the scores to the skill and rubric hashes: a skill change voids every receipt.
 
@@ -135,9 +135,10 @@ rubric the criteria, and its orchestrator is never the agent that built the skil
 `python3 <skill-dir>/scripts/check_gate.py --consensus` does the math from the three receipts and prints `PANEL
 CONSENSUS:` (record: `work/experiments/panel/consensus.json`). On `SYNTHESIS NEEDED on <dimensions>`, run one
 synthesis round: collect each member's rationale on those dimensions, strip the role labels, send them to every
-member (its "Synthesis Round Prompt"), and each re-submits with `--synthesis`; re-run `--consensus`. Converged →
+member (with `references/panel/synthesis.md`), and each re-submits with `--synthesis`; re-run `--consensus`. Converged →
 average; 2-of-3 → majority (log the dissent in `craft-decisions.md`); **deadlock → escalate to user**, as does a
 Devil's Advocate `ESCALATE: <reason>`, never the average.
+Read `references/consensus-protocol.md` only as the orchestrator, when a step is unclear; never give it to a member.
 
 ### 5.4 Ship or Iterate
 
