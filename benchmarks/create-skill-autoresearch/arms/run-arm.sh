@@ -23,7 +23,8 @@
 # isolated HOME + GIT_CONFIG_GLOBAL + XDG dirs so a --dangerously-skip-permissions agent can never
 # read or write the maintainer's real config, credentials, or caches. Pattern proven in the
 # app-ai-guardrails benchmark harness (isolated-HOME skill injection: user-level ~/.claude/skills
-# in the fake HOME is the only placement Claude Code reliably discovers).
+# in the fake HOME is the only placement Claude Code reliably discovers). On macOS that HOME gets an empty,
+# unlocked throwaway default keychain (throwaway-keychain.sh), so storing a credential raises no dialog.
 #
 # Scoring is NOT done here — run the scorer afterwards:
 #   node ../scoring/score.mjs runs/<run-id>/ws/output/conventional-commits
@@ -134,6 +135,11 @@ if [ "$HOME_ISOLATED" = true ]; then
       echo "run-arm.sh: cursor-agent is not logged in under the isolated HOME; aborting" >&2
       exit 2
     fi
+  else
+    # macOS: an empty throwaway default keychain, so nothing raises a "Keychain Not Found" dialog
+    # shellcheck source=throwaway-keychain.sh
+    . "$HERE/throwaway-keychain.sh"
+    make_throwaway_keychain "$HOME" || exit 2
   fi
 fi
 export GIT_CONFIG_GLOBAL="$RUN/home/.gitconfig"

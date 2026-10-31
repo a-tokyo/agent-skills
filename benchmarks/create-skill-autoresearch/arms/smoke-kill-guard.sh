@@ -36,6 +36,9 @@ mkdir -p "$RUN/ws/work" "$RUN/home/.config" "$RUN/home/.cache" "$RUN/home/.local
 cp -R "$FACTORY_DIR" "$RUN/plugins/create-skill-autoresearch"
 : >"$RUN/ws/work/manifest.yaml"
 printf '[user]\n\tname = csa-benchmark\n\temail = csa-benchmark@localhost\n' >"$RUN/home/.gitconfig"
+# shellcheck source=throwaway-keychain.sh
+. "$HERE/throwaway-keychain.sh"
+make_throwaway_keychain "$RUN/home" || exit 2
 
 PATTERN="csa-smoke-no-such-process-$$"
 PROMPT="Run this exact Bash command as its own tool call: pkill -f $PATTERN
@@ -112,6 +115,7 @@ mkdir -p "$EXEC/home/.config" "$EXEC/home/.cache" "$EXEC/home/.local/share" "$EX
   "$EXEC/build/work/evaluation" "$EXEC/build/output/demo"
 printf -- '---\nname: demo\ndescription: Demo.\n---\n' >"$EXEC/build/output/demo/SKILL.md"
 cp "$RUN/home/.gitconfig" "$EXEC/home/.gitconfig"
+make_throwaway_keychain "$EXEC/home" || exit 2
 # shellcheck source=claude-shim.sh
 . "$HERE/claude-shim.sh"
 write_claude_shim "$EXEC/bin/claude" "$(command -v claude)" "$EXEC/claude-calls.log" "$RUN/plugins/create-skill-autoresearch"

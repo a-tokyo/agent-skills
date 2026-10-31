@@ -81,6 +81,11 @@ is a one-call check that the guard blocks a dummy `pkill` under that load. Its s
 2026-10-18 (Haiku 5.5, Claude Code 2.1.301) passed: the agent got the guard's message as a tool error,
 the session continued, and `fidelity.py` counted 0 kill commands and 1 blocked attempt.
 
+On macOS every isolated HOME but Cursor's (both scripts) gets an empty throwaway `login.keychain-db` as
+its default keychain ([`arms/throwaway-keychain.sh`](arms/throwaway-keychain.sh)): without one, a tool
+storing a credential raised a "Keychain Not Found" dialog on the maintainer's screen. Every `security`
+call runs under the isolated HOME; the real keychain and its search list are never touched.
+
 `HOST=cursor arms/run-and-score.sh factory sonnet <run-id> [task-2]` runs the same build under
 `cursor-agent -p --force --trust --output-format stream-json` (Sonnet 5.5 = `claude-sonnet-5-5-high`;
 `CURSOR_MODEL` overrides). The skills go in the workspace's `.agents/skills/`, the kill guard runs as a
