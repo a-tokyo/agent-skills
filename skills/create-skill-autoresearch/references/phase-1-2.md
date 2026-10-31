@@ -1,144 +1,75 @@
-# Phases 1-2 Reference
+# Phases 1-2: Interview and Research
 
-Read on entering Phase 1: the detail of the Phase 1 interview and the Phase 2 research. Phases 3, 4 and 5.0-5.1
-have their own files, read on entering each: [phase-3.md](phase-3.md), [phase-4.md](phase-4.md) and
-[phase-5.md](phase-5.md); the Phase 5.2 panel prompts are in [consensus-protocol.md](consensus-protocol.md).
+## 1.1-1.5 Interview
 
-## Contents
+Ask the user directly, one topic at a time, and record each answer; gather all before 1.6.
 
-- Phase 1: Interview -- Detailed Question Flow (gold standard intake, manifest)
-- Phase 2: Research -- Subagent Orchestration (researcher prompt, synthesis template)
+1. **Purpose**: the problem, the domain, the user (an agent, a CLI, a human), what success looks like.
+2. **Gold standards**: examples of good output (input/output pairs, reference artifacts, solved tasks, quality
+   reports): where, what format, how many. None: reference materials or expert outputs; fewer than 3: create
+   synthetic ones together, or find more.
+3. **Study materials**: docs, code, transcripts, specs, style guides, existing skills, external references.
+4. **Constraints**: conventions, skills to integrate with, anti-patterns, length (default < 500 lines), and
+   `INVOCATION_MODE`: model-invoked (fires on its own; its description costs context every turn) or user-invoked
+   (`disable-model-invocation: true`; the user must remember it). It sets the 3.3 description style.
+5. **Existing skill** for this domain: then it is a study material and the baseline, mode **upgrade**.
 
----
+## 1.6 Confirm and Create Workspace
 
-## Phase 1: Interview -- Detailed Question Flow
+Present the parameters as a table and wait for explicit confirmation. Then create the workspace:
 
-### What to discover (1.1-1.5)
+`builds/<skill-name>/` holds `input/` (the human's gold standards and study materials, any structure), `work/`
+(`manifest.yaml`, `research/`, `evaluation/`, `pids/`, `experiments/`, `handoffs/`; never shipped),
+`output/<skill-name>/` (the publish-ready skill, never evaluation scripts) and `BENCHMARK.md` (Phase 5). A working directory already dedicated to the build (it holds the brief and inputs) is the workspace: create `work/`
+and `output/<skill-name>/` in place. The workspace is its own git repository (the Phase 4 loop resets it): `git init`
+unless `git rev-parse --show-toplevel` already prints its root; inside a parent project, gitignore it there. `work/`
+is committed except `work/pids/` (`run_owned.py` ignores it), so no credential goes in it. The human may correct
+`work/manifest.yaml`, `evaluation/rubric.yaml`, `evaluation/judges.yaml` and `evaluation/data-split.yaml` (`gate.py
+record` owns `plugin_eval`) at phase boundaries. Only `output/<skill-name>/` ships; its uplift benchmark belongs
+outside it, at `benchmarks/<skill-name>/`.
 
-| Topic | Ask about | Record |
-|-------|-----------|--------|
-| **Purpose and domain** | the problem it solves, the domain, which agent will use it, what "success" looks like | `SKILL_PURPOSE`, `DOMAIN`, `TARGET_USER`, `SUCCESS_CRITERIA` |
-| **Gold standards** | examples of "what good looks like" — input/output pairs, reference artifacts, previously solved problems, existing quality reports; where they are, what format, how many | `GOLD_STANDARD_SOURCE`, `GOLD_STANDARD_FORMAT`, `GOLD_STANDARD_COUNT` |
-| **Study materials** | docs, existing code, transcripts, design docs, reference implementations, specs, style guides | `STUDY_MATERIALS` |
-| **Scope and constraints** | conventions to follow, skills to integrate with, anti-patterns to avoid, target line count (default < 500), and invocation mode — model-invoked (pays permanent context load) or user-invoked (`disable-model-invocation: true`) | `CONSTRAINTS`, `INTEGRATION_SKILLS`, `ANTI_PATTERNS`, `INVOCATION_MODE` |
-| **Existing skill** | is there one for this domain already? If so it is both a study material and a baseline — research it, measure it against the rubric, improve it rather than starting over | `EXISTING_SKILL`, and set mode to **upgrade** rather than **greenfield** |
-
-### Question Sequence
-
-Ask the user these questions directly (use whatever questioning mechanism your agent supports). Gather all answers before proceeding.
-
-**Q1 -- Purpose**: "What skill do you want to build? What problem does it solve?"
-- Follow up: "Who is the target user? An AI coding agent? A CLI tool? A human?"
-- Follow up: "What does success look like when this skill is used correctly?"
-
-**Q2 -- Gold Standards**: "Do you have examples of what good output looks like?"
-- If YES: "Where are they? What format? How many?"
-- If NO: "Can we find reference materials? Previously solved problems? Expert outputs?"
-- If INSUFFICIENT (< 3): "Can we create synthetic examples together? Or find more reference materials?"
-
-**Q3 -- Study Materials**: "What should I study to understand this domain?"
-- Probe for: docs, code, transcripts, specs, style guides, existing skills, external references
-
-**Q4 -- Constraints**: "Any constraints on the skill? Conventions? Integration points? Anti-patterns?"
-- Follow up: "Should the agent fire this skill on its own when it detects the need (model-invoked -- its description then occupies context every turn), or only when you type its name (user-invoked, `disable-model-invocation: true` -- zero context cost, but you must remember it exists)?" Record as `INVOCATION_MODE`; it drives the description style in Phase 3.3 (writing-for-agents; fallback: standalone-fallback.md).
-
-**Q5 -- Confirm**: Present the summary table. Wait for explicit confirmation.
-
-### Gold Standard Intake Formats
-
-The factory supports these gold standard formats:
-
-| Format | Example | How to Use |
-|--------|---------|------------|
-| Input/output pairs | `{ "input": "...", "expected_output": "..." }` | Direct comparison scoring |
-| Reference artifacts | Completed documents, code files | Holistic quality comparison |
-| Previously solved tasks | Task descriptions + solutions | Run skill on task, compare to solution |
-| Quality reports | Existing benchmark scores | Calibrate rubric against known scores |
-
-The user drops gold standards and study materials into `input/` in any structure they prefer. The factory scans `input/`, classifies each item (gold standard vs. study material), and writes its own derived index to `work/manifest.yaml`. The user is NOT asked to hand-author the manifest — they just confirm it looks correct.
+Never ask the user to hand-author the manifest: scan `input/`, classify each item as a gold standard (an exemplar
+input/output pair or reference artifact) or a study material, write `work/manifest.yaml`, and present it to confirm:
 
 ```yaml
-# work/manifest.yaml
 pairs:
-  - input: "input-01.md"
-    reference: "output-01.md"
-    tags: ["training"]
-  - input: "input-02.md"
-    reference: "output-02.md"
-    tags: ["validation"]
-  - input: "input-03.md"
-    reference: "output-03.md"
-    tags: ["test"]
+  - { input: "input-01.md", reference: "output-01.md", tags: ["training"] }   # training | validation | test
 ```
 
-### Workspace Layout (1.6)
+## 2.1 Research the Study Materials
 
-Each build lives in one self-contained folder, `builds/<skill-name>/`, with three zones:
-
-```
-builds/<skill-name>/
-  input/                  # HUMAN: gold standards + study materials (any structure)
-  work/                   # FACTORY: process artifacts (not shipped)
-    manifest.yaml         #   derived gold-standard index    <- yours to correct
-    research/             #   study notes and dossier
-    evaluation/           #   rubric.yaml (exit criteria), evaluate.sh, judges.yaml, data-split.yaml, run-case.sh,
-                          #   plugin/ (3.6 wrapper plugin + evals/), gate.json + plugin-eval.json or uplift.json (5.0)
-    pids/                 #   run_owned.py job records and logs
-    experiments/          #   results.tsv, autoresearch.jsonl, ideas, run.log, DESIGN.md, craft-decisions.md, premortem.md, panel/
-    handoffs/             #   cross-session context (state.yaml, HANDOFF-*.md)
-  output/<skill-name>/    # FACTORY: the publish-ready skill: SKILL.md, README.md, references/, scripts/ (never evaluation scripts), assets/
-  BENCHMARK.md            # FACTORY: final panel scores, plugin-eval delta, verdict (Phase 5)
-```
-
----
-
-## Phase 2: Research -- Subagent Orchestration
-
-### Spawning Researchers
-
-For each cluster of study materials, spawn a read-only researcher subagent (the host's own mechanism,
-[hosts.md](hosts.md); with none, run the same prompt as a fresh headless session per cluster, one after another) with:
+When the study materials total under 40 KB (`ls -l`), read them yourself and write the notes directly. Otherwise cluster them by source type or subtopic, 2-7 clusters, and launch one read-only
+researcher subagent per cluster with this prompt:
 
 ```
-Prompt: "Study the following materials thoroughly and produce a research note.
-
-Materials to study:
-<list of files/paths>
-
-Your research note must cover:
-1. Key patterns and conventions found in the materials
-2. Quality signals -- what distinguishes good from bad output
-3. Domain-specific terminology and concepts
-4. Potential rubric dimensions (measurable quality aspects)
-5. Anti-patterns or common mistakes to avoid
-
-Write your findings to work/research/<NN>-<topic>.md
-
-Be thorough. Read ALL relevant files. Quote specific examples."
+Study these materials and write a research note to work/research/<NN>-<topic>.md: <files>
+Cover: 1) patterns and conventions, 2) quality signals (what separates good from bad output), 3) domain terms,
+4) candidate rubric dimensions (measurable), 5) anti-patterns and common mistakes. Read every file; quote examples.
 ```
 
-### Synthesis Template
+## 2.2 Synthesize Research
 
-After all researchers complete, create `work/research/00-synthesis.md`:
+After all researchers finish, write `work/research/00-synthesis.md`: cross-cutting patterns, quality signals,
+proposed rubric dimensions, conventions to follow, anti-patterns, key references, and a **conflicts** table (every
+point where a study material contradicts the gold standards, with the gold evidence). **The gold standards win**;
+Phase 3 confirms the draft follows the gold side of every row before the 3.5 baseline.
 
-```markdown
-# Research Synthesis
+## 2.3 Propose Rubric
 
-## Cross-Cutting Patterns
-<Patterns that appear across multiple study materials>
+Write `work/evaluation/rubric.yaml`:
 
-## Quality Signals
-<What makes good output good? What makes bad output bad?>
-
-## Rubric Dimensions (Proposed)
-<List of measurable dimensions with descriptions>
-
-## Conventions to Follow
-<Style, voice, structure, terminology conventions>
-
-## Anti-Patterns to Avoid
-<Common mistakes, bad patterns, traps>
-
-## Key References
-<Links to the most important study materials for the builder>
+```yaml
+name: <skill-name>-rubric
+dimensions:                 # 5-10; weights sum to 1.0
+  - { name: correctness, weight: 0.20, scale: "1-10", criteria: "<falsifiable statement>" }
+target_score: 0.85          # overall_score = sum(dimension_score / scale_max * weight)
+max_iterations: 20          # experiment budget
+plateau_window: 2           # experiments within noise that end the loop
+metric: llm-judge           # or answer-key (3.4)
 ```
+
+Always include correctness (0.20: accurate, executable), completeness (0.15: sections and edge cases), clarity (0.15:
+a naive agent follows it unambiguously), consistency (0.10: matches existing conventions) and predictability (0.10:
+the same process every run, checkable and exhaustive completion criteria, no vague gates, no no-op lines). Add 3-5
+domain dimensions from the synthesis, sharing the remaining 0.30, each criterion a falsifiable statement ("every gold
+pattern appears", not "well written"). Present the rubric; iterate until the user confirms it.

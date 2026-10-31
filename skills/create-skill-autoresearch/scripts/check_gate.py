@@ -47,7 +47,7 @@ from gate_common import (  # noqa: E402
 BENCHMARK = Path("BENCHMARK.md")
 EXPERIMENT_LOGS = (Path("autoresearch.jsonl"), Path("work") / "experiments" / "autoresearch.jsonl")
 TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
-NOISE_FLOOR = 0.01  # phase-4.md Loop Conventions: the noise threshold's absolute minimum
+NOISE_FLOOR = 0.01  # phase-4.md 4.3: the noise threshold's absolute minimum
 NOISE_ESTIMATE = "noise_estimate"  # the jsonl line 3.5 logs: {"type": "noise_estimate", "noise_threshold": x}
 DISCARDED = {"discard", "discarded", "revert", "reverted", "crash"}  # experiment statuses that are not kept
 REOPENED = {"ITERATE", "BLOCK"}  # panel consensus labels that send the build back to Phase 4

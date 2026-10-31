@@ -12,7 +12,7 @@
 that job, and when the last gate finished on the workspace as it is now with the same options it reports that
 result instead of running it again (only --restart re-runs it). Without --detach, --restart, --wait or --stop it
 starts the job and waits (for a terminal). What it runs, records
-and hashes: references/phase-5.md "Gate Runner"; plugin or manual mode: phase-3.md 3.6; the manual protocol
+and hashes: references/gate-runner.md; plugin or manual mode: phase-3.md 3.6; the manual protocol
 and its baseline cache: benchmark-standard.md. `record` writes plugin_eval into data-split.yaml from disk, and
 every gate run records again first. It writes only under work/evaluation/ and work/pids/.
 

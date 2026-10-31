@@ -1,8 +1,8 @@
 # Authoring Rules
 
-Read this file in 3.3 for every skill the factory builds, whether or not skill-creator and
-writing-for-agents are installed. It holds the authoring rules neither companion states; the hard
-constraints stay in the phase-3.md 3.3 checklist, and the craft layer is writing-for-agents (fallback:
+The examples and rationale behind the authoring rules neither companion states. The rules themselves are in the
+phase-3.md 3.3 checklist, which every build runs; read this file only when one of them needs its example or reason.
+The craft layer is writing-for-agents (fallback:
 [standalone-fallback.md](standalone-fallback.md)). Source of the platform rules: Anthropic's
 [Skill authoring best practices](https://platform.claude.com/docs/en/agents-and-tools/agent-skills/best-practices);
 where this file and that page disagree, the page wins and this file is updated.

@@ -15,9 +15,9 @@ npx skills add mattpocock/skills --skill writing-for-agents
 
 Their single source is the pre-flight checklist in phase-3.md 3.3: the platform rules, plus `license` and the
 version as `metadata: {version}` (a top-level `version` only where a registry reads it). They apply with or
-without companions, and the self-test and the Phase 5 panel assert them. The authoring rules no companion states are in
-[authoring-rules.md](authoring-rules.md), which 3.3 reads on every build; this file holds only what the
-companions would otherwise supply.
+without companions, and the self-test and the Phase 5 panel assert them. The authoring rules no companion states are in the
+same 3.3 checklist, with their examples and rationale in [authoring-rules.md](authoring-rules.md); this file holds
+only what the companions would otherwise supply.
 
 ## Invocation
 

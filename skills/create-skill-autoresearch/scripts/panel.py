@@ -477,3 +477,18 @@ def recorded(workspace: Path, skill: str, skill_sha: str) -> tuple[Consensus | N
         return None, (f"{CONSENSUS.as_posix()} is stale (the skill, rubric or a receipt changed since); re-run "
                       "`check_gate.py --consensus`")
     return result, "ok"
+
+
+if __name__ == "__main__":
+    import sys
+
+    USAGE = ("panel.py is a library, not a command: check_gate.py runs it.\n\n"
+             "    check_gate.py --panel                                     # 5.2: validate the gate first\n"
+             "    check_gate.py --panel-receipt ROLE SCORES_JSON [--synthesis]  # each member, after it scores\n"
+             "    check_gate.py --consensus                                 # 5.3: the verdict from the receipts\n\n"
+             "ROLE: verifier-a, verifier-b or devils-advocate. See check_gate.py --help.\n\n")
+    if sys.argv[1:] in (["-h"], ["--help"]):
+        print(USAGE + __doc__.strip())
+        sys.exit(0)
+    sys.stderr.write(USAGE)
+    sys.exit(2)
