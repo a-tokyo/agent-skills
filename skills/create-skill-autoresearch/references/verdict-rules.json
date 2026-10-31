@@ -36,7 +36,7 @@
   "metric_first": {
     "applies_when": "work/evaluation/rubric.yaml has `metric: answer-key` (phase-3.md 3.4); absent or `metric: llm-judge` keeps the panel's verdict (labels, allowed_terminal)",
     "max_panel_rounds": 1,
-    "metric": "the last kept autoresearch.jsonl experiment whose commit output/<skill>/ still matches; with a validation split, the lower of its metric and that experiment's validation_score",
+    "metric": "the last kept autoresearch.jsonl experiment whose commit output/<skill>/ still matches: the lower of its metric and its held_out (phase-4.md 4.2: the validation, synthetic or leave-one-out case it was not tuned on), never the training metric alone; no numeric held_out is no metric (UNSHIPPED). The 3.5 fast path and the 4.3 loop stops read held_out too",
     "gate": "gold_gate (a valid gate already passed every trigger and near-miss indicator)",
     "metric_level": "SHIP at >= target_score; SHIP WITH CAVEATS at >= target_score - caveat_margin; else UNSHIPPED",
     "allowed": "the lower of the gate's and the metric's level; UNSHIPPED on any panel veto",

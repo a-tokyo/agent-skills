@@ -8,7 +8,7 @@ rubric, then run the 4.6 description pass. Its inputs: `work/evaluation/rubric.y
 
 ## Contents
 - 4.1 Configure Autoresearch (the setup answers and the three records the factory owns)
-- 4.2 Data Split (splits, leave-one-out rotation, large sets, overfitting detection)
+- 4.2 Data Split (splits, leave-one-out rotation, synthetic cases, the held-out score)
 - 4.3 Let Autoresearch Run (ideas backlog, ending the loop)
 - Loop Conventions the Factory Owns
 - 4.6 Description Pass
@@ -37,16 +37,16 @@ live there during the session and are archived to `work/experiments/` when it en
   threshold overrides upstream's keep-any-improvement rule
 
 The factory owns three records the upstream loop does not keep. Write them yourself in the LOG step:
-- **`autoresearch.jsonl`**: one JSON line per experiment — `experiment`, `commit`, `metric`,
-  `status`, per-dimension scores, and `hypothesis` / `learned` / `rollback_reason` — plus
-  `"type": "validation_check"` lines (4.2). Resume and Phase 5 read this file.
+- **`autoresearch.jsonl`**: one JSON line per experiment — `experiment`, `commit`, `metric`, `held_out` (4.2),
+  `status`, per-dimension scores, and `hypothesis` / `learned` / `rollback_reason`. Resume, the loop guard and
+  Phase 5 read this file.
 - **`autoresearch.ideas.md`**: the backlog seeded in 4.3. Read it in every THINK step; tick what you try.
 - **`results.tsv`**: the upstream table, unchanged.
 
 ## 4.2 Data Split
 
 Record the split in `work/evaluation/data-split.yaml`. With >= 10 gold standards, split **70% training**
-(every experiment), **20% validation** (checked adaptively, below) and **10% test** (held out until
+(every experiment), **20% validation** (every experiment's held-out score, below) and **10% test** (held out until
 Phase 5). With 3-9, use **leave-one-out rotation**: each experiment evaluates all but one, and its LOG
 step — after the keep/revert decision — advances the held-out case by rewriting the `training` list in
 data-split.yaml and committing that file alone
@@ -90,27 +90,29 @@ training:            # this experiment's rotation: every case but the held-out o
   - "input/input-03.md"
 ```
 
+With **fewer than 3** gold standards (the user declined to add more, 1.x), write at least 3 **synthetic cases** before
+the 3.5 baseline: realistic inputs drawn from the study materials, each with the reference output the materials'
+rules give, varied along what the gold standards do not cover (other values, edge cases, the rules the gold never
+exercises). They live in `work/evaluation/synthetic/`, are listed under `validation:` with `strategy:
+"synthetic-holdout"` (the gold standards are the `training` list), and are never edited during the loop.
+
 `evaluate.sh` with no argument scores the current `training` list.
 
-**Overfitting detection** (70-20-10 split): run `evaluate.sh` against the validation set adaptively — not on
-a fixed schedule — on the baseline (experiment 0, for the [phase-3.md](phase-3.md) 3.5 fast path), after every **kept** experiment (every improvement changes the overfitting risk profile),
-after a **plateau** (is the ceiling real or training-specific?), and when the training score jumps by more
-than 0.05 in one experiment (sudden gains are suspicious). Compare the trends:
-- Training up, validation up → healthy improvement, continue
-- Training up, validation flat → early warning, monitor closely
-- Training up, validation down by more than 0.05 → warn the user that recent changes may be over-fitted and
-  offer to generalize them, revert to the last validation-stable commit, or widen rubric criteria that have
-  become too narrow
+**The held-out score.** Every experiment line in `autoresearch.jsonl` — experiment 0, every Phase 4 experiment kept
+or discarded, every 4.6 re-score — carries `held_out`: the `overall_score` of that experiment's commit on cases it
+was not tuned on, measured in MEASURE before the keep/revert decision with `evaluate.sh <case>` (the mean when
+there are several):
+- a `validation:` list (70-20-10, or the synthetic cases): every case on it;
+- leave-one-out (no fixed validation set, so this is its overfitting check): the one case in `all_cases` missing
+  from this experiment's `training`, before the LOG step rotates it.
 
-Log validation checks in `autoresearch.jsonl`:
-```json
-{ "type": "validation_check", "training_score": 0.82, "validation_score": 0.78, "trigger": "kept", "experiment": 10, "timestamp": "..." }
-```
-
-**Overfitting detection for leave-one-out** (< 10 gold standards): with no fixed validation set, track
-per-case variance — record per-case scores after each kept experiment; if the variance across cases widens while
-the mean improves, the skill is specializing for some cases at others' expense. Flag when any single case drops
-> 1.0 point while others improve. Log them in `autoresearch.jsonl`: `"per_case_scores": {"input-01": 8.2, "input-02": 7.1, ...}`.
+The training metric cannot see overfitting to the cases it was tuned on; `held_out` can. So every stop and the ship
+rule read it, never the training metric alone: the 3.5 fast path, the 4.3 stops, and the metric-first ship rule
+(SKILL.md 5.4) through `check_gate.py`. A `metric` above `held_out` by more than the noise threshold is the
+**overfitting signal**: it blocks the fast path and keeps the loop open until the budget is spent. Generalize the
+latest changes (a rule stated for the case rather than the class, an example copied from one gold standard), or
+revert to the last commit without the gap. An experiment line with no numeric `held_out` counts as not measured: no
+fast path, the loop stays open, and a skill shipped on it is `UNSHIPPED` metric-first.
 
 ## 4.3 Let Autoresearch Run
 
@@ -146,25 +148,32 @@ Seed `autoresearch.ideas.md` before the first experiment with:
 ```
 
 **Ending the loop is the factory's call, not the loop's.** Upstream treats a plateau as advisory, so an
-unreachable `target_score` burns the whole budget and reports "exit criteria not met". Override that:
+unreachable `target_score` burns the whole budget and reports "exit criteria not met". Override that, every stop
+reading the **held-out score** (4.2), never the training metric alone:
 
-- **A plateau is terminal.** `plateau_window` (default 2) consecutive experiments within the noise threshold (judge
-  variance, ~0.2-0.3 on a 1-10 scale, below which gains are not measurable) end the loop: carry best-so-far into Phase 5.
-- **The ceiling and the target are terminal sooner.** A best `overall_score` at its maximum (1.0) ends the loop before
-  the next experiment: nothing left to measure. At or above `target_score`, the first experiment that does not beat the
-  best by more than the noise threshold ends it.
+- **Overfitting is not done.** While the last kept experiment's `metric` is above its `held_out` by more than the
+  noise threshold, or any experiment lacks a numeric `held_out`, no stop below applies: keep iterating, until
+  `max_iterations` experiments after experiment 0 spend the budget, which ends the loop on its own.
+- **A plateau is terminal.** `plateau_window` (default 2) consecutive experiments whose `held_out` stays within the
+  noise threshold (judge variance, ~0.2-0.3 on a 1-10 scale, below which gains are not measurable) of the best kept end
+  the loop: carry best-so-far into Phase 5.
+- **The ceiling and the target are terminal sooner.** A best kept `held_out` at its maximum (1.0) ends the loop before
+  the next experiment: nothing left to measure. At or above `target_score`, the first experiment whose `held_out` does
+  not beat the best by more than the noise threshold ends it.
 - **Below target is a verdict, not a failure** -- Phase 5.4 grades it (SHIP WITH CAVEATS within
   `caveat_margin` of `target_score`). Honour `baseline_lock` in `state.yaml` the same way, logging the real target
   in the ideas backlog.
 - **With `metric: answer-key` this metric is the ship decision** (metric-first, SKILL.md 5.4): the last kept
-  experiment whose `commit` matches `output/<skill-name>/` as shipped -- with a validation split, the lower of its
-  `metric` and that experiment's `validation_score` -- is what `check_gate.py` sets against `target_score`. A skill
-  edited after its last scored experiment ships on no metric (`UNSHIPPED`), so log every re-score with its commit.
+  experiment whose `commit` matches `output/<skill-name>/` as shipped -- the lower of its `metric` and its
+  `held_out` -- is what `check_gate.py` sets against `target_score`. A skill edited after its last scored
+  experiment, or scored with no `held_out`, ships on no metric (`UNSHIPPED`), so log every re-score with its commit
+  and held-out score.
   The panel never sends such a build back here.
 - Never ask for repeated re-runs toward an unreachable number: report the ceiling, name the binding
   constraint (target too high, or gains below judge variance), and proceed.
-- **The loop guard enforces the fast path, the ceiling, the plateau and the target rule**, with the noise threshold
-  from the latest `noise_estimate` line (never below 0.01) and `plateau_window` from `rubric.yaml`: `python3
+- **The loop guard enforces the fast path, the budget, the overfitting signal, the ceiling, the plateau and the
+  target rule**, with the noise threshold from the latest `noise_estimate` line (never below 0.01) and
+  `plateau_window` and `max_iterations` from `rubric.yaml`: `python3
   <skill-dir>/scripts/check_gate.py --loop` prints `LOOP DONE: <reason>` or `LOOP OPEN: <reason>`, and while it
   is done the kill guard denies the metric command. On the panel-verdict path a panel ITERATE or BLOCK newer than the
   log reopens it for one experiment; a description-only change (4.6) may be scored.
@@ -194,7 +203,7 @@ adds the rest, and applies it in every experiment:
 - **Experiment record.** Append one line to `autoresearch.jsonl` per experiment:
 
   ```json
-  { "experiment": 7, "commit": "abc1234", "metric": 0.81, "status": "keep",
+  { "experiment": 7, "commit": "abc1234", "metric": 0.81, "held_out": 0.78, "status": "keep",
     "scores": { "clarity": 8.1 }, "hypothesis": "...", "learned": "...", "rollback_reason": null }
   ```
 
@@ -207,7 +216,7 @@ adds the rest, and applies it in every experiment:
 Model-invoked skills only, after the loop ends: run **skill-creator**'s description optimizer
 (`scripts/run_loop.py`) on the best commit, with the 3.6 trigger and near-miss prompts as its seed queries. Keep the
 new description only if the 3.6 trigger cases still pass and `overall_score` does not drop; log the decision in
-`autoresearch.jsonl`, a kept description as an experiment line with its commit and score. Read any absolute score skill-creator reports as a ranking, not a level — its grader passes
+`autoresearch.jsonl`, a kept description as an experiment line with its commit, score and `held_out` (4.2). Read any absolute score skill-creator reports as a ranking, not a level — its grader passes
 vague output — and its with/without Δ as the signal. Without skill-creator or `claude -p` (its trigger test needs
 Claude Code), revise by hand against the same queries and log that no trigger rate was measured.
 

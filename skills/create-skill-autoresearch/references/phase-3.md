@@ -286,18 +286,20 @@ For each dimension:
 ## 3.5 Measure Baseline
 
 Run `evaluate.sh` on the draft, commit it (`git add output/<skill-name> && git commit -m "baseline"`; upstream autoresearch
-never commits one, and its `git reset --hard HEAD~1` needs that parent), log experiment 0 in `autoresearch.jsonl` ([phase-4.md](phase-4.md) 4.1)
-with that commit's hash (`git rev-parse HEAD`), report it. Unless the fast path below is taken, re-run `evaluate.sh` twice more on that commit before Phase 4 and append
-`{"type": "noise_estimate", "noise_threshold": <max - min of the three overall_score values>}`: the noise threshold
-the loop and its guard use (phase-4.md Loop Conventions; 0.01 when it is smaller or not logged).
+never commits one, and its `git reset --hard HEAD~1` needs that parent), score its held-out case(s) ([phase-4.md](phase-4.md)
+4.2: the validation or synthetic list, or the leave-one-out case; `evaluate.sh <case>` per case), log experiment 0 in
+`autoresearch.jsonl` (4.1) with that commit's hash (`git rev-parse HEAD`) and `held_out`, and report both. Re-run
+`evaluate.sh` twice more on that commit and append `{"type": "noise_estimate", "noise_threshold": <max - min of the
+three overall_score values>}`: the noise threshold the fast path, the loop and its guard use (phase-4.md Loop
+Conventions; 0.01 when it is smaller or not logged).
 
-**Fast path, decided now.** With a `validation` list in data-split.yaml, score it (`evaluate.sh <case>` per case) and
-log the 4.2 `validation_check` with `"experiment": 0`. Then run `python3 <skill-dir>/scripts/check_gate.py --fast-path`.
-Exit 0 — experiment 0 at `target_score`, its validation score at most 0.05 below it, `output/<skill-name>/` unchanged
-since its commit — skips the Phase 4 loop and 4.6: run 3.6, then Phase 5. The 5.0 gate still runs, and on this build
+**Fast path, decided now.** Run `python3 <skill-dir>/scripts/check_gate.py --fast-path`. Exit 0 — experiment 0's
+`metric` and `held_out` both at `target_score`, the `metric` not above `held_out` by more than the noise threshold,
+`output/<skill-name>/` unchanged since its commit — skips the Phase 4 loop and 4.6: run 3.6, then Phase 5. The 5.0 gate still runs, and on this build
 (experiment 0 the only experiment logged) a gold case with Δ <= 0 or (panel-verdict path) a panel ITERATE returns it to Phase 4 for the
 loop, 4.6, then 5.0 again; from then on 5.4 applies as on any build (`max_panel_rounds`, Δ <= 0 caps the verdict).
-Non-zero names why: run 3.6, then Phase 4. Taken, the loop guard (hosts.md) denies `evaluate.sh` with no case
+Non-zero names why (a training score the held-out score does not back is the overfitting signal): run 3.6, then
+Phase 4. Taken, the loop guard (hosts.md) denies `evaluate.sh` with no case
 argument until a gold Δ <= 0 or (panel-verdict path) a panel ITERATE reopens the loop.
 
 ## 3.6 Scaffold the Eval Suite

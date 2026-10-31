@@ -231,8 +231,8 @@ class FinishTest(TempWorkspace):
 
 
 class FastPathTest(TempWorkspace):
-    """--fast-path is decided at the end of 3.5, before 3.6 and the gate: it reads the baseline, the 4.2
-    validation check and git only."""
+    """--fast-path is decided at the end of 3.5, before 3.6 and the gate: it reads the baseline, its 4.2 held-out
+    score, the noise estimate and git only."""
 
     def fast_path(self) -> str:
         out = self.run_script("check_gate.py", "--fast-path")
@@ -240,8 +240,10 @@ class FastPathTest(TempWorkspace):
         return out.stdout.strip()
 
     def log(self, *experiments: dict, where: str = "work/experiments") -> None:
+        """Experiment lines get `held_out` = `metric` unless they set it (None: not measured)."""
         path = self.ws / where / "autoresearch.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
+        experiments = tuple({"held_out": e["metric"], **e} if "metric" in e else e for e in experiments)
         path.write_text("".join(json.dumps(e) + "\n" for e in experiments))
 
     def build(self, split: str = 'strategy: "leave-one-out"\ntraining: ["input/input-02.md"]\n') -> str:
@@ -265,9 +267,9 @@ class FastPathTest(TempWorkspace):
         self.assertEqual(self.fast_path(), "NO FAST PATH: baseline overall_score 0.840 is below target_score 0.85")
         self.log({"type": "validation_check", "experiment": 3}, {"experiment": 0, "commit": commit, "metric": 0.85},
                  where=".")
-        self.assertEqual(self.fast_path(), "FAST PATH: baseline overall_score 0.850 >= target_score 0.85; skip the "
-                                           "Phase 4 loop (4.1-4.6): run 3.6, then Phase 5",
-                         "the root log wins; leave-one-out needs no validation check; no gate exists yet")
+        self.assertEqual(self.fast_path(), "FAST PATH: baseline overall_score 0.850, held_out 0.850 >= target_score "
+                                           "0.85; skip the Phase 4 loop (4.1-4.6): run 3.6, then Phase 5",
+                         "the root log wins; no gate exists yet")
         self.log({"experiment": 0, "commit": commit, "metric": 0.9}, {"experiment": 1, "metric": 0.92}, where=".")
         self.assertIn("NO FAST PATH: Phase 4 already logged 1 experiment(s)", self.fast_path())
 
@@ -291,21 +293,34 @@ class FastPathTest(TempWorkspace):
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Edited.\n---\n")
         self.assertEqual(self.fast_path(), changed, "an edit counts")
 
-    def test_a_validation_split_needs_the_experiment_0_check(self) -> None:
+    def test_the_held_out_score_decides_not_the_training_metric(self) -> None:
+        commit = self.build()
+        zero = {"experiment": 0, "commit": commit, "metric": 1.0}
+        self.log({**zero, "held_out": None})
+        self.assertEqual(self.fast_path(), "NO FAST PATH: experiment 0 logs no numeric held_out; score the held-out "
+                                           "case(s) with `evaluate.sh <case>` and log it (phase-4.md 4.2)",
+                         "missing is not measured")
+        self.log({**zero, "held_out": 0.84})
+        self.assertEqual(self.fast_path(), "NO FAST PATH: baseline held_out 0.840 is below target_score 0.85 "
+                                           "(phase-4.md 4.2)", "a training 1.0 cannot carry a held-out 0.84")
+        self.log({**zero, "held_out": 0.9})
+        self.assertEqual(self.fast_path(), "NO FAST PATH: overfitting signal: baseline overall_score 1.000 is more "
+                                           "than the noise threshold 0.010 above its held_out 0.900 (phase-4.md 4.2)")
+        self.log({"type": "noise_estimate", "noise_threshold": 0.1}, {**zero, "held_out": 0.9})
+        self.assertTrue(self.fast_path().startswith("FAST PATH: baseline overall_score 1.000, held_out 0.900"),
+                        "a gap inside the measured noise is no signal")
+
+    def test_a_validation_check_is_the_held_out_score_of_its_experiment(self) -> None:
         commit = self.build('strategy: "70-20-10"\ntraining: ["input/a.md"]\nvalidation: ["input/v.md"]\n'
                             'test: ["input/t.md"]\n')
-        zero = {"experiment": 0, "commit": commit, "metric": 0.9}
+        zero = {"experiment": 0, "commit": commit, "metric": 0.9, "held_out": None}
         self.log(zero, {"type": "validation_check", "experiment": 2, "validation_score": 0.9})
-        self.assertEqual(self.fast_path(), "NO FAST PATH: no experiment-0 validation_check with a numeric "
-                                           "validation_score in autoresearch.jsonl; score the validation list and "
-                                           "log it (phase-4.md 4.2)")
-        self.log(zero, {"type": "validation_check", "experiment": 0, "validation_score": 0.84})
-        self.assertEqual(self.fast_path(), "NO FAST PATH: validation_score 0.840 is more than 0.05 below the "
-                                           "baseline 0.900 (phase-4.md 4.2)")
-        self.log(zero, {"type": "validation_check", "experiment": 0, "validation_score": 0.85})
-        self.assertEqual(self.fast_path(), "FAST PATH: baseline overall_score 0.900 >= target_score 0.85, "
-                                           "validation_score 0.850; skip the Phase 4 loop (4.1-4.6): run 3.6, then "
-                                           "Phase 5")
+        self.assertIn("NO FAST PATH: experiment 0 logs no numeric held_out", self.fast_path(), "another experiment's")
+        self.log(zero, {"type": "validation_check", "experiment": 0, "validation_score": 0.88})
+        self.assertIn("NO FAST PATH: overfitting signal", self.fast_path())
+        self.log(zero, {"type": "validation_check", "experiment": 0, "validation_score": 0.9})
+        self.assertEqual(self.fast_path(), "FAST PATH: baseline overall_score 0.900, held_out 0.900 >= target_score "
+                                           "0.85; skip the Phase 4 loop (4.1-4.6): run 3.6, then Phase 5")
 
 
 class CheckGateTest(TempWorkspace):

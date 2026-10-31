@@ -71,7 +71,7 @@ best_score: <value>       # best overall_score achieved
 best_commit: <hash>       # commit hash of best state
 experiments_run: <count>  # total experiments across all sessions
 remaining_budget: <count> # experiments left in budget
-validation_score: <value> # last validation set score (if applicable)
+held_out: <value>         # last held-out score (phase-4.md 4.2)
 top_concerns: []          # panel feedback or known weaknesses
 blocked_dimensions: []    # dimensions below threshold
 last_updated: <ISO timestamp>
@@ -150,7 +150,7 @@ Add 3-5 domain-specific dimensions from the research synthesis (5-10 dimensions 
 ## Phase 3: Draft, and Phase 4: Autoresearch
 
 Read [references/phase-3.md](references/phase-3.md) and run 3.1-3.6; 3.5 ends with `check_gate.py --fast-path`. Exit 0
-(baseline at `target_score`): after 3.6 go to Phase 5, skipping Phase 4 until the gate (or, on the panel-verdict path,
+(baseline and its held-out score at `target_score`): after 3.6 go to Phase 5, skipping Phase 4 until the gate (or, on the panel-verdict path,
 the panel) sends the build back (phase-3.md 3.5); else read [references/phase-4.md](references/phase-4.md) and run 4.1-4.6. Step 3.3 reads
 the authoring rules in [references/authoring-rules.md](references/authoring-rules.md); both phases follow the evaluation standard in
 [references/benchmark-standard.md](references/benchmark-standard.md): the shipping evidence is the 5.0 gate's same-model Δ.
@@ -222,9 +222,10 @@ re-submitting with `--synthesis`; then converged → average, 2-of-3 → majorit
 (their one home; `--finish` rejects a verdict above what the rule allows):
 
 - **Metric-first** (`metric: answer-key`: the outputs are checkable). `--consensus` also prints a `SHIP RULE:` line:
-  **SHIP** when the gate is valid with every gold Δ > 0 and the Phase 4 metric (the last kept experiment on this exact
-  skill; with a validation split, the lower of it and its validation score, phase-4.md 4.2) meets `target_score`;
-  **SHIP WITH CAVEATS** when the lowest gold Δ or the metric is within `caveat_margin` of that; else `UNSHIPPED`.
+  **SHIP** when the gate is valid with every gold Δ > 0 and the Phase 4 metric meets `target_score`: the last kept
+  experiment on this exact skill, the lower of its training and its **held-out** score (phase-4.md 4.2; never the
+  training score alone, and no held-out score is no metric); **SHIP WITH CAVEATS** when the lowest gold Δ or the
+  metric is within `caveat_margin` of that; else `UNSHIPPED`.
   The panel runs once (`max_panel_rounds` 1) as a review: log its scores and findings in `BENCHMARK.md` and
   `work/experiments/craft-decisions.md`, and edit nothing in response — panel-driven edits measured lower on the answer
   key. It forces `UNSHIPPED` only through a receipt's cited `veto`: a 3.3 hard constraint, a safety defect (fetched

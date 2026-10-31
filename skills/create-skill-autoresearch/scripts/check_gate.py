@@ -15,9 +15,10 @@ a numeric delta per gold case and every Skill indicator passing (phase-5.md 5.0)
 with a gold delta <= 0, the `GOLD GATE:` cap --finish holds the verdict to (gate_level).
 --finish: BENCHMARK.md's verdict stands (SKILL.md 5.1, 5.4): `BUILD FINISHED: ...` or `BUILD UNFINISHED: <reason>`.
 --fast-path: at the end of 3.5, may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or
-`NO FAST PATH: <reason>`; it reads the baseline, the validation check and git, never the gate.
+`NO FAST PATH: <reason>`; it reads the baseline, its held-out score and git, never the gate.
 --loop: is the Phase 4 loop over (phase-4.md 4.3; the loop guard in hooks/kill_guard.py asks the same):
-`LOOP DONE: <reason>` or `LOOP OPEN: <reason>`.
+`LOOP DONE: <reason>` or `LOOP OPEN: <reason>`. The fast path, the stops and the SHIP RULE read each experiment's
+held-out score (phase-4.md 4.2), never the training metric alone.
 
 Exit codes: 0 valid (--finish: finished; --fast-path: take it; --loop: done), 1 invalid (unfinished; no fast path;
 open), 2 usage error.
@@ -46,7 +47,6 @@ from gate_common import (  # noqa: E402
 BENCHMARK = Path("BENCHMARK.md")
 EXPERIMENT_LOGS = (Path("autoresearch.jsonl"), Path("work") / "experiments" / "autoresearch.jsonl")
 TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
-VALIDATION_DROP = 0.05  # phase-4.md 4.2: validation this far below training is the overfitting warning
 NOISE_FLOOR = 0.01  # phase-4.md Loop Conventions: the noise threshold's absolute minimum
 NOISE_ESTIMATE = "noise_estimate"  # the jsonl line 3.5 logs: {"type": "noise_estimate", "noise_threshold": x}
 DISCARDED = {"discard", "discarded", "revert", "reverted", "crash"}  # experiment statuses that are not kept
@@ -368,10 +368,25 @@ def gate_level(gate: Verdict) -> tuple[str, str]:
     return level, f"gold delta<=0 on {', '.join(gate.non_positive)}, lowest {gate.min_delta:+.3f}"
 
 
+def held_out(entries: list[dict], experiment: dict) -> float | None:
+    """An experiment's held-out score (phase-4.md 4.2): its `held_out`, else the `validation_score` of the latest
+    validation_check line for the same experiment; None when neither is a number (not measured)."""
+    if is_number(experiment.get("held_out")):
+        return float(experiment["held_out"])
+    checks = [e for e in entries if e.get("type") == "validation_check" and e.get("experiment") == experiment.get(
+        "experiment") and is_number(e.get("validation_score"))]
+    return float(checks[-1]["validation_score"]) if checks else None
+
+
+def _overfit(metric: float, score: float, noise: float) -> bool:
+    """The overfitting signal: the training metric above the held-out score by more than the noise threshold."""
+    return metric - score > noise + 1e-9
+
+
 def ship_metric(workspace: Path, skill: str) -> tuple[float | None, str]:
-    """(the Phase 4 metric the skill ships on, how it was read), or (None, why): the last kept experiment whose
-    commit output/<skill>/ still matches; with a validation split, the lower of its metric and that experiment's
-    validation_score (phase-4.md 4.2; verdict-rules.json metric_first)."""
+    """(the Phase 4 metric the skill ships on, how it was read), or (None, why): the lower of the training metric
+    and the held-out score of the last kept experiment whose commit output/<skill>/ still matches (phase-4.md 4.2;
+    verdict-rules.json metric_first)."""
     entries, experiments, _ = _experiments(workspace)
     kept = [e for e in experiments if is_number(e.get("metric")) and isinstance(e.get("commit"), str)
             and e["commit"].strip() and str(e.get("status") or "").lower() not in DISCARDED]
@@ -380,17 +395,10 @@ def ship_metric(workspace: Path, skill: str) -> tuple[float | None, str]:
         return None, (f"no kept experiment in autoresearch.jsonl scored output/{skill}/ as it is now (log the "
                       "re-score of the shipped commit, 4.6's included, as an experiment line with its commit)")
     n, metric = match.get("experiment"), match["metric"]
-    try:
-        validated = bool(read_data_split(workspace / DATA_SPLIT).gold.get("validation"))
-    except GateError as exc:
-        return None, str(exc)
-    if not validated:
-        return metric, f"experiment {n} {metric:.3f}"
-    checks = [e for e in entries if e.get("type") == "validation_check" and e.get("experiment") == n]
-    score = checks[-1].get("validation_score") if checks else None
-    if not is_number(score):
-        return None, f"no validation_check with a numeric validation_score for experiment {n} (phase-4.md 4.2)"
-    return min(metric, score), f"experiment {n} {metric:.3f}, validation {score:.3f}"
+    score = held_out(entries, match)
+    if score is None:
+        return None, f"experiment {n} logs no numeric held_out: no held-out score to ship on, phase-4.md 4.2"
+    return min(metric, score), f"experiment {n} {metric:.3f}, held_out {score:.3f}"
 
 
 @dataclass
@@ -452,11 +460,12 @@ def _experiments(workspace: Path) -> tuple[list[dict], list[dict], float]:
 
 def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
     """(skip the Phase 4 loop, why), decided at the end of 3.5 from what exists then: experiment 0 (the baseline)
-    is the only experiment logged and meets target_score, the 4.2 validation check on it passes (a split with a
-    validation list), and output/<skill>/ is unchanged since its commit. The 5.0 gate runs either way."""
+    is the only experiment logged, its metric and its held-out score (phase-4.md 4.2) both meet target_score, the
+    metric is not above the held-out score by more than the noise threshold, and output/<skill>/ is unchanged since
+    its commit. The 5.0 gate runs either way."""
     try:
         name = resolve_skill(workspace, skill)
-        split = read_data_split(workspace / DATA_SPLIT)
+        read_data_split(workspace / DATA_SPLIT)
         target = panel.read_rubric(workspace).target_score
     except GateError as exc:
         return False, str(exc)
@@ -471,21 +480,19 @@ def fast_path(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
         return False, f"experiment 0 has no numeric metric ({metric!r})"
     if metric + 1e-9 < target:
         return False, f"baseline overall_score {metric:.3f} is below target_score {target:.2f}"
-    validated = ""
-    if split.gold.get("validation"):
-        checks = [e for e in entries if e.get("type") == "validation_check" and e.get("experiment") == 0]
-        score = checks[-1].get("validation_score") if checks else None
-        if not is_number(score):
-            return False, ("no experiment-0 validation_check with a numeric validation_score in autoresearch.jsonl; "
-                           "score the validation list and log it (phase-4.md 4.2)")
-        if score + VALIDATION_DROP < metric - 1e-9:
-            return False, (f"validation_score {score:.3f} is more than {VALIDATION_DROP} below the baseline "
-                           f"{metric:.3f} (phase-4.md 4.2)")
-        validated = f", validation_score {score:.3f}"
+    score, noise = held_out(entries, zero[-1]), noise_threshold(entries)
+    if score is None:
+        return False, ("experiment 0 logs no numeric held_out; score the held-out case(s) with `evaluate.sh <case>` "
+                       "and log it (phase-4.md 4.2)")
+    if score + 1e-9 < target:
+        return False, f"baseline held_out {score:.3f} is below target_score {target:.2f} (phase-4.md 4.2)"
+    if _overfit(metric, score, noise):
+        return False, (f"overfitting signal: baseline overall_score {metric:.3f} is more than the noise threshold "
+                       f"{noise:.3f} above its held_out {score:.3f} (phase-4.md 4.2)")
     if why := _changed_since(workspace, zero[-1].get("commit"), name):
         return False, why
-    return True, (f"baseline overall_score {metric:.3f} >= target_score {target:.2f}{validated}; skip the Phase 4 "
-                  "loop (4.1-4.6): run 3.6, then Phase 5")
+    return True, (f"baseline overall_score {metric:.3f}, held_out {score:.3f} >= target_score {target:.2f}; skip "
+                  "the Phase 4 loop (4.1-4.6): run 3.6, then Phase 5")
 
 
 def _gold_non_positive(workspace: Path) -> list[str]:
@@ -565,12 +572,15 @@ def _plateau(scored: list[dict], noise: float) -> int:
 
 
 def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
-    """(the Phase 4 loop is over, why), from the experiment log (phase-4.md 4.3): the 3.5 fast path holds, the best
-    kept overall_score is at its maximum (1.0), the last `plateau_window` (rubric.yaml) experiments each scored
-    within the noise threshold (noise_threshold) of the best kept before it, at any score, or the last experiment
-    brought the build to or kept it at target_score with no gain above that threshold. It reopens for one more metric run when the panel's latest consensus is ITERATE or BLOCK and newer
-    than the log (never on a checkable skill: metric-first, the panel is a review), when only experiment 0 is logged and a newer gate scored a gold case at delta <= 0 (phase-3.md
-    3.5), or when only the description changed since the last kept experiment (4.6)."""
+    """(the Phase 4 loop is over, why), from the experiment log (phase-4.md 4.3): the 3.5 fast path holds, the
+    `max_iterations` budget (rubric.yaml) is spent, or, with every scored experiment's held-out score logged
+    (held_out) and the last kept one's metric not above it by more than the noise threshold (noise_threshold), on
+    the held-out scores: the best kept is at its maximum (1.0), the last `plateau_window` (rubric.yaml) experiments
+    each scored within the noise threshold of the best kept before it, at any score, or the last experiment brought
+    the build to or kept it at target_score with no gain above that threshold. It reopens for one more metric run
+    when the panel's latest consensus is ITERATE or BLOCK and newer than the log (never on a checkable skill:
+    metric-first, the panel is a review), when only experiment 0 is logged and a newer gate scored a gold case at
+    delta <= 0 (phase-3.md 3.5), or when only the description changed since the last kept experiment (4.6)."""
     entries, experiments, logged = _experiments(workspace)
     scored = [e for e in experiments if is_number(e.get("metric"))]
     if not scored:
@@ -592,22 +602,43 @@ def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
         except GateError as exc:
             return False, str(exc)
         target, window, noise = rubric.target_score, rubric.plateau_window, noise_threshold(entries)
+        spent = sum(1 for e in scored if e.get("experiment") != 0)
+        unmeasured = [e.get("experiment") for e in scored if held_out(entries, e) is None]
+        if spent >= rubric.max_iterations:
+            return _unless_description(workspace, experiments, skill,
+                                       f"the budget is spent: {spent} experiments, max_iterations "
+                                       f"{rubric.max_iterations}")
+        if unmeasured:
+            return False, (f"experiment {unmeasured[0]} logs no numeric held_out: not measured, so not done "
+                           "(phase-4.md 4.2)")
+        current = [e for e in scored if str(e.get("status") or "").lower() not in DISCARDED]
+        if current and _overfit(current[-1]["metric"], held := held_out(entries, current[-1]), noise):
+            return False, (f"overfitting signal: experiment {current[-1].get('experiment')} overall_score "
+                           f"{current[-1]['metric']:.3f} is more than the noise threshold {noise:.3f} above its "
+                           f"held_out {held:.3f} (phase-4.md 4.2); generalize or revert, up to max_iterations "
+                           f"{rubric.max_iterations}")
+        scored = [{**e, "metric": held_out(entries, e)} for e in scored]  # the stops read the held-out score
         kept = [e for e in scored if str(e.get("status") or "").lower() not in DISCARDED]
         best = max((e["metric"] for e in kept), default=None)
         last = scored[-1]
         prior = max((e["metric"] for e in kept if e is not last), default=None)
         if best is not None and best >= 1 - 1e-9:
-            done = f"the best overall_score is {best:.3f}, its maximum"
+            done = f"the best held_out is {best:.3f}, its maximum"
         elif (streak := _plateau(scored, noise)) >= window:
-            done = (f"a plateau: the last {streak} experiments each scored within the noise threshold {noise:.3f} "
-                    f"of the best kept before it (plateau_window {window}; best {best:.3f})")
+            done = (f"a plateau: the last {streak} experiments each held out within the noise threshold "
+                    f"{noise:.3f} of the best kept before it (plateau_window {window}; best {best:.3f})")
         elif prior is not None and len(scored) > 1 and max(prior, last["metric"]) + 1e-9 >= target \
                 and last["metric"] <= prior + noise + 1e-9:
-            done = (f"experiment {last.get('experiment')} scored {last['metric']:.3f}, no gain above the noise "
+            done = (f"experiment {last.get('experiment')} held out {last['metric']:.3f}, no gain above the noise "
                     f"threshold {noise:.3f} over the best {prior:.3f}, at target_score {target:.2f}")
         else:
-            return False, (f"no stop rule holds (fast path, the 1.0 ceiling, a plateau of {window}, at target with "
-                           "no gain)")
+            return False, (f"no stop rule holds on the held-out score (fast path, the 1.0 ceiling, a plateau of "
+                           f"{window}, at target with no gain)")
+    return _unless_description(workspace, experiments, skill, done)
+
+
+def _unless_description(workspace: Path, experiments: list[dict], skill: str | None, done: str) -> tuple[bool, str]:
+    """(True, done), unless only the description changed since the last kept experiment: the 4.6 pass scores it."""
     if (experiment := _description_only(workspace, experiments, skill)) is not None:
         return False, f"only the description changed since experiment {experiment}: the 4.6 pass may score it"
     return True, done

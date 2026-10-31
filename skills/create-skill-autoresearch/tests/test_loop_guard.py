@@ -47,8 +47,10 @@ class LoopGuardTest(TempWorkspace):
         return self.git("rev-parse", "HEAD")
 
     def log(self, *entries: dict) -> None:
+        """Experiment lines get `held_out` = `metric` unless they set it (None: not measured)."""
         path = self.ws / "work" / "experiments" / "autoresearch.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
+        entries = tuple({"held_out": e["metric"], **e} if "metric" in e else e for e in entries)
         path.write_text("".join(json.dumps(e) + "\n" for e in entries))
         self.later(path)
 
@@ -87,9 +89,9 @@ class LoopGuardTest(TempWorkspace):
         split.write_text('strategy: "70-20-10"\ntraining: ["input/a.md"]\nvalidation: ["input/v.md"]\n'
                          'test: ["input/t.md"]\n')
         commit = self.commit("split")
-        zero = {"experiment": 0, "commit": commit, "metric": 0.9, "status": "baseline"}
+        zero = {"experiment": 0, "commit": commit, "metric": 0.9, "held_out": None, "status": "baseline"}
         self.log(zero)
-        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "the fast path needs the validation check first")
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "the fast path needs the held-out score first")
         self.assertFalse(self.denied())
         self.assertFalse(self.denied(command="./work/evaluation/evaluate.sh input/v.md"), "validation scoring runs")
         self.log(zero, {"type": "validation_check", "experiment": 0, "validation_score": 0.9})
@@ -102,7 +104,7 @@ class LoopGuardTest(TempWorkspace):
         commit = self.git("rev-parse", "HEAD")
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n# Edit\n")
         self.log({"experiment": 0, "commit": commit, "metric": 1.0, "status": "baseline"})
-        self.assertEqual(self.loop(), "LOOP DONE: the best overall_score is 1.000, its maximum")
+        self.assertEqual(self.loop(), "LOOP DONE: the best held_out is 1.000, its maximum")
         for command in (METRIC, "cd work/evaluation && ./evaluate.sh", f"bash {self.ws}/work/evaluation/evaluate.sh",
                         "M=$(work/evaluation/evaluate.sh | tail -1)"):
             with self.subTest(command=command):
@@ -120,7 +122,7 @@ class LoopGuardTest(TempWorkspace):
         self.assertTrue(self.loop().startswith("LOOP OPEN:"), "a gain to target keeps it open")
         self.log(zero, {"experiment": 1, "commit": commit, "metric": 0.86, "status": "keep"},
                  {"experiment": 2, "commit": commit, "metric": 0.865, "status": "keep"})
-        self.assertEqual(self.loop(), "LOOP DONE: experiment 2 scored 0.865, no gain above the noise threshold 0.010 "
+        self.assertEqual(self.loop(), "LOOP DONE: experiment 2 held out 0.865, no gain above the noise threshold 0.010 "
                                       "over the best 0.860, at target_score 0.85")
         self.log(zero, {"experiment": 1, "commit": commit, "metric": 0.81, "status": "discard"})
         self.assertTrue(self.loop().startswith("LOOP OPEN:"), "below target is not this rule")
@@ -136,7 +138,7 @@ class LoopGuardTest(TempWorkspace):
         self.log(zero, noise, one)
         self.assertTrue(self.loop().startswith("LOOP OPEN:"), "one experiment inside the noise is not a plateau of 2")
         self.log(zero, noise, one, two)
-        self.assertEqual(self.loop(), "LOOP DONE: a plateau: the last 2 experiments each scored within the noise "
+        self.assertEqual(self.loop(), "LOOP DONE: a plateau: the last 2 experiments each held out within the noise "
                                       "threshold 0.030 of the best kept before it (plateau_window 2; best 0.700)")
         self.assertTrue(self.denied())
         wider = ({**one, "metric": 0.72}, {**two, "metric": 0.719})  # within 0.03, not within 0.01
@@ -175,8 +177,53 @@ class LoopGuardTest(TempWorkspace):
         self.log(zero, noise, one)
         self.assertTrue(self.loop().startswith("LOOP OPEN:"), "a gain to target keeps it open")
         self.log(zero, noise, one, {"experiment": 2, "commit": commit, "metric": 0.925, "status": "keep"})
-        self.assertEqual(self.loop(), "LOOP DONE: experiment 2 scored 0.925, no gain above the noise threshold 0.030 "
+        self.assertEqual(self.loop(), "LOOP DONE: experiment 2 held out 0.925, no gain above the noise threshold 0.030 "
                                       "over the best 0.900, at target_score 0.85")
+
+    def test_a_training_ceiling_over_a_lower_held_out_score_keeps_it_open(self) -> None:
+        """c18: Haiku builds read 1.0 on their own metric while the hidden holdout scored them 0.85-0.91."""
+        commit = self.git("rev-parse", "HEAD")
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n# Edit\n")
+        zero = {"experiment": 0, "commit": commit, "metric": 1.0, "held_out": 0.85, "status": "baseline"}
+        self.log(zero)
+        self.assertEqual(self.loop(), "LOOP OPEN: overfitting signal: experiment 0 overall_score 1.000 is more than "
+                                      "the noise threshold 0.010 above its held_out 0.850 (phase-4.md 4.2); "
+                                      "generalize or revert, up to max_iterations 20")
+        self.assertFalse(self.denied())
+        flat = [{"experiment": i, "commit": commit, "metric": 1.0, "held_out": 0.85, "status": "keep"} for i in (1, 2)]
+        self.log(zero, *flat)
+        self.assertIn("LOOP OPEN: overfitting signal: experiment 2", self.loop(), "the gap outlasts a plateau")
+        rubric = self.ws / "work" / "evaluation" / "rubric.yaml"
+        rubric.write_text(rubric.read_text().replace("max_iterations: 20", "max_iterations: 2"))
+        self.assertEqual(self.loop(), "LOOP DONE: the budget is spent: 2 experiments, max_iterations 2")
+        self.assertTrue(self.denied())
+        rubric.write_text(rubric.read_text().replace("max_iterations: 2", "max_iterations: lots"))
+        self.assertIn("max_iterations 'lots' is not a whole number", self.loop())
+
+    def test_a_plateau_on_the_held_out_score_ends_it_while_training_still_climbs(self) -> None:
+        commit = self.git("rev-parse", "HEAD")
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n# Edit\n")
+        noise = {"type": "noise_estimate", "noise_threshold": 0.05}
+        runs = [{"experiment": i, "commit": commit, "metric": m, "held_out": h, "status": "keep"}
+                for i, (m, h) in enumerate(((0.70, 0.70), (0.74, 0.72), (0.76, 0.73)))]
+        self.log(noise, *runs)
+        self.assertEqual(self.loop(), "LOOP DONE: a plateau: the last 2 experiments each held out within the noise "
+                                      "threshold 0.050 of the best kept before it (plateau_window 2; best 0.730)")
+        self.log(noise, *runs[:2], {**runs[2], "held_out": 0.80})
+        self.assertTrue(self.loop().startswith("LOOP OPEN:"), "a held-out gain above the noise is no plateau")
+
+    def test_a_missing_held_out_score_is_not_done(self) -> None:
+        commit = self.git("rev-parse", "HEAD")
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Demo.\n---\n# Edit\n")
+        zero = {"experiment": 0, "commit": commit, "metric": 1.0, "status": "baseline"}
+        self.log({**zero, "held_out": None})
+        self.assertEqual(self.loop(), "LOOP OPEN: experiment 0 logs no numeric held_out: not measured, so not done "
+                                      "(phase-4.md 4.2)")
+        self.assertFalse(self.denied())
+        self.log(zero, {"experiment": 1, "commit": commit, "metric": 1.0, "held_out": "n/a", "status": "discard"})
+        self.assertIn("LOOP OPEN: experiment 1 logs no numeric held_out", self.loop(), "a discarded one counts too")
+        self.log(zero)
+        self.assertTrue(self.denied(), "measured, the 1.0 ceiling holds")
 
     def test_an_iterate_consensus_reopens_it_for_one_experiment(self) -> None:
         commit = self.git("rev-parse", "HEAD")

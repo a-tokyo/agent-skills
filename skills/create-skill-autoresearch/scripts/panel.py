@@ -4,7 +4,8 @@ A receipt (work/experiments/panel/<role>.json, <role>.synthesis.json) binds a ve
 rubric hashes, once every quote its evidence gives is found verbatim in output/<skill>/ or input/ (_verify_quote); each consensus is archived as a round under work/experiments/panel/rounds/<n>/ with a copy of
 SKILL.md and the final receipts. The thresholds and max_panel_rounds live in references/verdict-rules.json;
 the protocol in references/consensus-protocol.md; rubric.yaml's schema (read here by a small stdlib reader:
-target_score, plateau_window, metric, and dimensions with name, weight, scale) in references/rubric-templates.md.
+target_score, plateau_window, max_iterations, metric, and dimensions with name, weight, scale) in
+references/rubric-templates.md.
 With `metric: answer-key` the panel is a review: its consensus allows UNSHIPPED only on a veto (a hard defect a
 receipt cites), and check_gate.py decides the rest from the gate and the Phase 4 metric (verdict-rules.json
 metric_first).
@@ -61,6 +62,7 @@ class Rubric:
     sha256: str
     plateau_window: int = 2
     checkable: bool = False  # `metric: answer-key`: the gate and the Phase 4 metric decide the verdict
+    max_iterations: int = 20  # the Phase 4 budget: experiments after experiment 0
 
 
 def read_rubric(workspace: Path) -> Rubric:
@@ -68,7 +70,7 @@ def read_rubric(workspace: Path) -> Rubric:
     if not path.is_file():
         raise GateError(f"{RUBRIC} not found; 2.3 writes it (schema: references/rubric-templates.md)")
     target: float | None = None
-    window = 2
+    window, budget = 2, 20
     checkable = False
     items: list[dict[str, str]] = []
     in_dims = False
@@ -88,6 +90,10 @@ def read_rubric(workspace: Path) -> Rubric:
                 if not re.fullmatch(r"[1-9]\d*", _unquote(value)):
                     raise GateError(f"{RUBRIC}: plateau_window {value.strip()!r} is not a whole number >= 1")
                 window = int(_unquote(value))
+            elif key.strip() == "max_iterations":
+                if not re.fullmatch(r"[1-9]\d*", _unquote(value)):
+                    raise GateError(f"{RUBRIC}: max_iterations {value.strip()!r} is not a whole number >= 1")
+                budget = int(_unquote(value))
             elif key.strip() == "metric":
                 if _unquote(value) not in METRICS:
                     raise GateError(f"{RUBRIC}: metric {value.strip()!r} is not one of {', '.join(METRICS)}")
@@ -116,7 +122,7 @@ def read_rubric(workspace: Path) -> Rubric:
     if abs(sum(d.weight for d in dims) - 1) > 0.01:
         raise GateError(f"{RUBRIC}: dimension weights sum to {sum(d.weight for d in dims):g}, not 1.0")
     return Rubric(dims, rules()["default_target_score"] if target is None else target, file_sha256(path), window,
-                  checkable)
+                  checkable, budget)
 
 
 def checkable(workspace: Path) -> bool:

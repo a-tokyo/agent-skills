@@ -40,10 +40,13 @@ class MetricFirstTest(TempWorkspace):
                                "-c", "commit.gpgsign=false", *args], check=True, capture_output=True,
                               text=True).stdout.strip()
 
-    def log(self, metric: float, *extra: dict) -> None:
+    def log(self, metric: float, *extra: dict, held_out: object = "metric") -> None:
+        """Experiment 0 at `metric`, its held_out the same unless given (None: not measured), then `extra`."""
         path = self.ws / "work" / "experiments" / "autoresearch.jsonl"
         path.parent.mkdir(parents=True, exist_ok=True)
-        lines = [{"experiment": 0, "commit": self.commit, "metric": metric, "status": "baseline"}, *extra]
+        held = metric if held_out == "metric" else held_out
+        lines = [{"experiment": 0, "commit": self.commit, "metric": metric, "held_out": held, "status": "baseline"},
+                 *extra]
         path.write_text("".join(json.dumps(e) + "\n" for e in lines))
 
     def gate(self) -> None:
@@ -79,7 +82,7 @@ class MetricFirstTest(TempWorkspace):
         consensus, rule = self.panel()
         self.assertIn("PANEL CONSENSUS: ITERATE (review; veto: none); overall=0.513", consensus)
         self.assertEqual(rule, "SHIP RULE: SHIP (metric-first); gate: every gold delta > 0; "
-                               "metric: experiment 0 0.910 -> 0.910 target 0.85; veto: none")
+                               "metric: experiment 0 0.910, held_out 0.910 -> 0.910 target 0.85; veto: none")
         data = self.finish("SHIP", consensus)
         self.assertFalse(data["finished"])
         self.assertIn("lacks check_gate.py's current SHIP RULE line", data["reason"])
@@ -113,7 +116,7 @@ class MetricFirstTest(TempWorkspace):
                     checks = [{"type": "validation_check", "experiment": 0, "training_score": metric,
                                "validation_score": validation}]
                 split.write_text(text)
-                self.log(metric, *checks)
+                self.log(metric, *checks, held_out=None if checks else "metric")  # a validation_check counts
                 self.gate()
                 consensus, rule = self.panel({"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (9, 9)})
                 self.assertTrue(rule.startswith(f"SHIP RULE: {allowed} (metric-first)"), rule)
@@ -121,6 +124,28 @@ class MetricFirstTest(TempWorkspace):
                 self.assertFalse(data["finished"])
                 self.assertIn(f"the metric-first rule allows at most {allowed}", data["reason"])
                 self.assertTrue(self.finish(allowed, consensus, rule)["finished"])
+
+    def test_the_ship_rule_reads_the_held_out_score(self) -> None:
+        for held_out, allowed in ((0.85, "SHIP"), (0.80, "SHIP WITH CAVEATS"), (0.70, "UNSHIPPED")):
+            with self.subTest(held_out=held_out):
+                self.log(1.0, held_out=held_out)
+                self.gate()
+                consensus, rule = self.panel({"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (9, 9)})
+                self.assertEqual(rule, f"SHIP RULE: {allowed} (metric-first); gate: every gold delta > 0; metric: "
+                                       f"experiment 0 1.000, held_out {held_out:.3f} -> {held_out:.3f} target 0.85; "
+                                       "veto: none", "a training 1.0 ships on its held-out score")
+                self.assertTrue(self.finish(allowed, consensus, rule)["finished"])
+
+    def test_no_held_out_score_ships_unshipped(self) -> None:
+        self.log(1.0, held_out=None)
+        self.gate()
+        consensus, rule = self.panel({"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (9, 9)})
+        self.assertEqual(rule, "SHIP RULE: UNSHIPPED (metric-first); gate: every gold delta > 0; metric: none "
+                               "(experiment 0 logs no numeric held_out: no held-out score to ship on, phase-4.md "
+                               "4.2); veto: none")
+        self.assertIn("the metric-first rule allows at most UNSHIPPED",
+                      self.finish("SHIP WITH CAVEATS", consensus, rule)["reason"])
+        self.assertTrue(self.finish("UNSHIPPED", consensus, rule)["finished"])
 
     def test_a_metric_from_another_skill_state_ships_nothing(self) -> None:
         self.log(0.95)
@@ -140,7 +165,7 @@ class MetricFirstTest(TempWorkspace):
         self.gate()
         consensus, rule = self.panel()
         self.assertEqual(rule, "SHIP RULE: SHIP WITH CAVEATS (metric-first); gate: gold delta<=0 on trigout-1, "
-                               "lowest +0.000; metric: experiment 0 0.950 -> 0.950 target 0.85; veto: none")
+                               "lowest +0.000; metric: experiment 0 0.950, held_out 0.950 -> 0.950 target 0.85; veto: none")
         self.assertIn("allows at most SHIP WITH CAVEATS", self.finish("SHIP", consensus, rule)["reason"])
 
     def test_a_gold_delta_below_the_caveat_margin_unships(self) -> None:
@@ -152,7 +177,7 @@ class MetricFirstTest(TempWorkspace):
         self.gate()
         consensus, rule = self.panel()
         self.assertEqual(rule, "SHIP RULE: UNSHIPPED (metric-first); gate: gold delta<=0 on regress-25, "
-                               "lowest -0.250; metric: experiment 0 0.950 -> 0.950 target 0.85; veto: none")
+                               "lowest -0.250; metric: experiment 0 0.950, held_out 0.950 -> 0.950 target 0.85; veto: none")
         self.assertIn("allows at most UNSHIPPED", self.finish("SHIP WITH CAVEATS", consensus, rule)["reason"])
         self.assertTrue(self.finish("UNSHIPPED", consensus, rule)["finished"])
 
@@ -170,7 +195,7 @@ class MetricFirstTest(TempWorkspace):
         consensus, rule = self.panel(high, **{"verifier-b": {"veto": {"kind": "safety", **CITED}}})
         self.assertIn("PANEL CONSENSUS: SHIP (review; veto: verifier-b safety)", consensus)
         self.assertEqual(rule, "SHIP RULE: UNSHIPPED (metric-first); gate: every gold delta > 0; "
-                               "metric: experiment 0 0.950 -> 0.950 target 0.85; veto: verifier-b safety")
+                               "metric: experiment 0 0.950, held_out 0.950 -> 0.950 target 0.85; veto: verifier-b safety")
         self.assertIn("allows at most UNSHIPPED", self.finish("SHIP WITH CAVEATS", consensus, rule)["reason"])
         self.assertTrue(self.finish("UNSHIPPED", consensus, rule)["finished"])
 
