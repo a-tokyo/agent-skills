@@ -250,6 +250,118 @@ class KillGuardTest(unittest.TestCase):
                                  "Cursor blocks a permission hook whose stdout is empty or not JSON")
 
 
+class BlockingTest(unittest.TestCase):
+    """Long factory commands block: Claude Code's updatedInput gets timeout 600000 and run_in_background false, with
+    every other input field echoed (Claude Code replaces the whole tool input with it)."""
+
+    LONG = ["python3 /x/create-skill-autoresearch/scripts/gate.py --workspace . --detach --wait --model m",
+            "python3 scripts/rescore.py --workspace /b",
+            "python3 -B /p/scripts/run_owned.py start ev --wait -- bash work/evaluation/evaluate.sh",
+            "python3 /p/scripts/check_gate.py --next",
+            "bash work/evaluation/evaluate.sh case-1",
+            "cd work/evaluation && ./evaluate.sh",
+            "./run-case.sh c1 with"]
+    SHORT = ["ls", "git status", "cat work/evaluation/rubric.yaml", "python3 my_gate.py", "echo evaluate.shx"]
+
+    def updated(self, command: str, cwd: Path = BUILD, **env: str) -> dict | None:
+        event = bash(command, cwd)
+        event["tool_input"]["timeout"] = 120000
+        out = run_hook(event, cwd, **env)
+        self.assertEqual(out.returncode, 0, out.stderr)
+        if not out.stdout.strip():
+            return None
+        reply = json.loads(out.stdout)["hookSpecificOutput"]
+        self.assertEqual(reply["hookEventName"], "PreToolUse")
+        self.assertNotIn("permissionDecision", reply, "passthrough: the normal permission flow still runs")
+        return reply["updatedInput"]
+
+    def test_long_factory_commands_get_the_longest_timeout_in_the_foreground(self) -> None:
+        for command in self.LONG:
+            with self.subTest(command=command):
+                self.assertEqual(self.updated(command), {"command": command, "description": "test",
+                                                         "timeout": 600000, "run_in_background": False})
+
+    def test_other_commands_and_other_places_are_left_alone(self) -> None:
+        for command in self.SHORT:
+            with self.subTest(command=command):
+                self.assertIsNone(self.updated(command))
+        self.assertIsNone(self.updated(self.LONG[0], OUTSIDE), "outside a build the hook changes nothing")
+        self.assertIsNone(self.updated(self.LONG[0], CSA_EXECUTOR="1"), "an executor session runs its own calls")
+
+    def test_a_blocked_command_is_still_blocked(self) -> None:
+        out = run_hook(bash("python3 scripts/gate.py --stop; pkill -f gate"))
+        self.assertEqual((out.returncode, out.stdout), (2, ""))
+
+    def test_cursor_gets_its_permission_answer_only(self) -> None:
+        self.assertEqual(json.loads(run_hook(cursor(self.LONG[0])).stdout), {"permission": "allow"})
+
+
+class PollGuardTest(unittest.TestCase):
+    """While a job the build owns runs, sleep/poll loops and Monitor are denied with the command that blocks on it."""
+
+    POLLS = ["sleep 30", "sleep 5 && tail -3 work/pids/gate.log", "until [ -f done ]; do sleep 10; done",
+             "while kill -0 4242; do :; done", "while true; do cat x; sleep 1; done",
+             "for i in 1 2 3; do sleep 60; python3 scripts/gate.py --wait; done"]
+
+    def setUp(self) -> None:
+        self.ws = Path(tempfile.mkdtemp(prefix="csa-poll-guard-"))
+        self.addCleanup(shutil.rmtree, self.ws, True)
+        (self.ws / "work" / "evaluation").mkdir(parents=True)
+        sys.path.insert(0, str(SKILL / "scripts"))
+        import run_owned
+        self.run_owned = run_owned
+        self.sdir = self.ws / "work" / "pids"
+
+    def start(self, name: str) -> None:
+        proc = self.run_owned.start(self.sdir, name, [sys.executable, "-c", "import time; time.sleep(300)"], cwd=self.ws)
+        self.procs = {**getattr(self, "procs", {}), name: proc}
+        self.addCleanup(self.stop, name)
+
+    def stop(self, name: str) -> None:
+        if self.run_owned.status(self.sdir, name)["state"] == "running":
+            self.run_owned.stop(self.sdir, name, grace=1, proc=self.procs[name])
+        self.procs[name].wait()
+
+    def monitor(self, **extra: object) -> dict:
+        return {"session_id": "s", "hook_event_name": "PreToolUse", "tool_name": "Monitor", "cwd": str(self.ws),
+                "tool_input": {"command": "tail -f work/pids/gate.log", "description": "watch"}, **extra}
+
+    def test_polls_and_monitor_run_while_no_job_does(self) -> None:
+        for command in self.POLLS:
+            with self.subTest(command=command):
+                self.assertEqual(run_hook(bash(command, self.ws), self.ws).returncode, 0)
+        self.assertEqual(run_hook(self.monitor(), self.ws).returncode, 0)
+
+    def test_while_the_gate_runs_they_are_denied_with_its_wait_command(self) -> None:
+        self.start("gate")
+        for command in self.POLLS:
+            with self.subTest(command=command):
+                out = run_hook(bash(command, self.ws), self.ws)
+                self.assertEqual(out.returncode, 2, out.stderr)
+                self.assertIn("poll guard", out.stderr)
+                self.assertIn(f"gate.py --workspace {self.ws} --wait", out.stderr)
+        out = run_hook(self.monitor(), self.ws)
+        self.assertEqual(out.returncode, 2)
+        self.assertIn("timeout 600000", out.stderr)
+        self.assertEqual(run_hook(bash("git status", self.ws), self.ws).returncode, 0, "only polls are denied")
+        self.stop("gate")
+        self.assertEqual(run_hook(bash("sleep 30", self.ws), self.ws).returncode, 0, "allowed once the job ends")
+
+    def test_each_job_gets_its_own_re_attach_command(self) -> None:
+        self.start("rescore")
+        self.assertIn(f"rescore.py --workspace {self.ws}", run_hook(bash("sleep 9", self.ws), self.ws).stderr)
+        self.stop("rescore")
+        self.start("eval-1")
+        self.assertIn(f"run_owned.py --workspace {self.ws} wait eval-1",
+                      run_hook(bash("sleep 9", self.ws), self.ws).stderr)
+
+    def test_subagents_executors_and_other_places_may_poll(self) -> None:
+        self.start("gate")
+        self.assertEqual(run_hook(self.monitor(agent_id="a1"), self.ws).returncode, 0)
+        self.assertEqual(run_hook(bash("sleep 30", self.ws), self.ws, CSA_EXECUTOR="1").returncode, 0)
+        self.assertEqual(run_hook(bash("sleep 30", OUTSIDE), OUTSIDE).returncode, 0)
+
+
 def cursor(command: str, cwd: Path = BUILD) -> dict:
     return {"conversation_id": "c", "generation_id": "g", "hook_event_name": "beforeShellExecution",
             "cursor_version": "2026.10.16", "workspace_roots": [str(cwd)], "command": command,

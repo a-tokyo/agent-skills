@@ -2,6 +2,7 @@
 """Validate the Phase 5.0 gate, the panel's receipts and consensus, and the build's end state.
 
     check_gate.py --next     # from 3.5 on, at every phase boundary: the one next action, as the exact command
+    check_gate.py --next --profile lite   # once, small or fast builder models: stored in work/manifest.yaml
     check_gate.py [--workspace DIR] [--skill NAME] [--json]
                   [--next | --panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish
                    | --fast-path | --loop]
@@ -10,6 +11,10 @@
 consensus, finish) and prints `NEXT: <what>` with the exact command(s) to run, or `BUILD FINISHED: verdict <V>`.
 It never sends the build to the gate while the Phase 4 loop is open or a metric-first skill is unscored, never
 restarts a running gate, and once all three receipts are in it writes the consensus as --consensus does. Exit 0.
+
+--profile lite|full (with --next): write the build's profile into work/manifest.yaml; every script reads it there
+(CSA_PROFILE=lite|full in the environment wins). lite, for small builder models, runs one `reviewer` panel member
+with no synthesis round, smaller Phase 4 caps and fewer gate runs per arm (verdict-rules.json `lite`).
 
 No flag: exit 0 only when work/evaluation/gate.json records a finished gate.py run whose hashes still match the
 skill, cases, splits, run-case.sh, gate inputs and artifact, and the mode's artifact (plugin-eval.json or
@@ -47,10 +52,10 @@ sys.dont_write_bytecode = True
 import panel  # noqa: E402  (sibling imports after disabling bytecode)
 import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
-    BASELINE_KEY, DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, REQUIRED_RUNS, RUN_CASE,
+    BASELINE_KEY, DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, RUN_CASE,
     GateError, baseline_key, baseline_path, cases_sha256, check_skill_name, file_sha256, inputs_sha256, is_number,
-    json_lines, read_attempts, read_baseline, read_data_split, read_json, resolve_skill, skill_sha256, split_sha256,
-    utf8_stdio,
+    PROFILES, json_lines, profile, required_runs, read_attempts, read_baseline, read_data_split, read_json, resolve_skill,
+    set_profile, skill_sha256, split_sha256, utf8_stdio,
 )
 
 BENCHMARK = Path("BENCHMARK.md")
@@ -174,7 +179,7 @@ def _cases(data: dict, artifact: str) -> list[dict]:
     return cases
 
 
-def _plugin(data: dict, recorded: list[str]) -> list[CaseResult]:
+def _plugin(data: dict, recorded: list[str], required: int) -> list[CaseResult]:
     """Cases are classed by their graders: only `tool_used` on `Skill` makes a should-trigger indicator (`max: 0`:
     a near miss); anything else is gold and needs a numeric delta. Every indicator must pass in every run that
     counts: a trigger in the with arm, a near miss in both."""
@@ -184,9 +189,9 @@ def _plugin(data: dict, recorded: list[str]) -> list[CaseResult]:
         done = {arm: [r for r in arms.get(arm) if isinstance(r, dict) and not r.get("error")]
                 if isinstance(arms.get(arm), list) else [] for arm in ("with", "without")}
         for arm, runs in done.items():
-            if len(runs) < REQUIRED_RUNS:
+            if len(runs) < required:
                 raise Invalid("too_few_runs", f"case {name!r} arm {arm!r} has {len(runs)} completed runs; "
-                                              f"{REQUIRED_RUNS} required")
+                                              f"{required} required")
         delta = (case.get("aggregates") or {}).get("delta")
         result = CaseResult(name, float(delta) if is_number(delta) else None)
         graders = [g for g in case.get("graders") or [] if isinstance(g, dict)]
@@ -237,14 +242,15 @@ def _manual(data: dict, recorded: list[str], workspace: Path) -> list[CaseResult
     """Every manual case is gold: its delta is mean(with) - mean(without)."""
     results = []
     summary = data.get("summary") if isinstance(data.get("summary"), dict) else {}
+    required = required_runs(workspace)
     for case in _cases(data, "uplift.json"):
         name = str(case.get("case"))
         for arm in ("with", "without"):
             runs = case.get(arm)
             if not isinstance(runs, list) or not all(is_number(s) and 0 <= s <= 1 for s in runs):
                 raise Invalid("bad_artifact", f"case {name!r} arm {arm!r} is not a list of scores in 0..1")
-            if len(runs) < REQUIRED_RUNS:
-                raise Invalid("too_few_runs", f"case {name!r} arm {arm!r} has {len(runs)} runs; {REQUIRED_RUNS} required")
+            if len(runs) < required:
+                raise Invalid("too_few_runs", f"case {name!r} arm {arm!r} has {len(runs)} runs; {required} required")
         if "without_cache" in case:
             _reused_baseline(workspace, name, case, summary)
         results.append(CaseResult(name, _mean(case["with"]) - _mean(case["without"])))
@@ -279,7 +285,8 @@ def validate(workspace: Path, skill: str | None = None) -> Verdict:
         data = read_json(workspace / rel)
         if data is None:
             raise Invalid("bad_artifact", f"{rel} is not a JSON object")
-        results = _plugin(data, split.plugin_eval) if mode == "plugin" else _manual(data, split.plugin_eval, workspace)
+        results = (_plugin(data, split.plugin_eval, required_runs(workspace)) if mode == "plugin" else
+                   _manual(data, split.plugin_eval, workspace))
         if split.gold_recorded and not any(r.kind == "gold" for r in results):
             raise Invalid("no_gold", f"{DATA_SPLIT} records gold standards but no gate case is a gold case "
                                      "(every case grades only `tool_used` on Skill); 3.6 adds one per gate "
@@ -326,7 +333,7 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
                                 f"{GATE_ATTEMPTS}; run 3.6 and 5.0 (a build that does not ship still runs the gate)")
     last = panel.exhausted(workspace)
     if last and unshipped and _spaced(last.get("line") or "") not in _spaced(text):
-        return False, verdict, (f"the panel ran its {panel.rules()['max_panel_rounds']} rounds; {BENCHMARK} lacks the "
+        return False, verdict, (f"the panel ran its {panel.max_rounds(workspace)} rounds; {BENCHMARK} lacks the "
                                 f"last round's PANEL CONSENSUS line beside UNSHIPPED; copy it in verbatim: "
                                 f"{last.get('line')}")
     gate = validate(workspace, skill)
@@ -541,7 +548,8 @@ def _gold_non_positive(workspace: Path) -> list[str]:
         data = read_json(workspace / (PLUGIN_ARTIFACT if plugin else MANUAL_ARTIFACT))
         if data is None or not split.plugin_eval:
             return []
-        results = _plugin(data, split.plugin_eval) if plugin else _manual(data, split.plugin_eval, workspace)
+        results = (_plugin(data, split.plugin_eval, required_runs(workspace)) if plugin else
+                   _manual(data, split.plugin_eval, workspace))
     except (GateError, Invalid):
         return []
     return [r.name for r in results if r.kind == "gold" and r.delta is not None and r.delta <= 0]
@@ -730,7 +738,7 @@ def gate_command(workspace: Path, skill: str, restart: bool = False) -> str:
             args += ["--allow-tools", *map(_q, tools)]
         if is_number(record.get("jobs")) and record["jobs"] != 8:
             args += ["--jobs", str(record["jobs"])]
-        if is_number(record.get("runs")) and record["runs"] > REQUIRED_RUNS:
+        if is_number(record.get("runs")) and record["runs"] > required_runs(workspace):
             args += ["--runs", str(record["runs"])]
         return " ".join(args)
     try:
@@ -805,6 +813,10 @@ def next_action(workspace: Path, skill: str | None = None) -> Next:
     if live:
         return Next("gate_running", "5.0: the gate is running; wait on it (never restart it):",
                     [f"python3 {_q(SCRIPTS / 'gate.py')} --workspace {_q(workspace)} --wait"], note=SHELL_NOTE)
+    if last := panel.exhausted(workspace):
+        return _verdict(workspace, "UNSHIPPED", [line for line in [last.get("line")] if line],
+                        f"the panel ran its {panel.max_rounds(workspace)} round(s) and the skill changed since; no "
+                        "gate re-run changes that", unfinished, False)
     if not (workspace / "work" / "evaluation" / "evaluate.sh").is_file():
         return Next("evaluate", "Phase 3.4: record the split and write work/evaluation/evaluate.sh (phase-3.md)")
     try:
@@ -815,10 +827,6 @@ def next_action(workspace: Path, skill: str | None = None) -> Next:
     if not any(e.get("experiment") == 0 and is_number(e.get("metric")) for e in experiments):
         return Next("baseline", "Phase 3.5: score the baseline, commit it and log experiment 0 with held_out and "
                                 "the noise estimate (phase-3.md 3.5)", [_self(workspace, "--next")])
-    if last := panel.exhausted(workspace):
-        return _verdict(workspace, "UNSHIPPED", [last.get("line") or ""],
-                        f"the panel ran its {panel.max_rounds(workspace)} round(s) and the skill changed since; no "
-                        "gate re-run changes that", unfinished, False)
     loop, why = loop_done(workspace, name)
     reopened = why.startswith("the panel's latest consensus")
     if not loop and reopened and _spent(workspace):
@@ -856,7 +864,7 @@ def next_action(workspace: Path, skill: str | None = None) -> Next:
             rubric = panel.read_rubric(workspace)
             round_n = panel.check_round(workspace, skill_sha)
             have = panel.current_receipts(workspace, skill_sha, rubric.sha256)
-            if len(have) == len(panel.ROLES):
+            if len(have) == len(panel.roles(workspace)):
                 consensus = panel.write_consensus(workspace, name, skill_sha)
         except panel.RoundsExhausted as exc:
             return _verdict(workspace, "UNSHIPPED", [], str(exc), unfinished, False)
@@ -865,11 +873,19 @@ def next_action(workspace: Path, skill: str | None = None) -> Next:
         if consensus is None:
             receipt = _self(workspace, "--panel-receipt", "<role>", "<scores.json>")
             if have:
-                missing = ", ".join(r for r in panel.ROLES if r not in have)
+                missing = ", ".join(r for r in panel.roles(workspace) if r not in have)
                 return Next("panel", f"5.2 panel round {round_n}: still to score: {missing}. Dispatch them (SKILL.md "
                                      "5.2); each ends with:", [receipt, f"then: {_self(workspace, '--next')}"])
             premortem = "" if (workspace / "work" / "experiments" / "premortem.md").is_file() else \
                 "5.1 premortem to work/experiments/premortem.md, then "
+            if panel.lite(workspace):
+                role_file = SCRIPTS.parent / "references" / "panel" / "reviewer.md"
+                return Next("panel", f"{premortem}5.2 panel round {round_n} (lite profile): dispatch ONE reviewer "
+                                     "subagent, role `reviewer`, in the foreground, with the inputs SKILL.md 5.2 "
+                                     f"gives a member; tell it to read only {role_file} and member-rules.md beside "
+                                     "it. No other member, no synthesis round. It ends with:",
+                            [_self(workspace, "--panel-receipt", "reviewer", "<scores.json>"),
+                             f"then: {_self(workspace, '--next')}"], before=[gate.line()])
             return Next("panel", f"{premortem}5.2 panel round {round_n}: dispatch verifier-a, verifier-b and "
                                  "devils-advocate in one message (SKILL.md 5.2); each ends with:",
                         [receipt, f"then: {_self(workspace, '--next')}"], before=[gate.line()])
@@ -897,20 +913,29 @@ def main(argv: list[str] | None = None) -> int:
     step = parser.add_mutually_exclusive_group()
     step.add_argument("--panel", action="store_true", help="5.2: validate the gate before the panel starts")
     step.add_argument("--panel-receipt", nargs=2, metavar=("ROLE", "SCORES_JSON"),
-                      help=f"5.2: a verifier's role receipt after it scores ({', '.join(panel.ROLES)})")
+                      help=f"5.2: a verifier's role receipt after it scores ({', '.join(panel.ROLES)}; the "
+                           f"lite profile: {', '.join(panel.LITE_ROLES)})")
     step.add_argument("--consensus", action="store_true", help="5.3: the panel's verdict from the three receipts")
     step.add_argument("--finish", action="store_true", help="the build's end state instead of the gate")
     step.add_argument("--fast-path", action="store_true", help="3.5: may the build skip the Phase 4 loop")
     step.add_argument("--loop", action="store_true", help="4.3: is the Phase 4 loop over (the loop guard's check)")
     step.add_argument("--next", action="store_true", help="the build's single next action, as the exact command")
+    parser.add_argument("--profile", choices=PROFILES, help="with --next: store the build's profile (lite: small "
+                                                             "builder models) in work/manifest.yaml")
     parser.add_argument("--synthesis", action="store_true", help="with --panel-receipt: the synthesis round (5.3)")
     parser.add_argument("--verbose", action="store_true", help="longer lines where the default is terse")
     args = parser.parse_args(argv)
     if args.synthesis and not args.panel_receipt:
         parser.error("--synthesis goes with --panel-receipt")
+    if args.profile and not args.next:
+        parser.error("--profile goes with --next")
     workspace = args.workspace.resolve()
     if args.next:
+        if args.profile:
+            set_profile(workspace, args.profile)
         action = next_action(workspace, args.skill)
+        if profile(workspace) == "lite":
+            action.before.insert(0, "PROFILE: lite (verdict-rules.json `lite`)")
         print(json.dumps(asdict(action)) if args.json else action.render())
         return 0
     if args.fast_path:
@@ -933,6 +958,13 @@ def main(argv: list[str] | None = None) -> int:
               (f"BUILD FINISHED: verdict {label}" if done else f"BUILD UNFINISHED: {reason}"))
         return 0 if done else 1
     verdict = validate(workspace, args.skill)
+    if (args.panel or args.panel_receipt or args.consensus) and not verdict.valid and panel.checkable(workspace) \
+            and panel.exhausted(workspace) is not None:  # metric-first: no re-gate after the panel's round (gate.py)
+        try:
+            panel.check_round(workspace, skill_sha256(workspace, resolve_skill(workspace, args.skill)))
+        except (panel.RoundsExhausted, GateError) as exc:
+            print(f"PANEL ROUNDS EXHAUSTED: {exc}")
+            return 1
     if not (args.panel_receipt or args.consensus) or not verdict.valid:
         print(json.dumps(asdict(verdict)) if args.json else verdict.line())
     if not verdict.valid:
@@ -958,7 +990,7 @@ def main(argv: list[str] | None = None) -> int:
         elif args.panel:
             print(f"PANEL ROUND {panel.check_round(workspace, skill_sha)}: each role scores every dimension")
             print(f"panel: after scoring, each verifier runs `check_gate.py --panel-receipt <role> <scores.json>` "
-                  f"({', '.join(panel.ROLES)}); then `check_gate.py --consensus` (5.3)", file=sys.stderr)
+                  f"({', '.join(panel.roles(workspace))}); then `check_gate.py --consensus` (5.3)", file=sys.stderr)
     except panel.RoundsExhausted as exc:
         print(f"PANEL ROUNDS EXHAUSTED: {exc}")
         return 1

@@ -2,9 +2,15 @@
 """Run background jobs as owned process groups, and stop only those groups (references/operating-rules.md).
 
     run_owned.py start <name> [--cwd DIR] [--log FILE] -- <cmd...>
-    run_owned.py wait <name> [--timeout SECONDS]
+    run_owned.py start <name> --wait [--timeout 570] -- <cmd...>  # start and block; re-issue it on exit 124
+    run_owned.py wait <name> [--timeout SECONDS]    # default 570
     run_owned.py stop <name> [--grace SECONDS]      # waits up to grace + 10 s for the supervisor
     run_owned.py status <name>
+
+`start --wait` is the one command for a long run (an evaluate.sh): it blocks up to 570 s (under the 600 s a Claude
+Code shell call may wait, with timeout 600000), then prints the job's log and exits with its code, or exits 124
+while it still runs. Re-issue the same command on 124: while that job runs it re-attaches to it, and once it has
+ended it reports that result once instead of starting another run.
 
 A detached supervisor holds work/pids/<name>.lock while it lives, forks the command into a new session once the
 record (<name>.json) is written, records its exit status (<name>.rc), and on `stop` (<name>.stop) TERMs the
@@ -46,6 +52,7 @@ START_LOCK_SECONDS = 30.0  # a start waits this long for a concurrent start of t
 READY_SECONDS = 15.0  # for the supervisor to start Python and fork the command
 GO_SECONDS = 30.0  # the forked command waits this long for `start` to write the record
 STOP_MARGIN_SECONDS = 10.0  # beyond the grace, for the supervisor to KILL, reap and reply
+WAIT_SECONDS = 570.0  # under the 600 s a Claude Code shell call may wait (timeout 600000), so a wait returns first
 SUPERVISE = "_supervise"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 TERM, KILL = signal.SIGTERM, signal.SIGKILL
@@ -69,6 +76,7 @@ class Record:
     stopped: str | None = None
     supervisor: int | None = None
     token: str | None = None
+    reported: bool = False  # run_attached printed its result to a caller
 
 
 def state_dir(workspace: Path) -> Path:
@@ -440,6 +448,50 @@ def status(sdir: Path, name: str) -> dict:
     return {"name": name, "pid": rec.pid, "pgid": rec.pgid, "state": state, "exit_code": rc, "log": rec.log}
 
 
+def mark_reported(sdir: Path, name: str) -> None:
+    """Record that the job's result reached a caller, so run_attached starts the next call afresh."""
+    rec = load(sdir, name)
+    rec.reported = True
+    _write_json(_file(sdir, name, "json"), asdict(rec))
+
+
+def run_attached(sdir: Path, name: str, cmd: list[str], cwd: Path, env: dict[str, str] | None = None,
+                 timeout: float = WAIT_SECONDS, again: str = "re-issue the same command") -> int:
+    """Run `cmd` as job `name` and block up to `timeout` s; the same call again re-attaches instead of starting a
+    second run: to the job while it runs, or once to its result when no call has printed that yet. Prints the log
+    and returns the job's exit code when it ends, else one still-running line (`again`: how to re-attach) and 124.
+    A running job with another command is an OwnedError."""
+    proc = None
+    try:
+        rec = load(sdir, name)
+        state = status(sdir, name)["state"]
+    except OwnedError:
+        rec, state = None, None
+    if rec is not None and state == "running":
+        if rec.cmd != list(cmd):
+            raise OwnedError(f"job {name!r} is running another command ({' '.join(rec.cmd)}); wait on it "
+                             f"(run_owned.py wait {name}) or stop it")
+        print(f"run_owned: job {name!r} is already running; re-attached to it", file=sys.stderr)
+    elif rec is not None and state == "exited" and rec.cmd == list(cmd) and not rec.reported:
+        print(f"run_owned: job {name!r} ended since the last call; its result follows", file=sys.stderr)
+    else:
+        proc = start(sdir, name, cmd, cwd=cwd, env=env)
+    rc = wait(sdir, name, timeout=timeout, proc=proc)
+    if rc == EXIT_TIMEOUT:
+        print(f"run_owned: job {name!r} still running after {timeout:g}s (exit 124): {again}; it re-attaches "
+              "(Bash timeout 600000; never poll with sleep or Monitor)", file=sys.stderr)
+        return rc
+    rec = load(sdir, name)
+    log = Path(rec.log)
+    sys.stdout.write(log.read_text(encoding="utf-8", errors="replace") if log.is_file() else "")
+    sys.stdout.flush()
+    if rc == EXIT_NO_STATUS:
+        print(f"run_owned: job {name!r} ended without an exit status (stopped or killed); see {rec.log}",
+              file=sys.stderr)
+    mark_reported(sdir, name)
+    return rc
+
+
 def main(argv: list[str] | None = None) -> int:
     argv = sys.argv[1:] if argv is None else argv
     if argv[:1] == [SUPERVISE]:
@@ -451,21 +503,40 @@ def main(argv: list[str] | None = None) -> int:
     p_start.add_argument("name")
     p_start.add_argument("--cwd", type=Path, help="working directory for the job (default: the workspace)")
     p_start.add_argument("--log", type=Path, help="stdout+stderr file (default: work/pids/<name>.log)")
-    p_start.add_argument("cmd", nargs=argparse.REMAINDER, help="-- followed by the command")
+    p_start.add_argument("--wait", action="store_true", help="block, print the log, exit with the job's code (124: "
+                                                              "still running, re-issue it: it re-attaches)")
+    p_start.add_argument("--timeout", type=float, default=WAIT_SECONDS,
+                         help=f"with --wait: seconds before exit 124 (default {WAIT_SECONDS:g})")
+    p_start.add_argument("cmd", nargs="*", help="after --: the command")
     p_wait = sub.add_parser("wait", help="wait for the job and exit with its exit code")
     p_wait.add_argument("name")
-    p_wait.add_argument("--timeout", type=float, help="seconds; exit 124 if the job is still running")
+    p_wait.add_argument("--timeout", type=float, default=WAIT_SECONDS,
+                        help=f"seconds; exit 124 if the job is still running (default {WAIT_SECONDS:g})")
     p_stop = sub.add_parser("stop", help="stop the job's process group: TERM, KILL after the grace period")
     p_stop.add_argument("name")
     p_stop.add_argument("--grace", type=float, default=10.0, help="seconds between TERM and KILL (default 10)")
     sub.add_parser("status", help="print the job's state as JSON").add_argument("name")
+    tail = None
+    if argv[:1] != [SUPERVISE] and "--" in argv:  # options may follow <name>: the command starts after `--`
+        i = argv.index("--")
+        argv, tail = argv[:i], argv[i + 1:]
     args = parser.parse_args(argv)
+    if tail is not None:
+        if args.command != "start" or args.cmd:
+            parser.error("`--` goes with start: start <name> [options] -- <cmd...>")
+        args.cmd = tail
 
     workspace = args.workspace.resolve()
     sdir = state_dir(workspace)
     try:
         if args.command == "start":
-            cmd = args.cmd[1:] if args.cmd[:1] == ["--"] else args.cmd
+            cmd = args.cmd
+            if args.wait:
+                if args.log is not None:
+                    parser.error("--wait keeps the job's log at work/pids/<name>.log; drop --log")
+                if args.timeout <= 0:
+                    parser.error("--timeout must be > 0")
+                return run_attached(sdir, args.name, cmd, cwd=(args.cwd or workspace), timeout=args.timeout)
             start(sdir, args.name, cmd, cwd=(args.cwd or workspace), log=args.log)
             rec = load(sdir, args.name)
             print(json.dumps({"name": args.name, "pid": rec.pid, "pgid": rec.pgid}))

@@ -71,6 +71,15 @@ Holdouts never reach a builder in any task.
 `tribunal` is absent from every arm, so Phase 5 runs the factory's inline panel. Factory arms run
 unattended with a 6-iteration autoresearch budget.
 
+**Haiku runs the lite profile on the `factory` arm.** From harness `3d1292d` on, the factory has a lite profile for
+small builder models (verdict-rules.json `lite`: 2 gate runs per arm, a Phase 4 budget capped at 3 experiments, a
+one-reviewer panel with no synthesis round, one rescore per commit). SKILL.md tells a small model to switch it on
+itself; so the measurement does not depend on that choice, `arms/run-arm.sh` puts `CSA_PROFILE=lite` in the build's
+environment when the arm is `factory` and the builder alias is `haiku`, and the scripts read it ahead of
+`work/manifest.yaml`. Sonnet and Opus builds, and every other arm (`factory-v021` included), get no `CSA_PROFILE`.
+`meta.json` records `"profile"` (`lite` or `default`). Runs before this change (`r19-*` and earlier) ran Haiku on
+the full profile.
+
 A factory that ships `hooks/hooks.json` (v0.3.0 from cycle 3 on) loads as a plugin
 (`claude -p --plugin-dir <run>/plugins/create-skill-autoresearch`), so its kill guard — a `PreToolUse`
 hook that blocks `pkill`, `killall` and pgrep-fed kills — is active, and from `u-*` on so is its finish

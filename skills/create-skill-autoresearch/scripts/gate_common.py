@@ -39,6 +39,10 @@ _NOT_INPUTS = {p.as_posix() for p in (PLUGIN_ARTIFACT, MANUAL_ARTIFACT, GATE_REC
                                       GATE_ATTEMPTS)}
 _GENERATED_DIRS = tuple(f"{d.as_posix()}/" for d in (PLUGIN_DIR / "skills", PLUGIN_DIR / "evals" / "results",
                                                       BASELINE_CACHE))
+MANIFEST = PurePosixPath("work") / "manifest.yaml"
+PROFILES = ("full", "lite")  # lite: small builder models (Haiku, Flash, mini); verdict-rules.json `lite`
+PROFILE_ENV = "CSA_PROFILE"  # a harness forces the profile with it; it wins over the manifest
+RULES_PATH = Path(__file__).resolve().parent.parent / "references" / "verdict-rules.json"
 GOLD_KEYS = ("all_cases", "training", "validation", "test")
 TEST_SPLIT_MIN = 10  # phase-4.md 4.2: from this many gold standards a test set is held out
 _TOP_KEY = re.compile(r"^([A-Za-z_][\w-]*):(.*)$")
@@ -267,6 +271,47 @@ def omitted_gold(ws: Path, listed: list[str]) -> list[str]:
     return sorted(p.relative_to(ws).as_posix() for p in on_disk - listed_files)
 
 
+def profile(workspace: Path) -> str:
+    """The build's profile: $CSA_PROFILE when it names one, else work/manifest.yaml's top-level `profile:`, else
+    `full`."""
+    forced = os.environ.get(PROFILE_ENV, "").strip().lower()
+    if forced in PROFILES:
+        return forced
+    path = workspace / MANIFEST
+    if path.is_file():
+        found = _top_keys([_strip_comment(line) for line in path.read_text(encoding="utf-8", errors="replace").splitlines()])
+        value = _unquote(found["profile"][2]).lower() if "profile" in found else ""
+        if value in PROFILES:
+            return value
+    return "full"
+
+
+def set_profile(workspace: Path, name: str) -> None:
+    """Write `profile: <name>` into work/manifest.yaml (replacing a top-level one), keeping every other line."""
+    if name not in PROFILES:
+        raise GateError(f"profile {name!r} is not one of {', '.join(PROFILES)}")
+    path = workspace / MANIFEST
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lines = path.read_text(encoding="utf-8").splitlines() if path.is_file() else []
+    entry = [f"profile: {name}  # check_gate.py --next --profile; every factory script reads it"]
+    at = _top_keys([_strip_comment(line) for line in lines]).get("profile")
+    if at is None:
+        lines += entry
+    else:
+        lines[at[0]:at[1]] = entry
+    write_text(path, "\n".join(lines) + "\n")
+
+
+def lite_rules() -> dict:
+    """verdict-rules.json's `lite` block: the small-model profile's numbers."""
+    return json.loads(RULES_PATH.read_text(encoding="utf-8"))["lite"]
+
+
+def required_runs(workspace: Path) -> int:
+    """Completed runs per arm per gate case: REQUIRED_RUNS, or the lite profile's runs_per_arm (never below 2)."""
+    return max(2, int(lite_rules()["runs_per_arm"])) if profile(workspace) == "lite" else REQUIRED_RUNS
+
+
 def utf8_stdio() -> None:
     """Case names and claude's output may be non-ASCII, whatever the locale's encoding."""
     for stream in (sys.stdout, sys.stderr):
@@ -417,13 +462,14 @@ def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
 
-def log_attempt(workspace: Path, step: str, error: str | None = None) -> None:
-    """Append `record` or `gate`, and the GateError that stopped it, to gate-attempts.jsonl: check_gate.py
-    --finish requires an UNSHIPPED build to have tried the gate."""
+def log_attempt(workspace: Path, step: str, error: str | None = None, **extra: object) -> None:
+    """Append `record`, `gate`, `rescore` or `panel`, and the GateError that stopped it, to gate-attempts.jsonl:
+    check_gate.py --finish requires an UNSHIPPED build to have tried the gate, and panel.py counts the skill hashes
+    its rounds started on there (a receipt file is overwritten; this log is only appended to)."""
     path = workspace / GATE_ATTEMPTS
     path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "a", encoding="utf-8") as fh:
-        fh.write(json.dumps({"at": now(), "step": step, "error": error}) + "\n")
+        fh.write(json.dumps({"at": now(), "step": step, "error": error, **extra}) + "\n")
 
 
 def read_attempts(workspace: Path) -> list[dict]:

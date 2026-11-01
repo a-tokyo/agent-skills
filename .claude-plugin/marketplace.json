@@ -38,6 +38,17 @@
             ]
           },
           {
+            "matcher": "Monitor",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/kill-guard\"",
+                "timeout": 10,
+                "onFailure": "continue"
+              }
+            ]
+          },
+          {
             "matcher": "Read",
             "hooks": [
               {
@@ -109,6 +120,17 @@
         "PreToolUse": [
           {
             "matcher": "Bash",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/kill-guard\"",
+                "timeout": 10,
+                "onFailure": "continue"
+              }
+            ]
+          },
+          {
+            "matcher": "Monitor",
             "hooks": [
               {
                 "type": "command",

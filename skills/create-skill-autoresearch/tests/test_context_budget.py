@@ -79,7 +79,7 @@ class ScriptHelpTest(unittest.TestCase):
 
     NEEDS = {
         "gate.py": ["--detach --wait --model", "record", "--restart", "--stop", "Exit codes", "124"],
-        "check_gate.py": ["--next", "NEXT:", "BUILD FINISHED", "--panel-receipt", "--consensus", "--finish", "--fast-path", "--loop", "--synthesis",
+        "check_gate.py": ["--next", "--profile lite", "NEXT:", "BUILD FINISHED", "--panel-receipt", "--consensus", "--finish", "--fast-path", "--loop", "--synthesis",
                           "verifier-a", "devils-advocate", "Exit codes"],
         "panel.py": ["check_gate.py --panel-receipt ROLE SCORES_JSON", "--consensus", "devils-advocate"],
         "rescore.py": ["--workspace", "ALREADY SCORED", "RESCORED", "Exit codes"],

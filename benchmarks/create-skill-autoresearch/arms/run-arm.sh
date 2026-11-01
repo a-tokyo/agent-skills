@@ -9,6 +9,11 @@
 #   FACTORY_DIR / COMPANIONS_DIR override where the factory arms load the skill and its companions;
 #   factory-v021 requires both (the pinned v0.2.1 archive, agent-skills commit 99652ee).
 #
+#   The factory arm (v0.3.x) runs a haiku builder on the factory's lite profile: the build's environment gets
+#   CSA_PROFILE=lite, which every factory script reads ahead of work/manifest.yaml, so the run does not depend on
+#   the builder choosing it. Other models and arms get no CSA_PROFILE (the full profile unless the builder sets
+#   one). meta.json records the profile.
+#
 #   HOST=cursor runs the builder with `cursor-agent -p --force --trust --output-format stream-json`
 #   instead of `claude -p` (model: CURSOR_MODEL, default per alias, Sonnet -> claude-sonnet-5-5-high).
 #   The skills go in the workspace's .agents/skills/ (Cursor's project skills dir) with the kill guard
@@ -87,6 +92,12 @@ if [ "$ARM" = "factory-v021" ] && { [ -z "${FACTORY_DIR:-}" ] || [ -z "${COMPANI
   echo "factory-v021 needs FACTORY_DIR and COMPANIONS_DIR (the pinned v0.2.1 archive)" >&2; exit 2
 fi
 FACTORY_DIR="${FACTORY_DIR:-$REPO/skills/create-skill-autoresearch}"
+PROFILE_ENV=()
+CSA_PROFILE_SET=""
+if [ "$ARM" = "factory" ] && [ "$MODEL_ALIAS" = "haiku" ]; then
+  CSA_PROFILE_SET="lite"
+  PROFILE_ENV=(CSA_PROFILE=lite)
+fi
 COMPANIONS_DIR="${COMPANIONS_DIR:-$BENCH/companions}"
 
 # auth precheck BEFORE any run-dir creation (containment hides the interactive login;
@@ -244,6 +255,7 @@ if [ "$HOST" = "cursor" ]; then
     USER="${USER:-}" LOGNAME="${LOGNAME:-}" TMPDIR="${TMPDIR:-/tmp}" \
     TERM="${TERM:-dumb}" LANG="${LANG:-en_US.UTF-8}" SHELL="${SHELL:-/bin/bash}" \
     GIT_CONFIG_GLOBAL="$GIT_CONFIG_GLOBAL" GIT_CEILING_DIRECTORIES="$GIT_CEILING_DIRECTORIES" \
+    ${PROFILE_ENV[@]+"${PROFILE_ENV[@]}"} \
     "$CURSOR_BIN" -p "$(cat "$RUN/prompt.txt")" \
     --model "$CURSOR_MODEL" --force --trust --output-format stream-json \
   ) <"/dev/null" >"$RUN/transcript.txt" 2>&1
@@ -264,7 +276,7 @@ write_claude_shim "$RUN/bin/claude" "$REAL_CLAUDE" "$RUN/claude-calls.log" "$GUA
     XDG_CONFIG_HOME="$XDG_CONFIG_HOME" XDG_CACHE_HOME="$XDG_CACHE_HOME" XDG_DATA_HOME="$XDG_DATA_HOME" \
     GIT_CONFIG_GLOBAL="$GIT_CONFIG_GLOBAL" GIT_CEILING_DIRECTORIES="$GIT_CEILING_DIRECTORIES" \
     CLAUDE_CODE_OAUTH_TOKEN="${CLAUDE_CODE_OAUTH_TOKEN:-}" ANTHROPIC_API_KEY="${ANTHROPIC_API_KEY:-}" \
-    DISABLE_AUTOUPDATER=1 \
+    DISABLE_AUTOUPDATER=1 ${PROFILE_ENV[@]+"${PROFILE_ENV[@]}"} \
     claude -p "$(cat "$RUN/prompt.txt")" \
     --model "$MODEL_ID" \
     --dangerously-skip-permissions \
@@ -321,8 +333,8 @@ OUT_TOKENS="$(token_field output_tokens)"
 # ---------- meta + results row ----------
 CLAUDE_ON_PATH=true
 [ "$HOST" = "cursor" ] && CLAUDE_ON_PATH=false
-printf '{ "run_id": "%s", "task": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "host": "%s", "claude_on_path": %s, "home_isolated": %s, "exit_code": %s, "wall_seconds": %s, "env_failure": %s, "tokens": %s }\n' \
-  "$RUN_ID" "$TASK_NAME" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$HOST" "$CLAUDE_ON_PATH" "$HOME_ISOLATED" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" "$TOKENS" > "$RUN/meta.json"
+printf '{ "run_id": "%s", "task": "%s", "arm": "%s", "model": "%s", "model_id": "%s", "host": "%s", "profile": "%s", "claude_on_path": %s, "home_isolated": %s, "exit_code": %s, "wall_seconds": %s, "env_failure": %s, "tokens": %s }\n' \
+  "$RUN_ID" "$TASK_NAME" "$ARM" "$MODEL_ALIAS" "$MODEL_ID" "$HOST" "${CSA_PROFILE_SET:-default}" "$CLAUDE_ON_PATH" "$HOME_ISOLATED" "$EXIT_CODE" "$WALL" "$ENV_FAILURE" "$TOKENS" > "$RUN/meta.json"
 RESULTS="$BENCH/results/runs.csv"
 mkdir -p "$BENCH/results"
 [ -f "$RESULTS" ] || echo "run_id,arm,model,exit_code,wall_seconds,env_failure,task,input_tokens,output_tokens" > "$RESULTS"

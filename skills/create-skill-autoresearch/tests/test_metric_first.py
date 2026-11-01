@@ -96,17 +96,51 @@ class MetricFirstTest(MetricFirstFixture):
         loop = self.run_script("check_gate.py", "--loop").stdout
         self.assertTrue(loop.startswith("LOOP DONE:"), "a review's ITERATE never reopens the Phase 4 loop: " + loop)
 
+    def assert_no_regate(self) -> None:
+        """gate.py refuses to start and prints the UNSHIPPED instruction --next gives."""
+        out = self.run_script("gate.py", "--model", "m")
+        self.assertEqual(out.returncode, 3, out.stdout + out.stderr)
+        self.assertIn("gate: not started: the panel already ran its 1 round(s)", out.stderr)
+        self.assertIn("`Verdict: UNSHIPPED`", out.stdout)
+        self.assertIn(out.stdout.strip(), self.run_script("check_gate.py", "--next").stdout.strip())
+        self.assertEqual(self.run_script("gate.py", "--detach", "--wait", "--model", "m").returncode, 3)
+
     def test_one_review_round_then_a_changed_skill_ends_unshipped(self) -> None:
         self.log(0.91)
         self.gate()
         consensus, _ = self.panel()
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Edited.\n---\n# Demo\n")
-        self.gate()
+        self.assert_no_regate()
         out = self.run_script("check_gate.py", "--panel")
         self.assertEqual(out.returncode, 1)
         self.assertIn("PANEL ROUNDS EXHAUSTED: the panel ran its 1 rounds", out.stdout)
         self.assertIn("lacks the last round's PANEL CONSENSUS line", self.finish("UNSHIPPED")["reason"])
         self.assertTrue(self.finish("UNSHIPPED", consensus)["finished"])
+
+    def test_a_round_with_receipts_only_counts_once_the_skill_changes(self) -> None:
+        """r19-t2-haiku-3: receipts without a consensus, an edit, a re-gate, receipts again: four panel rounds on a
+        one-round path. The first receipt starts the round; it survives being overwritten."""
+        self.log(0.91)
+        self.gate()
+        self.assertEqual(self.submit("verifier-a", (5, 5)).returncode, 0)
+        skill = self.ws / "output" / "demo" / "SKILL.md"
+        skill.write_text("---\nname: demo\ndescription: Edited.\n---\n# Demo\n")
+        self.assert_no_regate()
+        out = self.submit("verifier-a", (9, 9))
+        self.assertEqual(out.returncode, 1)
+        self.assertIn("PANEL ROUNDS EXHAUSTED", out.stdout)
+        (self.ws / "work" / "experiments" / "panel" / "verifier-a.json").unlink()
+        self.assert_no_regate()
+        self.assertTrue(self.finish("UNSHIPPED")["finished"], "no consensus line to copy: none was written")
+        skill.write_text("---\nname: demo\ndescription: Demo.\n---\n# Demo\n")
+        self.assertNotIn("Verdict: UNSHIPPED", self.run_script("check_gate.py", "--next").stdout,
+                         "the reviewed version restored: the round goes on")
+
+    def test_the_gate_runs_freely_before_the_panel(self) -> None:
+        self.log(0.91)
+        self.gate()
+        (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Edited.\n---\n# Demo\n")
+        self.gate()
 
     def test_checkable_below_target_caps_or_unships(self) -> None:
         for metric, validation, allowed in ((0.80, None, "SHIP WITH CAVEATS"), (0.70, None, "UNSHIPPED"),

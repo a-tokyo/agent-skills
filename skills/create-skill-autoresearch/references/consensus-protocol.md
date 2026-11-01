@@ -51,6 +51,12 @@ Phase 4: Resolution
 | **Verifier-B** | Utility Assessor | Real-world usability, edge cases, integration, developer experience | Neutral |
 | **Devil's Advocate** | Adversarial Challenger | Failure modes, hidden assumptions, missing constraints, drift risk | Explicitly negative |
 
+**Lite profile** (small builder models; `check_gate.py --next --profile lite`, verdict-rules.json `lite`): the
+panel is one **Reviewer** (`reviewer`, [panel/reviewer.md](panel/reviewer.md)) running the three focuses in turn
+and holding the Devil's Advocate's escalation and veto. No synthesis round: its receipt is the consensus, a single
+score below `block_below` blocks, and the panel-verdict path allows one ITERATE (`max_panel_rounds` 2); metric-first
+keeps its one round. The scripts accept the reviewer only under the lite profile, and the three roles only without it.
+
 ### Context Wall
 
 Panel members receive ONLY:

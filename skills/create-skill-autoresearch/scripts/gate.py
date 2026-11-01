@@ -49,7 +49,7 @@ from gate_common import (  # noqa: E402
     BASELINE_CACHE, DATA_SPLIT, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, PLUGIN_DIR, REQUIRED_RUNS, RUN_CASE,
     GateError, baseline_key, baseline_path, cases_sha256, check_skill_name, file_sha256, inputs_sha256,
     model_invoked, now, omitted_gold, read_baseline, read_data_split, read_json, resolve_skill,
-    log_attempt, skill_sha256, split_sha256, utf8_stdio, write_gate_cases, write_json,
+    log_attempt, profile, required_runs, skill_sha256, split_sha256, utf8_stdio, write_gate_cases, write_json,
 )
 
 EXIT_INVALID, EXIT_PRECONDITION, EXIT_STOPPED = 1, 3, 143
@@ -383,7 +383,8 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
         artifact = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         record = {"mode": mode, "backend": args.backend or default_backend(), "plugin_eval_available": available,
                   "model_invoked": invoked, "force_manual": args.force_manual, "fresh_baseline": args.fresh_baseline,
-                  "skill": skill, "model": args.model, "runs": args.runs, "in_sample": args.in_sample,
+                  "skill": skill, "model": args.model, "runs": args.runs, "profile": profile(ws),
+                  "in_sample": args.in_sample,
                   "executor": args.executor, "cases": cases, "artifact": artifact.as_posix(),
                   "backend_arg": args.backend, "allow_tools": args.allow_tools, "jobs": args.jobs,  # check_gate --next
                   "options_sha256": options_sha256(args),
@@ -512,6 +513,18 @@ def _settled(ws: Path, args: argparse.Namespace) -> bool:
     return check_gate.validate(ws, args.skill).code not in RERUN_CODES
 
 
+def panel_spent(ws: Path) -> bool:
+    """Metric-first: the panel's one round started (its first receipt) and the skill changed since, so no gate
+    can change the verdict and none starts. Prints the UNSHIPPED instruction check_gate.py --next gives."""
+    if not check_gate.panel.checkable(ws) or check_gate.panel.exhausted(ws) is None:
+        return False  # the panel-verdict path keeps its ITERATE re-gates up to max_panel_rounds
+    print(f"gate: not started: the panel already ran its {check_gate.panel.max_rounds(ws)} round(s) and output/ "
+          "changed since, so no gate run changes the verdict (5.4: edit nothing after the panel). The build ends "
+          "UNSHIPPED:", file=sys.stderr)
+    print(check_gate.next_action(ws).render())
+    return True
+
+
 def supervise(ws: Path, args: argparse.Namespace) -> int:
     """Start the gate as the owned job `gate` (stopping a live one first with --restart), then wait for it
     unless --detach or --restart is given without --wait. `--detach --wait` never starts a second gate: it waits
@@ -532,6 +545,8 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
                 print(verdict.line())
                 return 0 if verdict.valid else EXIT_INVALID
             return wait_gate(ws, args.wait_timeout, verbose=args.verbose)
+    if not live and panel_spent(ws):
+        return EXIT_PRECONDITION
     if live and not args.restart:
         print(f"gate: a `{JOB}` job is already running (pgid {live['pgid']}, log {live['log']}).\n"
               f"  wait:      {WAIT_HINT.format(ws=ws)}\n"
@@ -589,7 +604,8 @@ def main(argv: list[str] | None = None) -> int:
     add("--backend", choices=["plugin", "manual"], help="default: plugin inside Claude Code when it can run, else manual")
     add("--force-manual", metavar="'<host>: <reason>'", help="with --backend manual, on another host inheriting $CLAUDECODE")
     add("--model", help="the model the skill targets, pinned for both arms (required to start a gate)")
-    add("--runs", type=int, default=REQUIRED_RUNS, help=f"runs per arm per case (default and required {REQUIRED_RUNS})")
+    add("--runs", type=int, help=f"runs per arm per case (default and required: {REQUIRED_RUNS}; the lite profile "
+                                 "2, verdict-rules.json lite runs_per_arm)")
     add("--jobs", type=int, default=DEFAULT_JOBS, help=f"concurrent runs, 1-8 (default {DEFAULT_JOBS})")
     add("--allow-tools", nargs="+", default=["Bash", "Write"], help="plugin mode: gated tools (default: Bash Write)")
     add("--in-sample", action="store_true", help="the gate cases are also training cases (3-9 gold standards)")
@@ -624,10 +640,11 @@ def main(argv: list[str] | None = None) -> int:
     bare_wait = args.wait and not (args.detach or args.restart)
     if not (args.stop or bare_wait) and not args.model:
         parser.error("--model is required (except with --stop or a bare --wait)")
+    ws = args.workspace.resolve()
+    args.runs = required_runs(ws) if args.runs is None else args.runs
     if args.runs < 1 or not 1 <= args.jobs <= 8:
         parser.error("--runs must be >= 1 and --jobs 1-8")
 
-    ws = args.workspace.resolve()
     sdir = run_owned.state_dir(ws)
     try:
         if args.stop:

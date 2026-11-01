@@ -16,6 +16,7 @@ description: >-
 # Create Skill via Autoresearch Factory
 
 The main session runs every phase itself. On entering a phase, read that phase's reference (Detail) and not before.
+**Small or fast model** (Haiku, Flash, mini)? Once 1.6 writes the manifest, run `check_gate.py --next --profile lite` once: every script then reads the lite profile (`CSA_PROFILE=lite` forces it).
 
 | Phase | What happens | Who | Detail |
 |---|---|---|---|
@@ -46,12 +47,11 @@ named below serves one branch: read it only when that branch applies.
 | `claude plugin eval` | 3.6 suite, 5.0 gate | the manual protocol (5.0) |
 
 Read [references/standalone-fallback.md](references/standalone-fallback.md) only when skill-creator or writing-for-agents is missing.
-Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>`; on Windows, run inside WSL.
+Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>` (Windows: inside WSL).
 Read [references/hosts.md](references/hosts.md) only when the host is not Claude Code, its hooks need installing, or a panel role runs on another host's CLI.
 
-Hooks (`hooks/`) back these rules in a build: the kill guard (pattern kills; as the loop guard, the Phase 4 metric
-after `check_gate.py --loop` says done), the subagent guard (background subagents) and the finish guard (sends the
-main session back while `check_gate.py --finish` fails).
+Hooks (`hooks/`) back these rules in a build (kill, loop, poll, subagent and finish guards); a denial names what to
+run instead.
 
 ## Subagents
 
@@ -87,8 +87,8 @@ Read [references/evaluate-templates.md](references/evaluate-templates.md) only w
 Read [references/authoring-rules.md](references/authoring-rules.md) only when a 3.3 rule needs its example or rationale.
 
 **One status command.** From 3.5 on, at each phase boundary, run it and do what it prints: `NEXT: <what>` and the
-exact command(s), or `BUILD FINISHED: verdict <V>`, the end. It runs every check that applies (fast path, loop,
-rescore, gate, panel, consensus, finish); no `--help` needed.
+exact command(s), or `BUILD FINISHED: verdict <V>`, the end. It runs every check that applies; no `--help`
+needed.
 
 ```bash
 python3 <skill-dir>/scripts/check_gate.py --next
@@ -112,7 +112,7 @@ and no gate is live (3.6 and 5.0 run even for `UNSHIPPED`).
 ### 5.2 Panel Evaluation
 
 `--next` validates the gate and names the panel round. Then spawn 3 verifier subagents **in parallel** (one
-message), one agent per role. Each gets ONLY the skill's SKILL.md (a reference only when it asks for one by name),
+message), one agent per role (lite: one `reviewer`, as `--next` prints). Each gets ONLY the skill's SKILL.md (a reference only when it asks for one by name),
 the gold standards, the rubric and the premortem risks: never research notes, `autoresearch.jsonl` or builder context. The roles (`<role>`): Verifier-A, quality (`verifier-a`); Verifier-B, utility (`verifier-b`);
 Devil's Advocate, adversarial, always tries to smuggle an instruction in through content the skill fetches
 (`devils-advocate`). Each member's prompt gives its role, the input paths, the

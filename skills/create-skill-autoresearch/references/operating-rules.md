@@ -8,8 +8,8 @@ directory the factory's SKILL.md was loaded from.
 **Scripts** run as `python3 <skill-dir>/scripts/<name>.py` (Python 3.9+, stdlib; macOS, Linux or WSL). Their
 `--help` is the manual; `panel.py` is a library `check_gate.py` runs.
 
-**Background jobs** (eval runs, `until` loops) go through `run_owned.py start <name> -- <cmd...>`, then
-`wait <name>` / `stop <name>`. Stop only what you started, by its recorded name: a name-pattern kill (`pkill`,
+**Long jobs** go through `run_owned.py start <name> --wait -- <cmd...>` (on exit 124 re-issue it; never poll),
+then `stop <name>`. Stop only what you started, by its recorded name: a name-pattern kill (`pkill`,
 `killall`, a process listing and a kill in one call) also hits sibling builds and the user's processes.
 
 **Unattended runs** (a brief, no user at the terminal): where a step asks to confirm, adopt the brief's answer or the

@@ -274,5 +274,44 @@ class RunOwnedTest(TempWorkspace):
         self.run_script("run_owned.py", "stop", "once")
 
 
+class StartWaitTest(TempWorkspace):
+    """`start --wait`: one command for a long run; re-issued, it re-attaches instead of starting a second run."""
+
+    def counted(self, seconds: float) -> list[str]:
+        return py(f"import time; open('runs.log', 'a').write('run\\n'); time.sleep({seconds}); print('done'); raise SystemExit(5)")
+
+    def runs(self) -> int:
+        return len((self.ws / "runs.log").read_text().splitlines())
+
+    def test_re_issued_it_re_attaches_and_reports_once(self) -> None:
+        cmd = self.counted(2)
+        out = self.run_script("run_owned.py", "start", "ev", "--wait", "--timeout", "0.5", "--", *cmd)
+        self.assertEqual(out.returncode, 124, out.stderr)
+        self.assertIn("re-issue the same command", out.stderr)
+        out = self.run_script("run_owned.py", "start", "ev", "--wait", "--", *cmd)
+        self.assertEqual(out.returncode, 5, out.stderr)
+        self.assertIn("re-attached", out.stderr)
+        self.assertIn("done", out.stdout, "the job's log is printed when it ends")
+        self.assertEqual(self.runs(), 1)
+        out = self.run_script("run_owned.py", "start", "ev", "--wait", "--", *self.counted(0))
+        self.assertEqual((out.returncode, self.runs()), (5, 2), "a reported result: the next call runs afresh")
+
+    def test_an_unseen_result_is_reported_instead_of_a_second_run(self) -> None:
+        cmd = self.counted(1)
+        self.assertEqual(self.run_script("run_owned.py", "start", "ev", "--wait", "--timeout", "0.1", "--",
+                                         *cmd).returncode, 124)
+        self.assertEqual(self.run_script("run_owned.py", "wait", "ev", "--timeout", "30").returncode, 5)
+        out = self.run_script("run_owned.py", "start", "ev", "--wait", "--", *cmd)
+        self.assertEqual((out.returncode, self.runs()), (5, 1), out.stderr)
+        self.assertIn("ended since the last call", out.stderr)
+
+    def test_a_running_job_with_another_command_is_refused(self) -> None:
+        self.assertEqual(self.run_script("run_owned.py", "start", "ev", "--", *SLEEP).returncode, 0)
+        out = self.run_script("run_owned.py", "start", "ev", "--wait", "--", *TRUE)
+        self.assertEqual(out.returncode, 3)
+        self.assertIn("running another command", out.stderr)
+        self.run_script("run_owned.py", "stop", "ev")
+
+
 if __name__ == "__main__":
     unittest.main()

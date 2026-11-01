@@ -193,6 +193,42 @@ class RescoreTest(MetricFirstFixture):
         return lines + [""] * (3 - len(lines))
 
 
+class RescoreBlocksTest(RescoreTest):
+    """rescore.py scores in the owned job `rescore`: a call cut off at --wait-timeout exits 124, and the same command
+    again re-attaches to that job instead of scoring twice."""
+
+    def test_a_re_issue_re_attaches_and_scores_once(self) -> None:
+        path = self.ws / "work" / "evaluation" / "evaluate.sh"
+        path.write_text(EVALUATE.replace("echo run >> runs.log", "echo run >> runs.log; sleep 2"))
+        self.git("add", "-A")
+        self.git("commit", "-q", "-m", "slow metric")
+        out = self.run_script("rescore.py", "--wait-timeout", "1")
+        self.assertEqual(out.returncode, 124, out.stdout + out.stderr)
+        self.assertIn("issue the same command again", out.stderr)
+        self.assertIn("never poll", out.stderr)
+        out = self.run_script("rescore.py")
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        self.assertIn("re-attached", out.stderr)
+        self.assertIn("RESCORED: experiment 1", out.stdout)
+        self.assertEqual(self.runs(), 3, "one scoring run: the metric and two held-out cases")
+        out = self.run_script("rescore.py")
+        self.assertIn("ALREADY SCORED", out.stdout)
+        self.assertEqual(self.runs(), 3)
+
+    def test_a_result_no_call_saw_is_reported_once(self) -> None:
+        (self.ws / "judge-down").write_text("")
+        out = self.run_script("rescore.py", "--wait-timeout", "0.01")
+        self.assertEqual(out.returncode, 124, out.stdout + out.stderr)
+        self.assertEqual(self.run_script("run_owned.py", "wait", "rescore", "--timeout", "30").returncode, 1)
+        out = self.run_script("rescore.py")
+        self.assertEqual(out.returncode, 1, out.stdout + out.stderr)
+        self.assertIn("ended since the last call", out.stderr)
+        self.assertIn("CANNOT RESCORE", out.stdout)
+        (self.ws / "judge-down").unlink()
+        out = self.run_script("rescore.py")
+        self.assertIn("RESCORED", out.stdout, "the failure was reported; the next call scores afresh")
+
+
 class RescoreHelpTest(unittest.TestCase):
     def test_help_names_what_it_does_and_its_exit_codes(self) -> None:
         out = subprocess.run([sys.executable, "-B", str(SCRIPTS / "rescore.py"), "--help"], capture_output=True,

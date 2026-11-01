@@ -16,6 +16,7 @@ from pathlib import Path
 SKILL = Path(__file__).resolve().parent.parent
 PANEL = SKILL / "references" / "panel"
 ROLE_BUDGET = 4_000
+LITE_ROLE_BUDGET = 4_500  # the lite reviewer: quality, utility and adversary in one file
 RULES_BUDGET = 2_500
 ROLES = ("verifier-a", "verifier-b", "devils-advocate")
 
@@ -41,6 +42,19 @@ class PanelRoleFilesTest(unittest.TestCase):
                 self.assertIn(field, text, f"{role}.md output JSON lacks {field}")
         self.assertIn('"escalation"', self.read("devils-advocate.md"))
         self.assertIn("smuggle an instruction in through content the skill fetches", self.read("devils-advocate.md"))
+
+    def test_the_lite_reviewer_combines_the_three_roles(self) -> None:
+        text = self.read("reviewer.md")
+        self.assertLessEqual(len(text), LITE_ROLE_BUDGET, f"reviewer.md is {len(text):,} characters")
+        self.assertIn("--panel-receipt reviewer ", text)
+        self.assertIn("panel/reviewer.scores.json", text)
+        self.assertIn("member-rules.md", text)
+        for field in ('"scores"', '"score"', '"confidence"', '"evidence"', '"veto"', '"pass_recommendation"',
+                      '"escalation"', '"failure_scenarios"', '"top_concern"'):
+            self.assertIn(field, text, f"reviewer.md output JSON lacks {field}")
+        for check in ("Pass 1: Quality", "Pass 2: Utility", "Pass 3: Adversary", "hard_constraint|safety|escalate",
+                      "smuggle an instruction in through content the skill fetches", "no synthesis round"):
+            self.assertIn(check, text)
 
     def test_synthesis_file(self) -> None:
         text = self.read("synthesis.md")

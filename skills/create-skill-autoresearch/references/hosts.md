@@ -12,6 +12,7 @@ marks what the factory's own tests or benchmark ran.
 - Headless runs, judges and executors
 - Subagents
 - Gate wait
+- Poll guard
 - Kill guard (and the loop guard)
 - Read guard
 - Subagent guard
@@ -76,6 +77,28 @@ shrank `--wait-timeout` to fit it, and polled (26 exit-124 calls over 30 builds)
 | Cursor, Codex, OpenCode | give the shell call its longest timeout and `--wait-timeout` 30 s under it; re-issue the same command on 124 | untested; their shell limits are not recorded here |
 
 `check_gate.py --next` prints the command with this note, and a still-running exit repeats it in one line.
+`rescore.py` and `run_owned.py start <name> --wait` block and re-attach the same way (owned jobs `rescore` and
+`<name>`). On Claude Code the kill guard's PreToolUse hook gives every call to this factory's scripts or a build's
+`work/evaluation/*.sh` `timeout` 600000 and `run_in_background` false itself, through `updatedInput` (verified
+against the 2.1.x source: the hook's object replaces the tool input, so it echoes the other fields). Live check on
+2026-11-01 (Claude Code 2.1.316, Haiku 5.5, no timeout in the call): a 130 s `evaluate.sh` finished in the foreground
+with the plugin loaded, and without it moved to the background at 120 s. A host that ignores `updatedInput` keeps
+the call's own timeout, and the scripts' exit 124 line says to issue the command again.
+
+## Poll guard
+
+While a job the build owns runs (`gate`, `rescore`, a `run_owned.py start <name> --wait` run: a running record in
+`work/pids/`), the kill guard denies the build's main session a Bash sleep or poll loop (`sleep N`, `until ...; do`,
+`while ...; do ... sleep`, `while kill -0`) and, on Claude Code, the Monitor tool (its own `PreToolUse` matcher in
+`hooks/hooks.json`). The message names the command that blocks on that job (`gate.py --wait`, `rescore.py`,
+`run_owned.py wait <name>`). r19 Haiku builders polled a running gate with Monitor or sleep loops dozens of times a
+build, each poll re-reading the whole context. Subagents (`agent_id`) and executor sessions (`CSA_EXECUTOR`) may poll.
+
+| Host | Hook | Status |
+|---|---|---|
+| Claude Code | the kill guard on `Bash` and `Monitor` | tested offline |
+| Cursor | the kill guard's `beforeShellExecution` (shell polls only) | contract tested offline |
+| Codex | the kill guard's `PreToolUse` (shell polls only) | contract tested offline; untested in Codex |
 
 ## Kill guard
 
