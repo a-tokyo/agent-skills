@@ -77,6 +77,7 @@ class FinishGuardTest(unittest.TestCase):
         self.assertEqual(reply["decision"], "block")
         self.assertIn(f"{self.ws}: BUILD UNFINISHED: no BENCHMARK.md at the build root", reply["reason"])
         self.assertIn("check_gate.py --finish", reply["reason"])
+        self.assertIn("check_gate.py --next --workspace <build>", reply["reason"], "the send-back names the one next step")
         self.assertEqual(self.hook(stop(self.ws, active=True)), {}, "never twice in a row: stop_hook_active")
         [logged] = (self.ws / "work" / "experiments" / "finish-guard.jsonl").read_text().splitlines()
         self.assertIn("no BENCHMARK.md", json.loads(logged)["reason"])

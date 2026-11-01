@@ -76,11 +76,11 @@ def unfinished(roots: list[Path]) -> list[tuple[Path, str]]:
 
 
 def message(found: list[tuple[Path, str]]) -> str:
-    finish = f"python3 {SCRIPTS / 'check_gate.py'} --finish"
-    lines = [f"create-skill-autoresearch: the build is not finished. `{finish}` says:"]
+    nxt = f"python3 {SCRIPTS / 'check_gate.py'} --next"
+    lines = ["create-skill-autoresearch: the build is not finished (check_gate.py --finish):"]
     lines += [f"- {ws}: BUILD UNFINISHED: {reason}" for ws, reason in found]
-    lines.append("Carry Phase 5 through 5.4 now (SKILL.md 5.1): do what it names, then re-run that command "
-                 "(--workspace <build>) until it exits 0. If this turn is waiting on the user's answer to a "
+    lines.append(f"Carry Phase 5 through 5.4 now (SKILL.md 5.1): run `{nxt} --workspace <build>` and do what it "
+                 "prints until it says BUILD FINISHED. If this turn is waiting on the user's answer to a "
                  "question, end it again with that question.")
     return "\n".join(lines)
 
