@@ -1,0 +1,22 @@
+{
+  "role": "verifier-b",
+  "skill": "demo",
+  "skill_sha256": "ff6b40b8d1493e0b8ce20c59aa5febded3176b92ff94b08a7cef4311e0a953db",
+  "rubric_sha256": "1c38559e2045ee9f4b0ca484fb5858c553a75861fc13ff83531d94b65fb82dc0",
+  "round": 1,
+  "scores": {
+    "correctness": {
+      "score": 8,
+      "confidence": 0.9,
+      "evidence": "Demo."
+    },
+    "clarity": {
+      "score": 8,
+      "confidence": 0.9,
+      "evidence": "Demo."
+    }
+  },
+  "recommendation": "SHIP WITH CAVEATS",
+  "escalate": null,
+  "written": "2026-10-19T22:40:33+00:00"
+}

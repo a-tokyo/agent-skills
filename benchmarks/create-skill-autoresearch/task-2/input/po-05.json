@@ -1,0 +1,31 @@
+{
+  "site_code": "DE-BER",
+  "cost_center": "CC-5100",
+  "lines": [
+    {
+      "sku": "DES-529A",
+      "vendor_id": "V001",
+      "qty": 4,
+      "unit_price_eur": 565.62,
+      "line_total_eur": 2262.48
+    },
+    {
+      "sku": "CHA-967B",
+      "vendor_id": "V002",
+      "qty": 6,
+      "unit_price_eur": 411.64,
+      "line_total_eur": 2469.84
+    },
+    {
+      "sku": "CON-495B",
+      "vendor_id": "V001",
+      "qty": 2,
+      "unit_price_eur": 923.24,
+      "line_total_eur": 1846.48
+    }
+  ],
+  "total_eur": 6578.8,
+  "approval": "manager",
+  "it_review": false,
+  "exceptions": []
+}

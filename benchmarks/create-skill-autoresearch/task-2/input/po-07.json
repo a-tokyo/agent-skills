@@ -1,0 +1,24 @@
+{
+  "site_code": "PT-LIS",
+  "cost_center": "CC-5100",
+  "lines": [
+    {
+      "sku": "DES-237B",
+      "vendor_id": "V005",
+      "qty": 4,
+      "unit_price_eur": 154.67,
+      "line_total_eur": 618.68
+    },
+    {
+      "sku": "WEB-230B",
+      "vendor_id": "V014",
+      "qty": 1,
+      "unit_price_eur": 71.7,
+      "line_total_eur": 71.7
+    }
+  ],
+  "total_eur": 690.38,
+  "approval": "manager",
+  "it_review": true,
+  "exceptions": []
+}

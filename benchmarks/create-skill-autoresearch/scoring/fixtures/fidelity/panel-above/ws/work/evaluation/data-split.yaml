@@ -1,0 +1,5 @@
+training: [gold-01]
+plugin_eval_available: 0
+plugin_eval:
+  - "gold-01"
+  - "near-miss"

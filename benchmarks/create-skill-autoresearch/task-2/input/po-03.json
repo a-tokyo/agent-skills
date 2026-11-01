@@ -1,0 +1,29 @@
+{
+  "site_code": "ES-MAD",
+  "cost_center": "CC-1100",
+  "lines": [
+    {
+      "sku": "CHA-967B",
+      "vendor_id": "V002",
+      "qty": 3,
+      "unit_price_eur": 411.64,
+      "line_total_eur": 1234.92
+    },
+    {
+      "sku": "HDM-317A",
+      "vendor_id": "V014",
+      "qty": 11,
+      "unit_price_eur": 7.31,
+      "line_total_eur": 80.41
+    }
+  ],
+  "total_eur": 1315.33,
+  "approval": "manager",
+  "it_review": false,
+  "exceptions": [
+    {
+      "code": "QTY_ROUNDED",
+      "detail": "HDM-317A 2->10"
+    }
+  ]
+}

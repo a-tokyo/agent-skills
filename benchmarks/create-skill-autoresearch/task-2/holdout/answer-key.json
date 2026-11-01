@@ -1,0 +1,172 @@
+{
+  "h1": {
+    "input": "request-h1.md",
+    "expected": {
+      "site_code": "LIS-2",
+      "cost_center": "CC-7210",
+      "lines": [
+        {
+          "sku": "HEA-205C",
+          "vendor_id": "V011",
+          "qty": 3,
+          "unit_price_eur": 155.11,
+          "line_total_eur": 465.33
+        },
+        {
+          "sku": "WEB-171B",
+          "vendor_id": "V013",
+          "qty": 2,
+          "unit_price_eur": 59.81,
+          "line_total_eur": 119.62
+        },
+        {
+          "sku": "DES-271B",
+          "vendor_id": "V010",
+          "qty": 1,
+          "unit_price_eur": 152.14,
+          "line_total_eur": 152.14
+        }
+      ],
+      "total_eur": 737.09,
+      "approval": "auto",
+      "it_review": true,
+      "exceptions": []
+    }
+  },
+  "h2": {
+    "input": "request-h2.md",
+    "expected": {
+      "site_code": "BER-1",
+      "cost_center": "CC-8800",
+      "lines": [
+        {
+          "sku": "DES-209B",
+          "vendor_id": "V011",
+          "qty": 2,
+          "unit_price_eur": 627.28,
+          "line_total_eur": 1254.56
+        },
+        {
+          "sku": "TON-670A",
+          "vendor_id": "V013",
+          "qty": 6,
+          "unit_price_eur": 35.62,
+          "line_total_eur": 213.72
+        }
+      ],
+      "total_eur": 1468.28,
+      "approval": "manager",
+      "it_review": false,
+      "exceptions": [
+        {
+          "code": "VENDOR_BLOCKED",
+          "detail": "meeting room projector"
+        },
+        {
+          "code": "QTY_ROUNDED",
+          "detail": "TON-670A 1->5"
+        }
+      ]
+    }
+  },
+  "h3": {
+    "input": "request-h3.md",
+    "expected": {
+      "site_code": "LON-3",
+      "cost_center": "CC-7110",
+      "lines": [
+        {
+          "sku": "LAP-594B",
+          "vendor_id": "V012",
+          "qty": 8,
+          "unit_price_eur": 1444.01,
+          "line_total_eur": 11552.08
+        },
+        {
+          "sku": "DOC-300A",
+          "vendor_id": "V010",
+          "qty": 12,
+          "unit_price_eur": 156.28,
+          "line_total_eur": 1875.36
+        },
+        {
+          "sku": "TRA-924B",
+          "vendor_id": "V014",
+          "qty": 1,
+          "unit_price_eur": 91.46,
+          "line_total_eur": 91.46
+        }
+      ],
+      "total_eur": 13518.9,
+      "approval": "director",
+      "it_review": true,
+      "exceptions": []
+    }
+  },
+  "h4": {
+    "input": "request-h4.md",
+    "expected": {
+      "site_code": "MAD-1",
+      "cost_center": "CC-7510",
+      "lines": [
+        {
+          "sku": "MON-471B",
+          "vendor_id": "V001",
+          "qty": 1,
+          "unit_price_eur": 264.47,
+          "line_total_eur": 264.47
+        },
+        {
+          "sku": "PDF-582A",
+          "vendor_id": "V004",
+          "qty": 1,
+          "unit_price_eur": 53.03,
+          "line_total_eur": 53.03
+        },
+        {
+          "sku": "CON-112B",
+          "vendor_id": "V014",
+          "qty": 1,
+          "unit_price_eur": 950.22,
+          "line_total_eur": 950.22
+        }
+      ],
+      "total_eur": 1267.72,
+      "approval": "manager",
+      "it_review": true,
+      "exceptions": [
+        {
+          "code": "ITEM_NOT_FOUND",
+          "detail": "3d printer"
+        }
+      ]
+    }
+  },
+  "h5": {
+    "input": "request-h5.md",
+    "expected": {
+      "site_code": "OPO-1",
+      "cost_center": "CC-7310",
+      "lines": [
+        {
+          "sku": "TRA-924B",
+          "vendor_id": "V014",
+          "qty": 6,
+          "unit_price_eur": 91.46,
+          "line_total_eur": 548.76
+        },
+        {
+          "sku": "HEA-205C",
+          "vendor_id": "V011",
+          "qty": 1,
+          "unit_price_eur": 155.11,
+          "line_total_eur": 155.11
+        }
+      ],
+      "total_eur": 703.87,
+      "approval": "manager",
+      "it_review": true,
+      "exceptions": []
+    }
+  }
+}

@@ -1,0 +1,15 @@
+vendor_id,name,status,contract_discount_pct
+V001,Atlas Supply 01,active,0
+V002,Nordic Partners 02,blocked,0
+V003,Atlas Office 03,active,0
+V004,Delta Partners 04,active,0
+V005,Atlas Trading 05,active,12.5
+V006,Orion Trading 06,active,0
+V007,Atlas Office 07,active,5
+V008,Nordic Trading 08,active,0
+V009,Kestrel Office 09,blocked,0
+V010,Nordic Supply 10,active,0
+V011,Nordic Office 11,active,0
+V012,Delta Supply 12,active,0
+V013,Kestrel Office 13,active,10
+V014,Atlas Supply 14,active,0

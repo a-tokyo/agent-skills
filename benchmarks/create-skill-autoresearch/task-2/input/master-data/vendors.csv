@@ -1,0 +1,15 @@
+vendor_id,name,status,contract_discount_pct
+V001,Delta Partners 01,active,0
+V002,Delta Office 02,active,0
+V003,Kestrel Partners 03,active,10
+V004,Iberia Trading 04,blocked,0
+V005,Kestrel Office 05,active,0
+V006,Orion Partners 06,active,0
+V007,Iberia Supply 07,active,0
+V008,Delta Systems 08,active,10
+V009,Iberia Supply 09,active,0
+V010,Kestrel Supply 10,active,5
+V011,Kestrel Office 11,blocked,0
+V012,Delta Partners 12,active,0
+V013,Orion Trading 13,active,0
+V014,Kestrel Supply 14,active,0

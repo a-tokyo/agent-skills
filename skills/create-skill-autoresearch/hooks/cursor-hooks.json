@@ -1,0 +1,31 @@
+{
+  "version": 1,
+  "hooks": {
+    "beforeShellExecution": [
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/kill-guard\"",
+        "timeout": 10
+      }
+    ],
+    "beforeReadFile": [
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/read-guard\"",
+        "timeout": 10
+      }
+    ],
+    "preToolUse": [
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/finish-guard\" --subagent",
+        "matcher": "Task|CallDynamicTool",
+        "timeout": 10
+      }
+    ],
+    "stop": [
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/finish-guard\"",
+        "timeout": 30,
+        "loop_limit": 1
+      }
+    ]
+  }
+}

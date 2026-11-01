@@ -1,0 +1,98 @@
+{
+  "H-1": {
+    "input": "applicant-h1.md",
+    "expected": {
+      "dependency": "dependent",
+      "formula": "A",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": null,
+      "income_protection_allowance": 37720,
+      "payroll_tax_allowance": 14784,
+      "available_income": 111446,
+      "contribution_from_assets": 18036,
+      "contribution": 51761,
+      "sai": 55505
+    }
+  },
+  "H-2": {
+    "input": "applicant-h2.md",
+    "expected": {
+      "dependency": "independent",
+      "formula": "B",
+      "family_size": 2,
+      "max_pell_indicator": 3,
+      "min_pell_indicator": null,
+      "income_protection_allowance": 30470,
+      "payroll_tax_allowance": 2654,
+      "available_income": -7761,
+      "contribution_from_assets": 8200,
+      "contribution": -3881,
+      "sai": 0
+    }
+  },
+  "H-3": {
+    "input": "applicant-h3.md",
+    "expected": {
+      "dependency": "independent",
+      "formula": "C",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": 3,
+      "income_protection_allowance": 71040,
+      "payroll_tax_allowance": 7000,
+      "available_income": -909,
+      "contribution_from_assets": 3584,
+      "contribution": 589,
+      "sai": 589
+    }
+  },
+  "H-4": {
+    "input": "applicant-h4.md",
+    "expected": {
+      "dependency": "dependent",
+      "formula": null,
+      "family_size": null,
+      "max_pell_indicator": 1,
+      "min_pell_indicator": null,
+      "income_protection_allowance": null,
+      "payroll_tax_allowance": null,
+      "available_income": null,
+      "contribution_from_assets": null,
+      "contribution": null,
+      "sai": -1500
+    }
+  },
+  "H-5": {
+    "input": "applicant-h5.md",
+    "expected": {
+      "dependency": "dependent",
+      "formula": "A",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": null,
+      "income_protection_allowance": 37720,
+      "payroll_tax_allowance": 18819,
+      "available_income": 136361,
+      "contribution_from_assets": 11340,
+      "contribution": 60323,
+      "sai": 60403
+    }
+  },
+  "H-6": {
+    "input": "applicant-h6.md",
+    "expected": {
+      "dependency": "dependent",
+      "formula": "A",
+      "family_size": 3,
+      "max_pell_indicator": null,
+      "min_pell_indicator": 1,
+      "income_protection_allowance": 37720,
+      "payroll_tax_allowance": 0,
+      "available_income": -42420,
+      "contribution_from_assets": 1188,
+      "contribution": -1958,
+      "sai": -1438
+    }
+  }
+}

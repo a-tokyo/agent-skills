@@ -1,0 +1,26 @@
+{
+  "site_code": "GB-LON",
+  "cost_center": "CC-4100",
+  "lines": [
+    {
+      "sku": "HEA-716A",
+      "vendor_id": "V006",
+      "qty": 1,
+      "unit_price_eur": 113.97,
+      "line_total_eur": 113.97
+    }
+  ],
+  "total_eur": 113.97,
+  "approval": "auto",
+  "it_review": false,
+  "exceptions": [
+    {
+      "code": "VENDOR_BLOCKED",
+      "detail": "whiteboard"
+    },
+    {
+      "code": "ITEM_NOT_FOUND",
+      "detail": "pdf editor license"
+    }
+  ]
+}

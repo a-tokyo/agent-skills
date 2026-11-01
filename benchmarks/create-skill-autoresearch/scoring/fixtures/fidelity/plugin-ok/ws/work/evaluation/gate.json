@@ -1,0 +1,19 @@
+{
+  "mode": "plugin",
+  "plugin_eval_available": 0,
+  "skill": "demo",
+  "runs": 3,
+  "cases": [
+    "gold-01",
+    "near-miss"
+  ],
+  "artifact": "work/evaluation/plugin-eval.json",
+  "skill_sha256": "ff6b40b8d1493e0b8ce20c59aa5febded3176b92ff94b08a7cef4311e0a953db",
+  "cases_sha256": "8cedc06a73e2114d4280fd809bac8935ce48d1738a1b7122b51b529563200ffe",
+  "started": "2026-10-17T00:00:00+00:00",
+  "finished": "2026-10-17T00:10:00+00:00",
+  "run_case_sha256": null,
+  "inputs_sha256": {},
+  "artifact_sha256": "b295a228553b844dbd840a06822cb710d9c7bc4dab2191de271bbd94ab0146b0",
+  "split_sha256": "d212e1670eade8e0b3081a5b1fccf2f84ec0581131945a77ccf08353d81e219d"
+}
