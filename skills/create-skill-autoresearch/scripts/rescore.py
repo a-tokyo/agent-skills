@@ -11,7 +11,8 @@ Run it whenever output/<skill>/ changed after its last scored experiment (a fix 
   3. runs work/evaluation/evaluate.sh with no argument (`metric`, the training split) and once per held-out case
      (`held_out`, their mean: the `validation` list, else under leave-one-out the all_cases entry missing from
      `training`; phase-4.md 4.2), reading `METRIC overall_score=<x>` from each;
-  4. appends {"experiment": <next>, "commit": HEAD, "metric", "held_out", "status": "rescore", "scores"} to the
+  4. logs the attempt to work/evaluation/gate-attempts.jsonl (a failure that a commit cannot fix lets
+     `Verdict: UNSHIPPED` stand at --finish), and on success appends {"experiment": <next>, "commit": HEAD, "metric", "held_out", "status": "rescore", "scores"} to the
      experiment log check_gate.py reads (./autoresearch.jsonl while the loop runs, else work/experiments/) and prints
      `RESCORED: ...`. It never rotates the held-out case and never edits the skill.
 
@@ -32,7 +33,9 @@ from pathlib import Path
 
 sys.dont_write_bytecode = True
 import check_gate  # noqa: E402  (sibling imports after disabling bytecode)
-from gate_common import DATA_SPLIT, GateError, is_number, read_data_split, resolve_skill, utf8_stdio  # noqa: E402
+from gate_common import (  # noqa: E402
+    DATA_SPLIT, GateError, is_number, log_attempt, read_data_split, resolve_skill, utf8_stdio,
+)
 
 EVALUATE = Path("work") / "evaluation" / "evaluate.sh"
 METRIC = re.compile(r"^METRIC ([\w.-]+)=(-?[0-9.]+(?:[eE][-+]?\d+)?)\s*$", re.MULTILINE)
@@ -40,7 +43,12 @@ STATUS = "rescore"
 
 
 class CannotScore(Exception):
-    """Why the skill cannot be scored now; the message says what to do."""
+    """Why the skill cannot be scored now; the message says what to do. `logged`: a failure the builder cannot fix
+    by committing, recorded as a `rescore` attempt so --finish lets UNSHIPPED stand."""
+
+    def __init__(self, reason: str, logged: bool = True) -> None:
+        super().__init__(reason)
+        self.logged = logged
 
 
 def held_out_cases(workspace: Path) -> list[str]:
@@ -81,7 +89,7 @@ def head(workspace: Path, skill: str) -> str:
     if check_gate._changed_since(workspace, commit, skill) is not None:
         raise CannotScore(f"output/{skill}/ has uncommitted changes; commit them, then run this again:\n"
                           f"git -C {workspace} add -A -- output/{skill} && git -C {workspace} commit -m "
-                          f"\"rescore {skill}\" -- output/{skill}")
+                          f"\"rescore {skill}\" -- output/{skill}", logged=False)
     return commit
 
 
@@ -128,8 +136,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         scored, result = rescore(workspace, args.skill)
     except CannotScore as exc:
+        if exc.logged and (workspace / "work").is_dir():
+            log_attempt(workspace, "rescore", str(exc).splitlines()[0])
         print(f"CANNOT RESCORE: {exc}")
         return 1
+    if scored:
+        log_attempt(workspace, "rescore")
     if not scored:
         print(f"ALREADY SCORED: {result}; nothing to do")
         return 0

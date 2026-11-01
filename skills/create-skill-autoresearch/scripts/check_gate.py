@@ -340,11 +340,14 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
             False, verdict, f"{verdict} needs the panel's consensus on this skill: {why}")
     rule = ship_rule(workspace, gate, consensus) if checkable else None
     rescore = f"\n{rescore_command(workspace)}"
+    rescores = [a for a in read_attempts(workspace) if a.get("step") == "rescore"]
+    cannot = unshipped and bool(rescores) and bool(rescores[-1].get("error"))  # it ran and could not score
     if rule and rule.unscored and (workspace / "work" / "evaluation" / "evaluate.sh").is_file() and not (
-            consensus.vetoes or gate_level(gate)[0] == "UNSHIPPED"):
+            consensus.vetoes or gate_level(gate)[0] == "UNSHIPPED" or cannot):
         return False, verdict, (f"the Phase 4 metric is unset for output/{gate.skill}/ as it is now ({rule.line()}); "
                                 "score it with the command below, re-run `check_gate.py --consensus` and write the "
-                                f"verdict its SHIP RULE allows:{rescore}")
+                                "verdict its SHIP RULE allows (if it prints CANNOT RESCORE, UNSHIPPED stands):"
+                                f"{rescore}")
     if rule and panel.RANK[verdict] > panel.RANK[rule.allowed]:
         return False, verdict, (f"the metric-first rule allows at most {rule.allowed} ({rule.line()}); write that "
                                 "verdict (5.4: the panel does not send a checkable skill back to Phase 4)")

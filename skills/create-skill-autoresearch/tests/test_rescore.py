@@ -18,8 +18,9 @@ from helpers import SCRIPTS
 from test_metric_first import MetricFirstFixture
 
 HIGH = {"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (9, 9)}
-# A metric that counts its runs: training 0.92 with a dimension, each held-out case 0.88.
+# A metric that counts its runs: training 0.92 with a dimension, each held-out case 0.88; ./judge-down fails it.
 EVALUATE = """#!/bin/bash
+[ -f judge-down ] && { echo judge down >&2; exit 3; }
 echo run >> runs.log
 if [ $# -eq 0 ]; then echo "METRIC correctness=0.9000"; echo "METRIC overall_score=0.9200"
 else echo "case $1"; echo "METRIC overall_score=0.8800"; fi
@@ -132,6 +133,23 @@ class RescoreTest(MetricFirstFixture):
         self.assertFalse(data["finished"], "the d18 Haiku shape: UNSHIPPED because the fix was never scored")
         self.assertIn("the Phase 4 metric is unset for output/demo/", data["reason"])
         self.assertEqual(data["reason"].splitlines()[-1], self.command())
+
+    def test_unshipped_stands_when_the_rescore_cannot_score(self) -> None:
+        self.gate()
+        consensus, rule, _ = self.panel(HIGH)
+        (self.ws / "judge-down").touch()  # not a gate input: the gate stays valid
+        self.assertFalse(self.finish("UNSHIPPED", consensus, rule)["finished"], "not tried yet")
+        self.assertEqual(self.run_script("rescore.py").returncode, 1)
+        self.assertTrue(self.finish("UNSHIPPED", consensus, rule)["finished"], "tried, and the metric cannot run")
+        self.assertIn("UNSHIPPED stands", self.finish("SHIP", consensus, rule)["reason"])
+
+    def test_an_uncommitted_skill_does_not_count_as_a_failed_rescore(self) -> None:
+        self.gate()
+        consensus, rule, _ = self.panel(HIGH)
+        self.edit_skill("Edited, not committed.", commit=False)
+        self.assertEqual(self.run_script("rescore.py").returncode, 1)
+        attempts = self.ws / "work" / "evaluation" / "gate-attempts.jsonl"
+        self.assertNotIn('"rescore"', attempts.read_text() if attempts.is_file() else "")
 
     def test_a_veto_keeps_unshipped_without_a_score(self) -> None:
         self.gate()
