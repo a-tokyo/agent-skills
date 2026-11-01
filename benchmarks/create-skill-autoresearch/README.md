@@ -389,6 +389,7 @@ At harness `f3bf3b1`, `npm test` passes 103 of 103 structural checks and 205 scr
 cd benchmarks/create-skill-autoresearch
 node scoring/selftest.mjs && node scoring/selftest-task2.mjs   # offline: prove the probes discriminate
 python3 scoring/selftest-fidelity.py                           # offline: prove the fidelity probes discriminate
+python3 scoring/selftest-cost.py                               # offline: prove the cost meter counts each call once
 export ANTHROPIC_API_KEY=...                                   # or CLAUDE_CODE_OAUTH_TOKEN (claude setup-token)
 
 # one build + its score; task = conventional-commits, task-2 = purchase-order-builder

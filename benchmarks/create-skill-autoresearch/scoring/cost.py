@@ -17,6 +17,15 @@ Per build it reports units by session class:
   executors   every other session: run-case.sh / evaluate.sh executors started under HOME
   gate_plugin the plugin-eval gate's costUsd, converted
 
+Each API call counts once. Claude Code writes one jsonl line per content block (thinking, text, tool_use), each
+repeating the whole message's usage, so a line whose (message.id, requestId) pair was already counted in that file
+is skipped; a line without either id still counts. Before this, a 2-3 block message counted 2-3 times.
+
+--recompute prints, per run, the per-line (old) and deduplicated totals and their ratio, so a comparison written
+with the old meter (results/costs.csv) can be re-derived; with --compare the comparison uses the deduplicated
+totals:
+    python3 scoring/cost.py runs/r18-* runs/n10-* --recompute --compare r18-=n10-
+
 Not counted: executor calls made straight to an API with curl or an SDK (they leave no session jsonl).
 They are the same kind of call in every arm, so cell comparisons stay like-for-like; report them apart
 if a factory starts relying on them.
@@ -42,8 +51,9 @@ PRICE_PER_MTOK = {"haiku": 1.0, "sonnet": 3.0, "opus": 5.0}
 CLASSES = ("builder", "subagents", "executors", "gate_plugin")
 
 
-def session_units(path: Path) -> tuple[float, int]:
-    units, calls = 0.0, 0
+def session_units(path: Path, dedupe: bool = True) -> tuple[float, int]:
+    """(units, API calls) in one session jsonl; with `dedupe`, each (message.id, requestId) once."""
+    units, calls, seen = 0.0, 0, set()
     with path.open(errors="replace") as fh:
         for line in fh:
             try:
@@ -54,6 +64,11 @@ def session_units(path: Path) -> tuple[float, int]:
             usage = message.get("usage") if isinstance(message, dict) else None
             if not isinstance(usage, dict):
                 continue
+            key = (message.get("id"), event.get("requestId"))
+            if dedupe and all(key):
+                if key in seen:
+                    continue
+                seen.add(key)
             calls += 1
             units += sum(w * (usage.get(k) or 0) for k, w in WEIGHTS.items())
     return units, calls
@@ -84,7 +99,7 @@ def gate_plugin_units(run: Path) -> float:
     return cost / price
 
 
-def build_cost(run: Path) -> dict:
+def build_cost(run: Path, dedupe: bool = True) -> dict:
     out = {c: 0.0 for c in CLASSES} | {"calls": 0, "sessions": 0}
     projects = run / "home" / ".claude" / "projects"
     if projects.is_dir():
@@ -93,7 +108,7 @@ def build_cost(run: Path) -> dict:
                 continue
             is_builder = bool(re.search(r"-(ws|work)$", project.name))
             for path in project.rglob("*.jsonl"):
-                units, calls = session_units(path)
+                units, calls = session_units(path, dedupe)
                 cls = "subagents" if "subagents" in path.parts else ("builder" if is_builder else "executors")
                 out[cls] += units
                 out["calls"] += calls
@@ -140,10 +155,16 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--arms", default="factory-v030=factory-v021",
                         help="ARM_A=ARM_B arm names inside the run ids (default factory-v030=factory-v021)")
     parser.add_argument("--json", action="store_true")
+    parser.add_argument("--recompute", action="store_true",
+                        help="also print each run's per-line (old meter) total beside the deduplicated one")
     args = parser.parse_args(argv)
     results = {run.name: build_cost(run) for run in args.runs if run.is_dir()}
     if not results:
         parser.error("no run directories given")
+    if args.recompute:
+        for run in args.runs:
+            if run.name in results:
+                results[run.name]["total_per_line"] = build_cost(run, dedupe=False)["total"]
     rows = None
     if args.compare:
         a, b = args.compare.split("=", 1)
@@ -152,10 +173,13 @@ def main(argv: list[str] | None = None) -> int:
     if args.json:
         print(json.dumps({"builds": results, "compare": rows}, indent=2))
         return 0
-    print(f"{'run':34s} {'total':>8s} {'builder':>8s} {'subagent':>8s} {'executor':>8s} {'gate':>6s} {'calls':>6s}")
+    print(f"{'run':34s} {'total':>8s} {'builder':>8s} {'subagent':>8s} {'executor':>8s} {'gate':>6s} {'calls':>6s}"
+          + (f" {'per-line':>8s} {'ratio':>6s}" if args.recompute else ""))
     for run_id, c in sorted(results.items()):
+        old = (f" {c['total_per_line']/1e6:8.2f} {c['total']/c['total_per_line'] if c['total_per_line'] else 0:6.3f}"
+               if args.recompute else "")
         print(f"{run_id:34s} {c['total']/1e6:8.2f} {c['builder']/1e6:8.2f} {c['subagents']/1e6:8.2f} "
-              f"{c['executors']/1e6:8.2f} {c['gate_plugin']/1e6:6.2f} {c['calls']:6d}")
+              f"{c['executors']/1e6:8.2f} {c['gate_plugin']/1e6:6.2f} {c['calls']:6d}{old}")
     if rows is not None:
         print("\ncell          n     median A   median B   ratio   B spread   bar      criterion 17")
         for r in rows:
