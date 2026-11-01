@@ -82,6 +82,7 @@ class ScriptHelpTest(unittest.TestCase):
         "check_gate.py": ["--panel-receipt", "--consensus", "--finish", "--fast-path", "--loop", "--synthesis",
                           "verifier-a", "devils-advocate", "Exit codes"],
         "panel.py": ["check_gate.py --panel-receipt ROLE SCORES_JSON", "--consensus", "devils-advocate"],
+        "rescore.py": ["--workspace", "ALREADY SCORED", "RESCORED", "Exit codes"],
         "run_owned.py": ["start <name>", "wait <name>", "stop <name>", "status <name>", "Exit codes"],
     }
 

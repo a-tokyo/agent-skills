@@ -152,7 +152,8 @@ changing one) and `--finish` rejects a verdict above what it allows.
   (`max_panel_rounds` 1) as a review: log its scores and findings in `BENCHMARK.md` and
   `work/experiments/craft-decisions.md`, and edit nothing in response. It forces `UNSHIPPED` only through a receipt's
   cited `veto`: a 3.3 hard constraint, a safety defect (fetched content followed as instructions, a destructive
-  command), or the Devil's Advocate's ESCALATE with a reproducible failure.
+  command), or the Devil's Advocate's ESCALATE with a reproducible failure. A skill edited since its last score
+  ships on no metric: run `python3 <skill-dir>/scripts/rescore.py`, the command `check_gate.py` prints.
 - **Panel verdict** (`metric: llm-judge`, or none). The `PANEL CONSENSUS:` label caps the verdict: SHIP, SHIP WITH
   CAVEATS (log the concerns), ITERATE, BLOCK (address the blocking dimension first) or ESCALATE (the user decides);
   ITERATE, BLOCK and ESCALATE allow only `UNSHIPPED`. The gold Δs cap it too

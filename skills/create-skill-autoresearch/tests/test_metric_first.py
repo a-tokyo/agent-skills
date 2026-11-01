@@ -19,7 +19,9 @@ REVIEW_LOW = {"verifier-a": (5, 5), "verifier-b": (5, 6), "devils-advocate": (5,
 CITED = {"evidence": '"name: demo"', "repro": "run the skill on input/gold-01.md: it writes outside the workspace"}
 
 
-class MetricFirstTest(TempWorkspace):
+class MetricFirstFixture(TempWorkspace):
+    """A metric-first build (`metric: answer-key`) with output/ committed as the baseline; test_rescore.py too."""
+
     def setUp(self) -> None:
         super().setUp()
         self.make_build(["gold-01", "trigger-1"])
@@ -76,6 +78,8 @@ class MetricFirstTest(TempWorkspace):
         (self.ws / "BENCHMARK.md").write_text(f"Verdict: {verdict}\n\n{gate_line}\n" + "".join(f"{x}\n" for x in lines))
         return json.loads(self.run_script("check_gate.py", "--finish", "--json").stdout)
 
+
+class MetricFirstTest(MetricFirstFixture):
     def test_checkable_ship_stands_on_the_gate_and_metric_not_the_panels_scores(self) -> None:
         self.log(0.91)
         self.gate()
@@ -139,7 +143,8 @@ class MetricFirstTest(TempWorkspace):
     def test_no_held_out_score_ships_unshipped(self) -> None:
         self.log(1.0, held_out=None)
         self.gate()
-        consensus, rule = self.panel({"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (9, 9)})
+        consensus, rule, rescore = self.panel({"verifier-a": (9, 9), "verifier-b": (9, 9), "devils-advocate": (9, 9)})
+        self.assertIn("scripts/rescore.py --workspace", rescore, "the command that scores it, on its own line")
         self.assertEqual(rule, "SHIP RULE: UNSHIPPED (metric-first); gate: every gold delta > 0; metric: none "
                                "(experiment 0 logs no numeric held_out: no held-out score to ship on, phase-4.md "
                                "4.2); veto: none")
@@ -151,8 +156,9 @@ class MetricFirstTest(TempWorkspace):
         self.log(0.95)
         (self.ws / "output" / "demo" / "SKILL.md").write_text("---\nname: demo\ndescription: Unscored.\n---\n# Demo\n")
         self.gate()
-        _, rule = self.panel()
+        _, rule, rescore = self.panel()
         self.assertTrue(rule.startswith("SHIP RULE: UNSHIPPED (metric-first)"), rule)
+        self.assertTrue(rescore.startswith("python3 ") and "rescore.py" in rescore, rescore)
         self.assertIn("no kept experiment in autoresearch.jsonl scored output/demo/ as it is now", rule)
 
     def test_a_gold_delta_at_or_below_zero_caps_the_gate(self) -> None:

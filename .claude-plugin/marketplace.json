@@ -38,6 +38,17 @@
             ]
           },
           {
+            "matcher": "Read",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/read-guard\"",
+                "timeout": 10,
+                "onFailure": "continue"
+              }
+            ]
+          },
+          {
             "matcher": "Agent|Task",
             "hooks": [
               {
@@ -102,6 +113,17 @@
               {
                 "type": "command",
                 "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/kill-guard\"",
+                "timeout": 10,
+                "onFailure": "continue"
+              }
+            ]
+          },
+          {
+            "matcher": "Read",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/read-guard\"",
                 "timeout": 10,
                 "onFailure": "continue"
               }

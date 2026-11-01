@@ -7,6 +7,12 @@
         "timeout": 10
       }
     ],
+    "beforeReadFile": [
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/read-guard\"",
+        "timeout": 10
+      }
+    ],
     "preToolUse": [
       {
         "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/finish-guard\" --subagent",

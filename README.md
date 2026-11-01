@@ -79,7 +79,7 @@ a `PreToolUse` hook ([`hooks/kill_guard.py`](skills/create-skill-autoresearch/ho
 it, holding `work/manifest.yaml` or `work/evaluation/`) it blocks Bash calls containing `pkill`, `killall` or a
 pgrep-fed `kill`, because a name-pattern kill also stops
 sibling builds and your own processes; `kill <pid>` still works. Outside a build it allows every call. It also
-adds the subagent guard and the finish guard, which likewise act only inside a factory build: the first denies a background subagent dispatch, the second sends an
+adds the read guard, the subagent guard and the finish guard, which likewise act only inside a factory build: the first denies reading the factory's own script and hook source and re-reading a factory reference already in context, the second denies a background subagent dispatch, the third sends an
 unfinished build back when its turn ends ([hosts.md](skills/create-skill-autoresearch/references/hosts.md)). An `npx skills` install copies the hook files but never runs them.
 
 `create-skill-autoresearch` runs on any agent that loads `SKILL.md` — Claude Code, Cursor, Codex,

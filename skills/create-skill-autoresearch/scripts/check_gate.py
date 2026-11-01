@@ -18,7 +18,8 @@ with a gold delta <= 0, the `GOLD GATE:` cap --finish holds the verdict to (gate
 `NO FAST PATH: <reason>`; it reads the baseline, its held-out score and git, never the gate.
 --loop: is the Phase 4 loop over (phase-4.md 4.3; the loop guard in hooks/kill_guard.py asks the same):
 `LOOP DONE: <reason>` or `LOOP OPEN: <reason>`. The fast path, the stops and the SHIP RULE read each experiment's
-held-out score (phase-4.md 4.2), never the training metric alone.
+held-out score (phase-4.md 4.2), never the training metric alone. Where the metric-first rule finds no score for
+the skill as it is now (--consensus, --finish, --loop), the next line is the command that scores it: rescore.py.
 
 Exit codes: 0 valid (--finish: finished; --fast-path: take it; --loop: done), 1 invalid (unfinished; no fast path;
 open), 2 usage error.
@@ -50,7 +51,8 @@ TERMINAL = {"SHIP", "SHIP WITH CAVEATS", "UNSHIPPED"}
 NOISE_FLOOR = 0.01  # phase-4.md 4.3: the noise threshold's absolute minimum
 NOISE_ESTIMATE = "noise_estimate"  # the jsonl line 3.5 logs: {"type": "noise_estimate", "noise_threshold": x}
 DISCARDED = {"discard", "discarded", "revert", "reverted", "crash"}  # experiment statuses that are not kept
-REOPENED = {"ITERATE", "BLOCK"}  # panel consensus labels that send the build back to Phase 4
+REOPENED = {"ITERATE", "BLOCK"}
+RESCORE = Path(__file__).resolve().parent / "rescore.py"  # scores and logs the skill as it is now  # panel consensus labels that send the build back to Phase 4
 VERDICT_LINE = re.compile(r"(?im)^[#>*_\s-]*verdict[*_\s]*[:—–-][*_\s`]*"
                           r"(UNSHIPPED|SHIP[ _]+WITH[ _]+CAVEATS|ITERATE|BLOCK|ESCALATE|SHIP)\b")
 
@@ -337,6 +339,12 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
         return (True, verdict, "ok") if unshipped else (
             False, verdict, f"{verdict} needs the panel's consensus on this skill: {why}")
     rule = ship_rule(workspace, gate, consensus) if checkable else None
+    rescore = f"\n{rescore_command(workspace)}"
+    if rule and rule.unscored and (workspace / "work" / "evaluation" / "evaluate.sh").is_file() and not (
+            consensus.vetoes or gate_level(gate)[0] == "UNSHIPPED"):
+        return False, verdict, (f"the Phase 4 metric is unset for output/{gate.skill}/ as it is now ({rule.line()}); "
+                                "score it with the command below, re-run `check_gate.py --consensus` and write the "
+                                f"verdict its SHIP RULE allows:{rescore}")
     if rule and panel.RANK[verdict] > panel.RANK[rule.allowed]:
         return False, verdict, (f"the metric-first rule allows at most {rule.allowed} ({rule.line()}); write that "
                                 "verdict (5.4: the panel does not send a checkable skill back to Phase 4)")
@@ -383,6 +391,21 @@ def _overfit(metric: float, score: float, noise: float) -> bool:
     return metric - score > noise + 1e-9
 
 
+def rescore_command(workspace: Path) -> str:
+    """The command every 'no metric for this skill' message prints on its own line (rescore.py)."""
+    return f"python3 {RESCORE} --workspace {workspace}"
+
+
+def unscored(workspace: Path, skill: str | None = None) -> bool:
+    """Metric-first, with an evaluate.sh to run: no kept experiment scored output/<skill>/ as it is now."""
+    if not panel.checkable(workspace) or not (workspace / "work" / "evaluation" / "evaluate.sh").is_file():
+        return False
+    try:
+        return ship_metric(workspace, resolve_skill(workspace, skill))[0] is None
+    except GateError:
+        return False
+
+
 def ship_metric(workspace: Path, skill: str) -> tuple[float | None, str]:
     """(the Phase 4 metric the skill ships on, how it was read), or (None, why): the lower of the training metric
     and the held-out score of the last kept experiment whose commit output/<skill>/ still matches (phase-4.md 4.2;
@@ -392,8 +415,7 @@ def ship_metric(workspace: Path, skill: str) -> tuple[float | None, str]:
             and e["commit"].strip() and str(e.get("status") or "").lower() not in DISCARDED]
     match = next((e for e in reversed(kept) if _changed_since(workspace, e["commit"], skill) is None), None)
     if match is None:
-        return None, (f"no kept experiment in autoresearch.jsonl scored output/{skill}/ as it is now (log the "
-                      "re-score of the shipped commit, 4.6's included, as an experiment line with its commit)")
+        return None, f"no kept experiment in autoresearch.jsonl scored output/{skill}/ as it is now"
     n, metric = match.get("experiment"), match["metric"]
     score = held_out(entries, match)
     if score is None:
@@ -407,6 +429,7 @@ class ShipRule:
     gate: str
     metric: str
     veto: str
+    unscored: bool = False  # no metric for the skill as it is now: rescore.py sets it (not part of line())
 
     def line(self) -> str:
         return f"SHIP RULE: {self.allowed} (metric-first); gate: {self.gate}; metric: {self.metric}; veto: {self.veto}"
@@ -423,7 +446,7 @@ def ship_rule(workspace: Path, gate: Verdict, consensus: panel.Consensus) -> Shi
     metric_text = f"{how} -> {value:.3f} target {target:.2f}" if value is not None else f"none ({how})"
     levels = [gate_cap, metric_level] + (["UNSHIPPED"] if consensus.vetoes else [])
     return ShipRule(min(levels, key=panel.RANK.__getitem__), gate_text, metric_text,
-                    ", ".join(consensus.vetoes) or "none")
+                    ", ".join(consensus.vetoes) or "none", value is None)
 
 
 def _git(workspace: Path, *args: str) -> subprocess.CompletedProcess | None:
@@ -671,8 +694,12 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if skip else 1
     if args.loop:
         done, reason = loop_done(workspace, args.skill)
+        if done and unscored(workspace, args.skill):
+            reason += "; the skill as it is now has no score (metric-first ships on none): run the command below"
         print(json.dumps({"loop_done": done, "reason": reason}) if args.json else
               (f"LOOP DONE: {reason}" if done else f"LOOP OPEN: {reason}"))
+        if done and not args.json and unscored(workspace, args.skill):
+            print(rescore_command(workspace))
         return 0 if done else 1
     if args.finish:
         done, label, reason = finish(workspace, args.skill)
@@ -695,7 +722,10 @@ def main(argv: list[str] | None = None) -> int:
             consensus = panel.write_consensus(workspace, verdict.skill, skill_sha)
             print(consensus.line())
             if consensus.checkable:
-                print(ship_rule(workspace, verdict, consensus).line())
+                rule = ship_rule(workspace, verdict, consensus)
+                print(rule.line())
+                if rule.unscored:
+                    print(rescore_command(workspace))
             elif verdict.non_positive:
                 cap, why = gate_level(verdict)
                 print(f"GOLD GATE: allows at most {cap}; {why}")

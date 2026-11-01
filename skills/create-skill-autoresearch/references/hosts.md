@@ -12,6 +12,7 @@ marks what the factory's own tests or benchmark ran.
 - Headless runs, judges and executors
 - Subagents
 - Kill guard (and the loop guard)
+- Read guard
 - Subagent guard
 - Finish guard
 - Operating systems
@@ -107,7 +108,26 @@ Codex (for a vetted headless run, `codex exec --dangerously-bypass-hook-trust` r
 
 For an `npx skills` install on Cursor, the project hook above gains
 `"stop": [ { "command": "sh <skill-dir>/hooks/finish-guard", "timeout": 30, "loop_limit": 1 } ]` and
-`"preToolUse": [ { "command": "sh <skill-dir>/hooks/finish-guard --subagent", "matcher": "Task|CallDynamicTool", "timeout": 10 } ]`.
+`"preToolUse": [ { "command": "sh <skill-dir>/hooks/finish-guard --subagent", "matcher": "Task|CallDynamicTool", "timeout": 10 } ]`
+and `"beforeReadFile": [ { "command": "sh <skill-dir>/hooks/read-guard", "timeout": 10 } ]`.
+
+## Read guard
+
+`hooks/read_guard.py` keeps the factory's own files out of a build's context. It denies reading this skill's
+`scripts/*.py` and `hooks/*` source (each script's `--help` says how to run it), and a second whole read of a
+`references/` file in one context: the first copy is still there. A context compaction ends that context, so the
+file reads again after one (Claude Code's transcript marks it `compact_boundary`). It sees the Read tool on its own
+hook and shell reads (`cat`, `sed`, `head`, `tail`, `less`, ...) through the kill guard, after the call's own
+`NAME=value` and `cd`. Like the kill guard it acts only in a build session, and it never denies a path outside the
+skill's directory: the skill being built, the task materials and `work/` always read. A ranged read (`offset`,
+`sed -n 10,40p`) of a reference is allowed. Any error of its own allows the read.
+
+| Host | Ships as | Duplicate check | Status |
+|---|---|---|---|
+| Claude Code | `hooks/hooks.json` `PreToolUse`, matcher `Read` (exit 2, reason on stderr); shell reads via the kill guard | the event's `transcript_path`; a subagent (`agent_id`) against its own `subagents/agent-<id>.jsonl` | verified live (`claude -p --plugin-dir`, 2026-11-01: denied `scripts/check_gate.py` and a second `phase-5.md` read, allowed the first and `work/`); subagents offline-tested |
+| Cursor | `hooks/cursor-hooks.json` `beforeReadFile` (`{"permission": "deny", ...}`); shell reads via `beforeShellExecution` | none: no transcript in the event, so reference reads are allowed | contract from the hooks doc, offline-tested; unverified live |
+| Codex | the kill guard's `PreToolUse` script sees shell reads only | when the event carries `transcript_path` in Claude's format | contract tested offline; untested in Codex |
+| OpenCode | `hooks/opencode-kill-guard.js` on `read` and `bash` | none: no transcript | plugin tested with node; untested in OpenCode |
 
 ## Subagent guard
 

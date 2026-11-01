@@ -17,6 +17,9 @@ The loop guard rides on the same hook: a call that runs a build's Phase 4 metric
 with no case argument, the autoresearch run step) is denied while `check_gate.py --loop` says the loop is done
 (phase-4.md 4.3). A case argument (`evaluate.sh <case>`, the validation list) always runs, as does any call in an
 executor session (CSA_EXECUTOR set) or one whose evaluate.sh path it cannot resolve (`$VAR`, unknown cwd).
+
+The read guard's shell half rides on it too (hooks/read_guard.py): a `cat`, `sed`, `head`, ... of this skill's
+script or hook source, or a second whole read of a factory reference in one context, is denied.
 """
 
 from __future__ import annotations
@@ -175,11 +178,27 @@ def guarded(cwd: str | None) -> bool:
         return False
 
 
-def check(command: object, cwd: str | None) -> str | None:
-    """The deny reason for this call, or None: neither guard acts outside a factory build."""
+def read_block(command: str, cwd: str | None, event: dict | None) -> str | None:
+    """hooks/read_guard.py's deny message for a shell read of the factory's source or a reference already in
+    context, or None. Any error of its own allows the call."""
+    try:
+        sys.dont_write_bytecode = True
+        sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+        import read_guard  # noqa: E402  (beside this hook)
+
+        return read_guard.shell_block(command, cwd, event)
+    except Exception as exc:  # noqa: BLE001
+        print(f"read guard: {type(exc).__name__}: {exc}; command allowed", file=sys.stderr)
+        return None
+
+
+def check(command: object, cwd: str | None, event: dict | None = None) -> str | None:
+    """The deny reason for this call, or None: no guard acts outside a factory build."""
     if not isinstance(command, str) or not guarded(cwd):
         return None
-    return MESSAGE if is_pattern_kill(command) else loop_block(command, cwd)
+    if is_pattern_kill(command):
+        return MESSAGE
+    return loop_block(command, cwd) or read_block(command, cwd, event)
 
 
 def main() -> int:
@@ -194,14 +213,14 @@ def main() -> int:
         command = event.get("command")
         roots = [r for r in event.get("workspace_roots") or [] if isinstance(r, str)]
         cwd = event.get("cwd") if isinstance(event.get("cwd"), str) else (roots[0] if roots else None)
-        reason = check(command, cwd)
+        reason = check(command, cwd, event)
         reply = {"permission": "deny", "user_message": reason, "agent_message": reason} if reason else ALLOW
         print(json.dumps(reply))
         return 0
     command = (event.get("tool_input") or {}).get("command")
     if not isinstance(command, str):
         return 0
-    reason = check(command, event.get("cwd") if isinstance(event.get("cwd"), str) else None)
+    reason = check(command, event.get("cwd") if isinstance(event.get("cwd"), str) else None, event)
     if reason:
         print(reason, file=sys.stderr)
         return 2
