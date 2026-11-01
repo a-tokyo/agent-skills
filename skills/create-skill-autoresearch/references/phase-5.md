@@ -4,25 +4,26 @@ Inputs: `work/evaluation/data-split.yaml` and `output/<skill-name>/`.
 
 ## 5.0 Eval Gate
 
-From the workspace root, one command starts the gate as the owned job `gate` and blocks on it for up to 570 s; give
-that shell call its longest timeout (Claude Code: `timeout: 600000`):
+Run the `gate.py --detach --wait` command `check_gate.py --next` prints, from the workspace root, as **one
+foreground shell call**: it starts the owned job `gate` and blocks up to 570 s (most gates end sooner). Claude
+Code: give the Bash call `timeout: 600000` (the 120000 default cuts it off), never `run_in_background` or a smaller
+`--wait-timeout`; elsewhere keep `--wait-timeout` under the shell tool's limit.
 
 ```bash
-python3 <skill-dir>/scripts/gate.py --detach --wait --model <model the skill targets> [--in-sample] \
-  [--allow-tools Bash Write] [--executor single-call|agentic]
+python3 <skill-dir>/scripts/gate.py --detach --wait --model <model> [options]   # as --next prints it
 ```
 
-- Exit 124 (still running): re-issue the same command and nothing else; never poll `run_owned.py status`, never
-  sleep. 0: valid. Any other exit names what to fix (the suite, `run-case.sh`: phase-3.md 3.6): fix it and re-issue.
-  A changed skill, gate input or option starts a new gate; `--restart` re-runs an unchanged one, `--stop` ends it.
-  Only `gate.py` writes the artifact.
+- Exit 124 (still running): re-issue the same command; never sleep, poll or restart. 0: valid. Any other exit names
+  what to fix (the suite, `run-case.sh`: phase-3.md 3.6): fix it, then run what `--next` prints. A changed skill,
+  gate input or option starts a new gate, so start it only when Phase 4 and any rescore are done. Only `gate.py`
+  writes the artifact.
 - Pass `--in-sample` with 3-9 gold standards (the gate cases are training cases; `BENCHMARK.md` and the panel label
   Δ in-sample), and `--executor` on the manual path. Grant only the tools the skill needs. A Claude Code build never
   passes `--backend manual`.
 - Every file under `work/evaluation/` (bar `baseline-cache/`) is a gate input: keep scratch and logs, a saved
   `check_gate.py` output included, under `work/experiments/`.
-- Smoke-test the suite with `--runs 1` before the full gate: a with-arm score of 0 while `skill-fired` passes means
-  the skill fired but could not act; check the tool grants and the fixtures. A 1-run artifact never passes.
+- No `--runs 1` smoke gate first (r18: 17 extra gate runs); the load check catches a broken case file. A with-arm
+  score of 0 while `skill-fired` passes means the skill fired but could not act: check the tool grants and fixtures.
 
 Read WITH, W/OUT and Δ per case from the artifact:
 - Δ <= 0 on a gold case is a **verified failure scenario** for the panel: the skill adds nothing there, or hurts; on

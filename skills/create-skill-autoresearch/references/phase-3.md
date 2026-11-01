@@ -57,8 +57,6 @@ Record the split in `work/evaluation/data-split.yaml` first (phase-4.md 4.2). Th
 3. Compares the output to the gold reference: an answer-key scorer where checkable, else an LLM judge.
 4. Emits `METRIC <dimension>=<score>` lines, then `METRIC overall_score=<weighted average>`.
 
-`overall_score` steers Phase 4; with no bare-model comparison it cannot show the skill helps (the 5.0 Δ does).
-
 **The metric is an answer-key scorer whenever outputs are checkable**: deterministic checks of each output against
 its gold (fields, values, regex, structure) emit their METRIC lines directly. An LLM judge scores only judgement
 dimensions: JSON per dimension, each scored independently, verbatim evidence for extreme scores, a different model
@@ -83,12 +81,11 @@ both. Re-run `evaluate.sh` twice more on that commit and append `{"type": "noise
 min of the three overall_score values>}`: the noise threshold for the fast path, the loop and its guard (0.01 when
 smaller or not logged). A failing metric command here is the 4.1 baseline failure: fix `evaluate.sh` first.
 
-**Fast path, decided now.** Run `python3 <skill-dir>/scripts/check_gate.py --fast-path`. Exit 0 (the baseline's
+**Fast path, decided now.** Run `python3 <skill-dir>/scripts/check_gate.py --next`. The fast path (the baseline's
 `metric` and `held_out` at `target_score`, no overfitting gap, the skill unchanged since) skips the Phase 4 loop and
-4.6: run 3.6, then Phase 5. The 5.0 gate still runs; a gold Δ <= 0 or (panel-verdict path) a panel ITERATE returns
-this build to Phase 4 for the loop, 4.6, then 5.0 again. While the fast path holds, the loop
-guard denies `evaluate.sh` with no argument. Non-zero names why (a training score its held-out score does not back
-is the overfitting signal): run 3.6, then Phase 4.
+4.6: run 3.6, then the gate it prints. A gold Δ <= 0 or (panel-verdict path) a panel ITERATE returns this build to
+Phase 4, then 5.0 again. While it holds, the loop guard denies `evaluate.sh` with no argument. Otherwise `--next`
+says why (a training score its held-out score does not back is the overfitting signal): Phase 4, then 3.6.
 
 ## 3.6 Scaffold the Eval Suite
 

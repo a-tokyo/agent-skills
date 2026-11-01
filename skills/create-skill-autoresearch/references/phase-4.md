@@ -69,10 +69,10 @@ deterministic work the executor gets wrong moved into `scripts/`. In every exper
 - **Below target is a verdict** (5.4), as is `baseline_lock` (log the real target in the ideas). Never ask for
   re-runs toward an unreachable number: report the ceiling, name the binding constraint, proceed.
 - **With `metric: answer-key` this metric is the ship decision** (SKILL.md 5.4): a skill edited after its last scored
-  experiment ships on no metric until `python3 <skill-dir>/scripts/rescore.py` scores and logs it.
-- **The loop guard enforces this**: `python3 <skill-dir>/scripts/check_gate.py --loop` prints `LOOP DONE: <reason>`
-  or `LOOP OPEN: <reason>`, and while done the kill guard denies the metric command. On the panel-verdict path a
-  newer panel ITERATE or BLOCK reopens it for one experiment; a description-only change (4.6) may be scored.
+  experiment ships on no metric until `scripts/rescore.py` (which `--next` prints) scores and logs it.
+- **The loop guard enforces this**: `check_gate.py --next` (or `--loop`) says `LOOP OPEN: <reason>` or moves on,
+  and while done the kill guard denies the metric command. On the panel-verdict path a newer panel ITERATE or
+  BLOCK reopens it for one experiment; a description-only change (4.6) may be scored.
 
 ## 4.6 Description Pass
 

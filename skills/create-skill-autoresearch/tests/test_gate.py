@@ -519,6 +519,9 @@ class GateLifecycleTest(TempWorkspace):
             self.assertEqual(len(out.stderr.strip().splitlines()), 1, out.stderr)
             self.assertIn("still running after", out.stderr)
             self.assertIn("call --wait again", out.stderr)
+            self.assertIn("Bash timeout 600000, default --wait-timeout", out.stderr,
+                          "a cut-short wait says how to make the next call the last")
+            self.assertNotIn("--restart", out.stderr, "a running gate is waited on, never restarted")
             self.assertLess(len(out.stderr), 160, "a short line: every --wait's output stays in the caller's context")
             self.assertEqual(out.stdout, "")
             verbose = self.run_script("gate.py", "--wait", "--wait-timeout", "1", "--verbose")
@@ -555,6 +558,7 @@ class GateLifecycleTest(TempWorkspace):
                                   FAKE_MODE="hang")
             self.assertEqual(out.returncode, 124, out.stderr)
             self.assertIn("already running; waiting on it", out.stderr)
+            self.assertNotIn("--restart", out.stderr, "never suggest restarting a running gate")
             self.assertIn("re-issue the same --detach --wait", out.stderr)
             self.assertEqual(self.record("gate")["pid"], gate["pid"], "no second gate was started")
         finally:

@@ -1,9 +1,15 @@
 #!/usr/bin/env python3
 """Validate the Phase 5.0 gate, the panel's receipts and consensus, and the build's end state.
 
+    check_gate.py --next     # from 3.5 on, at every phase boundary: the one next action, as the exact command
     check_gate.py [--workspace DIR] [--skill NAME] [--json]
-                  [--panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish | --fast-path
-                   | --loop]
+                  [--next | --panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish
+                   | --fast-path | --loop]
+
+--next: runs every check that applies to the build as it is now (fast path and loop, rescore, gate, panel,
+consensus, finish) and prints `NEXT: <what>` with the exact command(s) to run, or `BUILD FINISHED: verdict <V>`.
+It never sends the build to the gate while the Phase 4 loop is open or a metric-first skill is unscored, never
+restarts a running gate, and once all three receipts are in it writes the consensus as --consensus does. Exit 0.
 
 No flag: exit 0 only when work/evaluation/gate.json records a finished gate.py run whose hashes still match the
 skill, cases, splits, run-case.sh, gate inputs and artifact, and the mode's artifact (plugin-eval.json or
@@ -29,7 +35,9 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import re
+import shlex
 import subprocess
 import sys
 from dataclasses import asdict, dataclass, field
@@ -670,6 +678,216 @@ def _unless_description(workspace: Path, experiments: list[dict], skill: str | N
     return True, done
 
 
+# --next: the build's single next action ----------------------------------------------------------------------
+
+SCRIPTS = Path(__file__).resolve().parent
+SHELL_NOTE = ("  (one shell call: on Claude Code give the Bash call timeout 600000, since its 120000 default cuts the "
+              "wait off; on another host keep --wait-timeout under its shell tool's limit)")
+GATE_RERUN = {"too_few_runs", "partial", "no_delta", "no_artifact", "bad_artifact", "coverage", "no_gold"}
+DESCRIPTION = {"trigger_failed", "near_miss_fired"}
+
+
+@dataclass
+class Next:
+    state: str
+    text: str
+    commands: list[str] = field(default_factory=list)
+    lines: list[str] = field(default_factory=list)  # lines to copy verbatim (BENCHMARK.md)
+    note: str | None = None
+    before: list[str] = field(default_factory=list)  # context printed above the NEXT line
+
+    def render(self) -> str:
+        head = self.text if self.state == "finished" else f"NEXT: {self.text}"
+        return "\n".join([*self.before, head, *[f"  {c}" for c in self.commands], *self.lines,
+                          *([self.note] if self.note else [])])
+
+
+def _q(value: object) -> str:
+    return shlex.quote(str(value))
+
+
+def _self(workspace: Path, *args: str) -> str:
+    return " ".join([f"python3 {_q(SCRIPTS / 'check_gate.py')} --workspace {_q(workspace)}", *args])
+
+
+def gate_command(workspace: Path, skill: str, restart: bool = False) -> str:
+    """The exact gate.py call: the options of the last gate run (gate.json) when one was recorded, never its
+    --runs below the required count; else derived from the split, the skill and the host (phase-5.md 5.0)."""
+    record = read_json(workspace / GATE_RECORD) or {}
+    args = [f"python3 {_q(SCRIPTS / 'gate.py')} --workspace {_q(workspace)}", "--restart" if restart else "--detach",
+            "--wait", "--model", _q(record.get("model") or "<model the skill targets>")]
+    if record.get("model"):
+        if record.get("in_sample"):
+            args.append("--in-sample")
+        if record.get("executor"):
+            args += ["--executor", record["executor"]]
+        if record.get("backend_arg"):
+            args += ["--backend", record["backend_arg"]]
+        if record.get("force_manual"):
+            args += ["--force-manual", _q(record["force_manual"])]
+        tools = record.get("allow_tools")
+        if isinstance(tools, list) and tools and sorted(tools) != ["Bash", "Write"]:
+            args += ["--allow-tools", *map(_q, tools)]
+        if is_number(record.get("jobs")) and record["jobs"] != 8:
+            args += ["--jobs", str(record["jobs"])]
+        if is_number(record.get("runs")) and record["runs"] > REQUIRED_RUNS:
+            args += ["--runs", str(record["runs"])]
+        return " ".join(args)
+    try:
+        split = read_data_split(workspace / DATA_SPLIT)
+        in_sample = bool(split.all_gold()) and not split.gold.get("test")
+    except GateError:
+        in_sample = False
+    if in_sample:
+        args.append("--in-sample")
+    invoked = (workspace / "output" / skill / "SKILL.md").is_file() and _model_invoked(workspace, skill)
+    if not os.environ.get("CLAUDECODE") or not invoked:
+        args += ["--executor", "<single-call|agentic>"]
+    return " ".join(args)
+
+
+def _model_invoked(workspace: Path, skill: str) -> bool:
+    from gate_common import model_invoked
+    try:
+        return model_invoked(workspace / "output" / skill / "SKILL.md")
+    except OSError:
+        return True
+
+
+def _suite_started(workspace: Path) -> bool:
+    """3.6 has begun: a plugin-eval case, a run-case.sh, or a recorded case list."""
+    evals = workspace / "work" / "evaluation" / "plugin" / "evals"
+    if (workspace / RUN_CASE).is_file() or (evals.is_dir() and any(p.is_dir() for p in evals.iterdir())):
+        return True
+    try:
+        return bool(read_data_split(workspace / DATA_SPLIT).plugin_eval)
+    except GateError:
+        return False
+
+
+def _spent(workspace: Path) -> bool:
+    """The Phase 4 budget is spent: max_iterations scored experiments after experiment 0."""
+    try:
+        cap = panel.read_rubric(workspace).max_iterations
+    except GateError:
+        return False
+    _, experiments, _ = _experiments(workspace)
+    return sum(1 for e in experiments if is_number(e.get("metric")) and e.get("experiment") != 0) >= cap
+
+
+def _verdict(workspace: Path, allowed: str, lines: list[str], why: str, unfinished: str | None,
+             checkable: bool) -> Next:
+    note = (f"Then: {_self(workspace, '--next')}" + (
+        "\nOn this metric-first path the panel is a review: edit nothing in output/ now; a skill change ends the "
+        "build UNSHIPPED." if checkable and allowed != "UNSHIPPED" else ""))
+    text = (f"5.4: write BENCHMARK.md at the build root with `Verdict: {allowed}` ({why}), the scores and concerns, "
+            "and these lines verbatim:")
+    return Next("verdict", text, lines=lines, note=note, before=[unfinished] if unfinished else [])
+
+
+def next_action(workspace: Path, skill: str | None = None) -> Next:
+    """The build's single next action from its files, first match wins (SKILL.md flow): finished; a live gate;
+    Phase 3; a spent panel; the Phase 4 loop; an unscored skill (metric-first); the 5.0 gate; the panel; the
+    verdict. Writes nothing but the consensus record, once all three receipts are in (as --consensus does)."""
+    try:
+        name = resolve_skill(workspace, skill)
+    except GateError as exc:
+        return Next("draft", f"Phase 3.3: write the skill under output/ ({exc})")
+    done, verdict, why_unfinished = finish(workspace, name)
+    if done:
+        tail = "; follow references/publishing.md" if verdict in ("SHIP", "SHIP WITH CAVEATS") else ""
+        return Next("finished", f"BUILD FINISHED: verdict {verdict}{tail}")
+    unfinished = f"BUILD UNFINISHED: {why_unfinished}" if (workspace / BENCHMARK).is_file() else None
+    try:
+        live = run_owned.status(run_owned.state_dir(workspace), "gate")["state"] == "running"
+    except run_owned.OwnedError:
+        live = False
+    if live:
+        return Next("gate_running", "5.0: the gate is running; wait on it (never restart it):",
+                    [f"python3 {_q(SCRIPTS / 'gate.py')} --workspace {_q(workspace)} --wait"], note=SHELL_NOTE)
+    if not (workspace / "work" / "evaluation" / "evaluate.sh").is_file():
+        return Next("evaluate", "Phase 3.4: record the split and write work/evaluation/evaluate.sh (phase-3.md)")
+    try:
+        panel.read_rubric(workspace)
+    except GateError as exc:
+        return Next("rubric", f"fix the rubric: {exc}")
+    _, experiments, _ = _experiments(workspace)
+    if not any(e.get("experiment") == 0 and is_number(e.get("metric")) for e in experiments):
+        return Next("baseline", "Phase 3.5: score the baseline, commit it and log experiment 0 with held_out and "
+                                "the noise estimate (phase-3.md 3.5)", [_self(workspace, "--next")])
+    if last := panel.exhausted(workspace):
+        return _verdict(workspace, "UNSHIPPED", [last.get("line") or ""],
+                        f"the panel ran its {panel.max_rounds(workspace)} round(s) and the skill changed since; no "
+                        "gate re-run changes that", unfinished, False)
+    loop, why = loop_done(workspace, name)
+    reopened = why.startswith("the panel's latest consensus")
+    if not loop and reopened and _spent(workspace):
+        consensus = read_json(workspace / panel.CONSENSUS) or {}
+        return _verdict(workspace, "UNSHIPPED", [consensus.get("line") or ""],
+                        f"a terminal {consensus.get('label')}: no Phase 4 budget left", unfinished, False)
+    if not loop:
+        fast = "" if len(experiments) > 1 or reopened else " (the 3.5 fast path does not hold)"
+        batch = "; fold every panel finding into this one experiment" if reopened else ""
+        return Next("loop", f"Phase 4 (phase-4.md): LOOP OPEN{fast}: {why}{batch}; after each logged experiment:",
+                    [_self(workspace, "--next")])
+    rescores = [a for a in read_attempts(workspace) if a.get("step") == "rescore"]
+    cannot = bool(rescores) and bool(rescores[-1].get("error"))
+    if unscored(workspace, name) and not cannot:
+        return Next("rescore", f"score output/{name}/ as it is now before the gate (metric-first ships on that "
+                               "score); then --next:", [rescore_command(workspace), _self(workspace, "--next")])
+    gate = validate(workspace, name)
+    if not gate.valid:
+        command = gate_command(workspace, name, restart=gate.code in GATE_RERUN)
+        if gate.code in DESCRIPTION:
+            return Next("description", f"4.6: {gate.reason}. Revise the description against the 3.6 trigger and "
+                                       "near-miss prompts, then re-run the gate:", [command], note=SHELL_NOTE)
+        if not _suite_started(workspace):
+            return Next("suite", "3.6: scaffold the eval suite (phase-3.md 3.6; the gate records the case list "
+                                 "itself), then run the gate (5.0, phase-5.md):", [command], note=SHELL_NOTE)
+        what = ("5.0: run the gate" if gate.code == "no_gate_record" else
+                f"5.0: {gate.reason.split('; re-run')[0]}; re-run it" if gate.code not in GATE_RERUN else
+                f"5.0: the last gate is not usable ({gate.reason}); fix that if it names a suite defect, then re-run")
+        return Next("gate", f"{what} (phase-5.md 5.0):", [command], note=SHELL_NOTE)
+    skill_sha = skill_sha256(workspace, name)
+    checkable = panel.checkable(workspace)
+    consensus, why_not = panel.recorded(workspace, name, skill_sha)
+    if consensus is None:
+        try:
+            rubric = panel.read_rubric(workspace)
+            round_n = panel.check_round(workspace, skill_sha)
+            have = panel.current_receipts(workspace, skill_sha, rubric.sha256)
+            if len(have) == len(panel.ROLES):
+                consensus = panel.write_consensus(workspace, name, skill_sha)
+        except panel.RoundsExhausted as exc:
+            return _verdict(workspace, "UNSHIPPED", [], str(exc), unfinished, False)
+        except GateError as exc:
+            return Next("synthesis", f"5.3: {exc}; then:", [_self(workspace, "--next")])
+        if consensus is None:
+            receipt = _self(workspace, "--panel-receipt", "<role>", "<scores.json>")
+            if have:
+                missing = ", ".join(r for r in panel.ROLES if r not in have)
+                return Next("panel", f"5.2 panel round {round_n}: still to score: {missing}. Dispatch them (SKILL.md "
+                                     "5.2); each ends with:", [receipt, f"then: {_self(workspace, '--next')}"])
+            premortem = "" if (workspace / "work" / "experiments" / "premortem.md").is_file() else \
+                "5.1 premortem to work/experiments/premortem.md, then "
+            return Next("panel", f"{premortem}5.2 panel round {round_n}: dispatch verifier-a, verifier-b and "
+                                 "devils-advocate in one message (SKILL.md 5.2); each ends with:",
+                        [receipt, f"then: {_self(workspace, '--next')}"], before=[gate.line()])
+    lines = [gate.line(), consensus.line()]
+    if checkable:
+        rule = ship_rule(workspace, gate, consensus)
+        return _verdict(workspace, rule.allowed, lines + [rule.line()], "the SHIP RULE", unfinished, True)
+    if consensus.label == "ESCALATE":
+        return _verdict(workspace, "UNSHIPPED", lines, "ESCALATE: the user decides; unattended, UNSHIPPED",
+                        unfinished, False)
+    cap, why_cap = gate_level(gate)
+    allowed = min(consensus.allowed, cap, key=panel.RANK.__getitem__)
+    if gate.non_positive:
+        lines.append(f"GOLD GATE: allows at most {cap}; {why_cap}")
+    return _verdict(workspace, allowed, lines, f"the panel allows {consensus.allowed}, the gold deltas {cap}",
+                    unfinished, False)
+
+
 def main(argv: list[str] | None = None) -> int:
     utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -684,12 +902,17 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument("--finish", action="store_true", help="the build's end state instead of the gate")
     step.add_argument("--fast-path", action="store_true", help="3.5: may the build skip the Phase 4 loop")
     step.add_argument("--loop", action="store_true", help="4.3: is the Phase 4 loop over (the loop guard's check)")
+    step.add_argument("--next", action="store_true", help="the build's single next action, as the exact command")
     parser.add_argument("--synthesis", action="store_true", help="with --panel-receipt: the synthesis round (5.3)")
     parser.add_argument("--verbose", action="store_true", help="longer lines where the default is terse")
     args = parser.parse_args(argv)
     if args.synthesis and not args.panel_receipt:
         parser.error("--synthesis goes with --panel-receipt")
     workspace = args.workspace.resolve()
+    if args.next:
+        action = next_action(workspace, args.skill)
+        print(json.dumps(asdict(action)) if args.json else action.render())
+        return 0
     if args.fast_path:
         skip, reason = fast_path(workspace, args.skill)
         print(json.dumps({"fast_path": skip, "reason": reason}) if args.json else

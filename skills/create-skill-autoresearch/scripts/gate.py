@@ -59,7 +59,8 @@ LOAD_CHECK_TIMEOUT = 120  # the zero-cost load check parses every case file and 
 POLL_SECONDS = 0.5  # how often the gate checks its runs and the stop request
 STOP_GRACE = 30  # --stop/--restart grace for the gate job: CHILD_GRACE for its eval runs, plus its record
 CHILD_GRACE = 10  # an eval run's time to exit after TERM before KILL
-WAIT_SECONDS = 570  # under the 600 s a Claude Code shell call may wait (with timeout: 600000), so --wait returns first
+WAIT_SECONDS = 570  # under the 600 s a Claude Code shell call may wait (with timeout: 600000), so --wait returns first;
+# r18: every gate but one ended inside it, so one call is enough when the shell call is given that timeout
 ATTEMPTS = 2  # one retry absorbs a transient failure; a second leaves the artifact partial
 DEFAULT_JOBS = 8  # concurrent eval runs: plugin eval's -j cap; every run shares the account's one rate limit
 EVAL_TIMEOUT, CASE_TIMEOUT = 5400, 1200  # a whole plugin eval, one manual run: past these a run is hung
@@ -384,6 +385,7 @@ def run_gate(ws: Path, args: argparse.Namespace) -> int:
                   "model_invoked": invoked, "force_manual": args.force_manual, "fresh_baseline": args.fresh_baseline,
                   "skill": skill, "model": args.model, "runs": args.runs, "in_sample": args.in_sample,
                   "executor": args.executor, "cases": cases, "artifact": artifact.as_posix(),
+                  "backend_arg": args.backend, "allow_tools": args.allow_tools, "jobs": args.jobs,  # check_gate --next
                   "options_sha256": options_sha256(args),
                   **_input_hashes(ws, skill, cases), "started": now(), "finished": None}
         write_json(ws / GATE_RECORD, record)
@@ -471,8 +473,10 @@ def wait_gate(ws: Path, timeout: float | None, proc: subprocess.Popen | None = N
     log = Path(rec.log).read_text(encoding="utf-8", errors="replace") if Path(rec.log).is_file() else ""
     if rc == run_owned.EXIT_TIMEOUT:
         last = next((line.strip() for line in reversed(log.splitlines()) if line.strip()), "") if verbose else ""
-        print(f"gate: still running after {_elapsed(rec.started)}; exit 124: re-issue the same --detach --wait "
-              f"(or call --wait again) with the shell timeout at 600000 ms"
+        # One line, kept short: a builder that cut the wait short (a smaller --wait-timeout to fit a shell tool's
+        # 120 s default) is told how to make the next call the last one (hosts.md "Gate wait").
+        print(f"gate: still running after {_elapsed(rec.started)} (exit 124): re-issue the same --detach --wait or "
+              f"call --wait again; Bash timeout 600000, default --wait-timeout"
               f"{f' (last: {last}; log {rec.log})' if last else ''}", file=sys.stderr)
         return rc
     routine = "gate: mode="  # the job's first line, which repeats what the caller asked for
@@ -516,8 +520,7 @@ def supervise(ws: Path, args: argparse.Namespace) -> int:
     live = _running(sdir)
     if args.detach and args.wait and not args.restart:
         if live:
-            print(f"gate: a `{JOB}` job is already running; waiting on it (gate.py --restart starts over)",
-                  file=sys.stderr)
+            print(f"gate: a `{JOB}` job is already running; waiting on it", file=sys.stderr)
             return wait_gate(ws, args.wait_timeout, verbose=args.verbose)
         if _settled(ws, args):
             print(f"gate: the last gate finished on this workspace with these options; its result follows "

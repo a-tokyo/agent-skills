@@ -11,6 +11,7 @@ marks what the factory's own tests or benchmark ran.
 - Skills and install
 - Headless runs, judges and executors
 - Subagents
+- Gate wait
 - Kill guard (and the loop guard)
 - Read guard
 - Subagent guard
@@ -59,6 +60,22 @@ delegates when a skill asks it to), OpenCode's Task tool. The factory names role
 every phase itself and spawns both. Where a host offers none (or a run disables them), run each role as a fresh
 headless session from the table above, one after another, giving it only that role's inputs; that keeps the
 context walls the panel depends on.
+
+## Gate wait
+
+The 5.0 gate is one foreground shell call: `gate.py --detach --wait` starts the owned job `gate` and blocks up to
+570 s (`--wait-timeout`), then exits 124 if it is still running; the job keeps running either way, and re-issuing
+the same command waits on it (never `--restart`, which starts it over). In the 2026-11-01 r18 matrix 59 of 60
+final gates ended inside 570 s, so one call is enough when the shell call may wait that long. What cut it short
+was the shell tool, not the gate: Haiku builders left Claude Code's Bash timeout at its 120000 ms default, then
+shrank `--wait-timeout` to fit it, and polled (26 exit-124 calls over 30 builds).
+
+| Host | One call | Status |
+|---|---|---|
+| Claude Code | Bash `timeout: 600000` (the tool's maximum; default 120000), default `--wait-timeout`, foreground. A `run_in_background` call notifies on completion, but a builder that ends its turn to wait is sent back by the finish guard and loses a turn | measured on r18 transcripts |
+| Cursor, Codex, OpenCode | give the shell call its longest timeout and `--wait-timeout` 30 s under it; re-issue the same command on 124 | untested; their shell limits are not recorded here |
+
+`check_gate.py --next` prints the command with this note, and a still-running exit repeats it in one line.
 
 ## Kill guard
 
