@@ -44,7 +44,7 @@ Write "ESCALATE: <reason>" if you identify a concern that:
   "overall_assessment": "<adversarial summary>",
   "strongest_objection": "<single strongest reason NOT to ship>",
   "failure_scenarios": [
-    { "scenario": "<concrete description>", "severity": "critical|high|medium|low" }
+    { "scenario": "<concrete description>", "severity": "critical|high|medium|low", "evidence": "\"<verbatim quote>\"", "repro": "<input or command>" }
   ],
   "escalation": null | "ESCALATE: <reason>",
   "veto": null | { "kind": "hard_constraint|safety|escalate", "evidence": "\"<verbatim quote>\"", "repro": "<input or command>" },

@@ -5,7 +5,7 @@
     check_gate.py --next --profile lite   # once, small or fast builder models: stored in work/manifest.yaml
     check_gate.py [--workspace DIR] [--skill NAME] [--json]
                   [--next | --panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish
-                   | --fast-path | --loop]
+                   | --fast-path | --loop | --fix-cycle | --recheck-receipt ROLE RECHECK_JSON]
 
 --next: runs every check that applies to the build as it is now (fast path and loop, rescore, gate, panel,
 consensus, finish) and prints `NEXT: <what>` with the exact command(s) to run, or `BUILD FINISHED: verdict <V>`.
@@ -24,6 +24,9 @@ a numeric delta per gold case and every Skill indicator passing (phase-5.md 5.0)
 --panel, --panel-receipt, --consensus: the panel on a valid gate (SKILL.md 5.2-5.3; scripts/panel.py); with
 `metric: answer-key` in rubric.yaml, --consensus also prints the metric-first `SHIP RULE:` line (ship_rule), else,
 with a gold delta <= 0, the `GOLD GATE:` cap --finish holds the verdict to (gate_level).
+--fix-cycle, --recheck-receipt: a fix cycle after the panel (SKILL.md 5.4, scripts/fix_cycle.py): --next offers one
+when the consensus ends the build UNSHIPPED on cited findings; --fix-cycle opens it (`FIX CYCLE <n> OPEN`); after the
+one fix commit, the rescore and the gate, each role that raised a finding runs --recheck-receipt on the fixed skill.
 --finish: BENCHMARK.md's verdict stands (SKILL.md 5.1, 5.4): `BUILD FINISHED: ...` or `BUILD UNFINISHED: <reason>`.
 --fast-path: at the end of 3.5, may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or
 `NO FAST PATH: <reason>`; it reads the baseline, its held-out score and git, never the gate.
@@ -49,7 +52,8 @@ from dataclasses import asdict, dataclass, field
 from pathlib import Path
 
 sys.dont_write_bytecode = True
-import panel  # noqa: E402  (sibling imports after disabling bytecode)
+import fix_cycle  # noqa: E402  (sibling imports after disabling bytecode)
+import panel  # noqa: E402
 import run_owned  # noqa: E402
 from gate_common import (  # noqa: E402
     BASELINE_KEY, DATA_SPLIT, GATE_ATTEMPTS, GATE_RECORD, MANUAL_ARTIFACT, PLUGIN_ARTIFACT, RUN_CASE,
@@ -118,8 +122,9 @@ def _mean(values: list[float]) -> float | None:
     return sum(values) / len(values) if values else None
 
 
-def _gate_record(workspace: Path, skill: str | None, split) -> dict:
-    """gate.json, when it records a finished run whose hashes all still match the workspace."""
+def _gate_record(workspace: Path, skill: str | None, split, expect_sha: str | None = None) -> dict:
+    """gate.json, when it records a finished run whose hashes all still match the workspace (the skill: the one
+    `expect_sha` names when given, the reviewed version a fix cycle starts from)."""
     if not (workspace / GATE_RECORD).is_file():
         raise Invalid("no_gate_record", f"no {GATE_RECORD}: the artifact was not written by a gate run; "
                                         "run scripts/gate.py (5.0)")
@@ -142,7 +147,7 @@ def _gate_record(workspace: Path, skill: str | None, split) -> dict:
         raise Invalid("bad_gate_record", f"{GATE_RECORD}: {exc}") from exc
     if not (workspace / "output" / name / "SKILL.md").is_file():
         raise Invalid("bad_gate_record", f"{GATE_RECORD} names skill {name!r}, which is not under output/")
-    if skill_sha256(workspace, name) != record["skill_sha256"]:
+    if (expect_sha or skill_sha256(workspace, name)) != record["skill_sha256"]:
         raise Invalid("stale_skill", f"skill changed since the gate; re-run 5.0 (output/{name}/ no longer "
                                      f"matches {GATE_RECORD})")
     if cases_sha256(workspace, split.plugin_eval) != record["cases_sha256"]:
@@ -258,7 +263,7 @@ def _manual(data: dict, recorded: list[str], workspace: Path) -> list[CaseResult
     return results
 
 
-def validate(workspace: Path, skill: str | None = None) -> Verdict:
+def validate(workspace: Path, skill: str | None = None, expect_sha: str | None = None) -> Verdict:
     mode = rel = None
     try:
         try:
@@ -274,7 +279,7 @@ def validate(workspace: Path, skill: str | None = None) -> Verdict:
             raise Invalid("no_split", f"{DATA_SPLIT}: {split.plugin_eval_error}")
         if not split.plugin_eval:
             raise Invalid("no_split", f"{DATA_SPLIT}: plugin_eval records no gate cases")
-        record = _gate_record(workspace, skill, split)
+        record = _gate_record(workspace, skill, split, expect_sha)
         mode = record["mode"]
         rel = PLUGIN_ARTIFACT if mode == "plugin" else MANUAL_ARTIFACT
         if not (workspace / rel).is_file():
@@ -349,7 +354,16 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
         return False, verdict, (f"{why_capped}, caps the verdict at SHIP WITH CAVEATS (5.4); write that, with why "
                                 "the case cannot benefit" if capped == "SHIP WITH CAVEATS" else
                                 f"{why_capped}, below -caveat_margin, allows only UNSHIPPED (5.4); write that")
-    consensus, why = panel.recorded(workspace, gate.skill, skill_sha256(workspace, gate.skill))
+    sha = skill_sha256(workspace, gate.skill)
+    try:
+        cycle = fix_cycle.rule(workspace, gate, sha)
+    except GateError as exc:
+        return (True, verdict, "ok") if unshipped else (False, verdict, str(exc))
+    if cycle is not None:
+        return _finish_cycle(workspace, verdict, text, cycle)
+    if fix_cycle.open_now(workspace) and not unshipped:
+        return False, verdict, f"a fix cycle is open; carry it to its re-check: {_self(workspace, '--next')}"
+    consensus, why = panel.recorded(workspace, gate.skill, sha)
     if consensus is None:
         return (True, verdict, "ok") if unshipped else (
             False, verdict, f"{verdict} needs the panel's consensus on this skill: {why}")
@@ -375,6 +389,22 @@ def finish(workspace: Path, skill: str | None = None) -> tuple[bool, str | None,
     if rule and _spaced(rule.line()) not in _spaced(text):
         return False, verdict, (f"{BENCHMARK} lacks check_gate.py's current SHIP RULE line beside the {verdict} "
                                 f"verdict; copy it in verbatim: {rule.line()}")
+    return True, verdict, "ok"
+
+
+def _finish_cycle(workspace: Path, verdict: str, text: str, cycle: fix_cycle.CycleRule) -> tuple[bool, str, str]:
+    """--finish after a fix cycle closed on this skill: the cycle's SHIP RULE caps the verdict, and BENCHMARK.md
+    carries the original PANEL CONSENSUS line, the FIX CYCLE line and that SHIP RULE line."""
+    unshipped = verdict == "UNSHIPPED"
+    rescores = [a for a in read_attempts(workspace) if a.get("step") == "rescore"]
+    if cycle.unscored and not unshipped and not (rescores and rescores[-1].get("error")):
+        return False, verdict, (f"the fixed skill has no metric ({cycle.line()}); score it, then re-run --next:\n"
+                                f"{rescore_command(workspace)}")
+    if panel.RANK[verdict] > panel.RANK[cycle.allowed]:
+        return False, verdict, f"fix cycle {cycle.n} allows at most {cycle.allowed} ({cycle.line()}); write that"
+    for line in (cycle.consensus_line, cycle.cycle_line(), cycle.line()):
+        if _spaced(line) not in _spaced(text):
+            return False, verdict, f"{BENCHMARK} lacks this line beside the {verdict} verdict; copy it in verbatim: {line}"
     return True, verdict, "ok"
 
 
@@ -621,7 +651,7 @@ def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
     each scored within the noise threshold of the best kept before it, at any score, or the last experiment brought
     the build to or kept it at target_score with no gain above that threshold. It reopens for one more metric run
     when the panel's latest consensus is ITERATE or BLOCK and newer than the log (never on a checkable skill:
-    metric-first, the panel is a review), when only experiment 0 is logged and a newer gate scored a gold case at
+    metric-first, the panel is a review; nor once a fix cycle opened), when only experiment 0 is logged and a newer gate scored a gold case at
     delta <= 0 (phase-3.md 3.5), or when only the description changed since the last kept experiment (4.6)."""
     entries, experiments, logged = _experiments(workspace)
     scored = [e for e in experiments if is_number(e.get("metric"))]
@@ -629,7 +659,8 @@ def loop_done(workspace: Path, skill: str | None = None) -> tuple[bool, str]:
         return False, "no scored experiment logged yet"
     consensus = read_json(workspace / panel.CONSENSUS)
     label = consensus.get("label") if consensus else None
-    if label in REOPENED and not panel.checkable(workspace) and (workspace / panel.CONSENSUS).stat().st_mtime > logged:
+    if label in REOPENED and not panel.checkable(workspace) and (workspace / panel.CONSENSUS).stat().st_mtime > logged \
+            and not fix_cycle.cycles(workspace):  # a fix cycle replaces the Phase 4 return
         return False, f"the panel's latest consensus, {label}, is newer than the last logged experiment"
     gate = workspace / GATE_RECORD
     if all(e.get("experiment") == 0 for e in experiments) and gate.is_file() and gate.stat().st_mtime > logged \
@@ -784,13 +815,93 @@ def _spent(workspace: Path) -> bool:
 
 
 def _verdict(workspace: Path, allowed: str, lines: list[str], why: str, unfinished: str | None,
-             checkable: bool) -> Next:
+             checkable: bool, cycle: bool = False) -> Next:
+    what = "After the fix cycle" if cycle else "On this metric-first path the panel is a review"
     note = (f"Then: {_self(workspace, '--next')}" + (
-        "\nOn this metric-first path the panel is a review: edit nothing in output/ now; a skill change ends the "
-        "build UNSHIPPED." if checkable and allowed != "UNSHIPPED" else ""))
+        f"\n{what}: edit nothing in output/ now; a skill change ends the build UNSHIPPED."
+        if (checkable or cycle) and allowed != "UNSHIPPED" else ""))
     text = (f"5.4: write BENCHMARK.md at the build root with `Verdict: {allowed}` ({why}), the scores and concerns, "
             "and these lines verbatim:")
     return Next("verdict", text, lines=lines, note=note, before=[unfinished] if unfinished else [])
+
+
+FIX_DOC = SCRIPTS.parent / "references" / "fix-cycle.md"
+RECHECK_DOC = SCRIPTS.parent / "references" / "panel" / "recheck.md"
+
+
+def _fix_next(workspace: Path, name: str, unfinished: str | None) -> Next | None:
+    """The fix cycle's next step (fix_cycle.py), or None outside one: open the cycle offered; inside an open one,
+    the fix commit, the rescore, the gate, the re-check; once closed on this skill, the next cycle or the verdict."""
+    found, current = fix_cycle.cycles(workspace), skill_sha256(workspace, name)
+    if found and (fixed := fix_cycle.closed(workspace, found[-1])) is None:
+        return _fix_open(workspace, name, found[-1], current)
+    if found and fixed != current:
+        return None  # the skill changed after its re-check: panel.exhausted ends the build
+    offered = fix_cycle.offer(workspace, name)
+    if offered is not None:
+        listed = [f"  {f['id']} ({f['kind']}): {f['evidence']}; repro: {f['repro']}" for f in offered.findings]
+        return Next("fix_cycle", f"5.4 fix cycle {offered.n} of {fix_cycle.max_cycles()} ({offered.why}): instead of "
+                                 f"UNSHIPPED, fix only these findings. Read {FIX_DOC} once, then open the cycle:",
+                    [_self(workspace, "--fix-cycle")], before=["FINDINGS:", *listed])
+    if not found:
+        return None
+    gate = validate(workspace, name)
+    if not gate.valid:
+        return Next("gate", f"5.0: {gate.reason.split('; re-run')[0]}; re-run the gate on the fixed skill:",
+                    [gate_command(workspace, name, restart=gate.code in GATE_RERUN)], note=SHELL_NOTE)
+    try:
+        rule = fix_cycle.rule(workspace, gate, current)
+    except GateError as exc:
+        return _verdict(workspace, "UNSHIPPED", [gate.line()], str(exc), unfinished, False)
+    rescores = [a for a in read_attempts(workspace) if a.get("step") == "rescore"]
+    if rule.unscored and not (rescores and rescores[-1].get("error")):
+        return Next("rescore", f"score output/{name}/ as fixed (the ship rule reads it); then --next:",
+                    [rescore_command(workspace), _self(workspace, "--next")])
+    return _verdict(workspace, rule.allowed, [gate.line(), rule.consensus_line, rule.cycle_line(), rule.line()],
+                    f"fix cycle {rule.n}", unfinished, False, cycle=True)
+
+
+def _fix_open(workspace: Path, name: str, cycle: dict, current: str) -> Next:
+    n, base, out = cycle["n"], cycle["base_commit"], f"output/{name}"
+    ids = ", ".join(f["id"] for f in cycle["findings"])
+    notes = fix_cycle.notes_path(workspace, n).relative_to(workspace).as_posix()
+    commit = (f"git -C {_q(workspace)} add -A -- {out} && git -C {_q(workspace)} commit -q -m "
+              f"{_q(f'fix cycle {n}: {ids}')} -- {out}")
+    then = _self(workspace, "--next")
+    status = fix_cycle.fix_status(workspace, cycle)
+    if status.code in ("none", "inputs", "git"):
+        what = (f"fix ONLY {ids} in {out}/ (findings: {fix_cycle.cycle_dir(workspace, n).relative_to(workspace)}"
+                f"/cycle.json); in {notes} write each id's fix and the lines it touches; then commit once:")
+        return Next("fix_cycle", f"fix cycle {n}: {status.why}" + ("" if status.code == "none" else "; fix that") +
+                    f". {what}", [commit, then])
+    if status.code == "many":
+        return Next("fix_cycle", f"fix cycle {n}: {status.why}. Fold it into one commit on top of {base[:12]}:",
+                    [f"git -C {_q(workspace)} reset -q --soft {base} && {commit}", then])
+    if status.code in ("notes", "outside"):
+        return Next("fix_cycle", f"fix cycle {n}: {status.why}. Declare those lines in {notes} under the finding "
+                                 "they fix, or undo that change and re-commit the fix as one commit:",
+                    [f"git -C {_q(workspace)} reset -q --soft {base} && {commit}", then])
+    rescores = [a for a in read_attempts(workspace) if a.get("step") == "rescore"]
+    if unscored_any(workspace, name) and not (rescores and rescores[-1].get("error")):
+        return Next("rescore", f"fix cycle {n}: score the fixed skill; then --next:",
+                    [rescore_command(workspace), then])
+    gate = validate(workspace, name)
+    if not gate.valid:
+        return Next("gate", f"fix cycle {n}: re-run the gate on the fixed skill (5.0):",
+                    [gate_command(workspace, name, restart=gate.code in GATE_RERUN)], note=SHELL_NOTE)
+    roles = fix_cycle.pending(workspace, cycle, current)
+    diff = f"git -C {_q(workspace)} diff {base} {status.commit} -- {out}"
+    return Next("recheck", f"fix cycle {n} re-check: dispatch one subagent per role ({', '.join(roles)}), in the "
+                           f"foreground, never the builder; tell each to read only {RECHECK_DOC}, and give it {out}/, "
+                           f"its own findings in {fix_cycle.cycle_dir(workspace, n).relative_to(workspace)}/cycle.json, "
+                           f"{notes} and `{diff}`. Each ends with:",
+                [_self(workspace, "--recheck-receipt", "<role>", "<recheck.json>"), f"then: {then}"],
+                before=[gate.line()])
+
+
+def unscored_any(workspace: Path, skill: str) -> bool:
+    """On either path, with an evaluate.sh to run: no kept experiment scored output/<skill>/ as it is now."""
+    return (workspace / "work" / "evaluation" / "evaluate.sh").is_file() and ship_metric(workspace, skill)[0] is None
 
 
 def next_action(workspace: Path, skill: str | None = None) -> Next:
@@ -813,6 +924,8 @@ def next_action(workspace: Path, skill: str | None = None) -> Next:
     if live:
         return Next("gate_running", "5.0: the gate is running; wait on it (never restart it):",
                     [f"python3 {_q(SCRIPTS / 'gate.py')} --workspace {_q(workspace)} --wait"], note=SHELL_NOTE)
+    if (step := _fix_next(workspace, name, unfinished)) is not None:
+        return step
     if last := panel.exhausted(workspace):
         return _verdict(workspace, "UNSHIPPED", [line for line in [last.get("line")] if line],
                         f"the panel ran its {panel.max_rounds(workspace)} round(s) and the skill changed since; no "
@@ -920,6 +1033,9 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument("--fast-path", action="store_true", help="3.5: may the build skip the Phase 4 loop")
     step.add_argument("--loop", action="store_true", help="4.3: is the Phase 4 loop over (the loop guard's check)")
     step.add_argument("--next", action="store_true", help="the build's single next action, as the exact command")
+    step.add_argument("--fix-cycle", action="store_true", help="5.4: open the fix cycle --next offers (fix_cycle.py)")
+    step.add_argument("--recheck-receipt", nargs=2, metavar=("ROLE", "RECHECK_JSON"),
+                      help="5.4: a re-checking role's receipt on the fixed skill (references/panel/recheck.md)")
     parser.add_argument("--profile", choices=PROFILES, help="with --next: store the build's profile (lite: small "
                                                              "builder models) in work/manifest.yaml")
     parser.add_argument("--synthesis", action="store_true", help="with --panel-receipt: the synthesis round (5.3)")
@@ -952,6 +1068,16 @@ def main(argv: list[str] | None = None) -> int:
         if done and not args.json and unscored(workspace, args.skill):
             print(rescore_command(workspace))
         return 0 if done else 1
+    if args.fix_cycle:
+        try:
+            cycle = fix_cycle.open_cycle(workspace, resolve_skill(workspace, args.skill))
+        except GateError as exc:
+            print(f"NO FIX CYCLE: {exc}")
+            return 1
+        print(f"FIX CYCLE {cycle['n']} OPEN: findings {', '.join(f['id'] for f in cycle['findings'])}; base commit "
+              f"{cycle['base_commit'][:12]}; notes {fix_cycle.notes_path(workspace, cycle['n'])}")
+        print(next_action(workspace, args.skill).render())
+        return 0
     if args.finish:
         done, label, reason = finish(workspace, args.skill)
         print(json.dumps({"finished": done, "verdict": label, "reason": reason}) if args.json else
@@ -965,13 +1091,18 @@ def main(argv: list[str] | None = None) -> int:
         except (panel.RoundsExhausted, GateError) as exc:
             print(f"PANEL ROUNDS EXHAUSTED: {exc}")
             return 1
-    if not (args.panel_receipt or args.consensus) or not verdict.valid:
+    if not (args.panel_receipt or args.consensus or args.recheck_receipt) or not verdict.valid:
         print(json.dumps(asdict(verdict)) if args.json else verdict.line())
     if not verdict.valid:
         return 1
     skill_sha = skill_sha256(workspace, verdict.skill)
     try:
-        if args.panel_receipt:
+        if args.recheck_receipt:
+            role, source = args.recheck_receipt
+            path, resolved, unresolved = fix_cycle.write_recheck(workspace, role, Path(source), verdict.skill)
+            print(f"RECHECK RECEIPT: {path.relative_to(workspace).as_posix()} ({role}); resolved "
+                  f"{', '.join(resolved) or 'none'}; unresolved {', '.join(unresolved) or 'none'}")
+        elif args.panel_receipt:
             role, source = args.panel_receipt
             path = panel.write_receipt(workspace, role, Path(source), verdict.skill, skill_sha, args.synthesis)
             print(f"PANEL RECEIPT: {path.relative_to(workspace).as_posix()} ({role}, round {2 if args.synthesis else 1})"

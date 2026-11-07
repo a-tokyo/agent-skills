@@ -65,7 +65,7 @@ class ContextBudgetTest(unittest.TestCase):
         path = default_path(SKILL)
         for name in ("benchmark-standard.md", "consensus-protocol.md", "hosts.md", "publishing.md",
                      "standalone-fallback.md", "verdict-rules.json", "authoring-rules.md", "rubric-templates.md",
-                     "gate-runner.md", "evaluate-templates.md"):
+                     "gate-runner.md", "evaluate-templates.md", "fix-cycle.md"):
             self.assertNotIn(name, path, f"{name} is mentioned without a condition:\n" + report(path))
 
     def test_read_discipline_is_stated(self) -> None:
@@ -80,7 +80,8 @@ class ScriptHelpTest(unittest.TestCase):
     NEEDS = {
         "gate.py": ["--detach --wait --model", "record", "--restart", "--stop", "Exit codes", "124"],
         "check_gate.py": ["--next", "--profile lite", "NEXT:", "BUILD FINISHED", "--panel-receipt", "--consensus", "--finish", "--fast-path", "--loop", "--synthesis",
-                          "verifier-a", "devils-advocate", "Exit codes"],
+                          "verifier-a", "devils-advocate", "--fix-cycle", "--recheck-receipt", "Exit codes"],
+        "fix_cycle.py": ["check_gate.py --fix-cycle", "--recheck-receipt ROLE JSON", "max_fix_cycles"],
         "panel.py": ["check_gate.py --panel-receipt ROLE SCORES_JSON", "--consensus", "devils-advocate"],
         "rescore.py": ["--workspace", "ALREADY SCORED", "RESCORED", "Exit codes"],
         "run_owned.py": ["start <name>", "wait <name>", "stop <name>", "status <name>", "Exit codes"],

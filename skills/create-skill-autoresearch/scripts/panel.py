@@ -9,6 +9,8 @@ references/rubric-templates.md.
 Under the lite profile (gate_common.profile) the panel is one `reviewer` (references/panel/reviewer.md) holding
 the Devil's Advocate's escalation, with no synthesis round; its receipt alone is the consensus. The full profile
 accepts only the three roles, the lite one only the reviewer.
+A receipt keeps the member's cited failure scenarios (`evidence` and `repro`) as `findings`, which a fix cycle may fix
+(scripts/fix_cycle.py); once one opened, no panel receipt is accepted.
 With `metric: answer-key` the panel is a review: its consensus allows UNSHIPPED only on a veto (a hard defect a
 receipt cites), and check_gate.py decides the rest from the gate and the Phase 4 metric (verdict-rules.json
 metric_first).
@@ -281,6 +283,10 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
                         f"profile panel{other})")
     if synthesis and lite(workspace):
         raise GateError("the lite profile's panel has no synthesis round: the reviewer's first receipt is final")
+    import fix_cycle  # noqa: PLC0415  (fix_cycle imports this module)
+    if fix_cycle.cycles(workspace):
+        raise GateError("a fix cycle ran after the panel, and a fix cycle never re-runs it: the cycle's roles re-check "
+                        "their findings with `check_gate.py --recheck-receipt`; run check_gate.py --next")
     if not synthesis:
         check_round(workspace, skill_sha)
     rubric, texts = read_rubric(workspace), quotable(workspace, skill)
@@ -297,12 +303,14 @@ def write_receipt(workspace: Path, role: str, source: Path, skill: str, skill_sh
             raise GateError("the first round disputed nothing; there is no synthesis round")
         receipt["scores"] = _synthesis_scores(raw, current[role], disputed, rubric, texts)
         recommendation = raw.get("final_recommendation") or current[role]["recommendation"]
+        receipt["findings"] = current[role].get("findings") or []
         escalate = current[role].get("escalate") if "escalation" not in raw else raw.get("escalation")
         veto = _veto(raw["veto"], role, escalate, texts, adversary(workspace)) if "veto" in raw else current[role].get("veto")
         if veto and veto["kind"] == "escalate" and not (isinstance(escalate, str) and escalate.strip()):
             veto = None  # the escalation it rested on is withdrawn
     else:
         receipt["scores"] = _scores(raw.get("scores"), rubric, texts)
+        receipt["findings"] = fix_cycle.cited(raw.get("failure_scenarios"), texts)
         recommendation, escalate = raw.get("pass_recommendation"), raw.get("escalation")
         veto = _veto(raw.get("veto"), role, escalate, texts, adversary(workspace))
     receipt["recommendation"] = (re.sub(r"[ _]+", " ", recommendation.strip().upper())
@@ -354,7 +362,9 @@ def check_round(workspace: Path, skill_sha: str) -> int:
     next), or RoundsExhausted when the panel already started `max_panel_rounds` rounds on other versions of the
     skill (exhausted)."""
     archive = rounds(workspace)
-    n = len(archive) if archive and archive[-1].get("skill_sha256") == skill_sha else len(archive) + 1
+    if archive and archive[-1].get("skill_sha256") == skill_sha:
+        return len(archive)  # the last round's own skill: no new round starts
+    n = len(archive) + 1
     last = exhausted(workspace)
     if n > (cap := max_rounds(workspace)) or last is not None:
         line = (last or archive[-1]).get("line")
@@ -367,15 +377,19 @@ def check_round(workspace: Path, skill_sha: str) -> int:
 def exhausted(workspace: Path) -> dict | None:
     """The last round when the panel started all `max_panel_rounds` rounds (started) and the skill as it is now
     is none of the versions they reviewed, else None. A round with receipts but no consensus counts: on the
-    metric-first path (one round) any change after the first receipt ends the build."""
-    begun, archive = started(workspace), rounds(workspace)
-    if len(begun) < max_rounds(workspace):
-        return None
+    metric-first path (one round) any change after the first receipt ends the build. Once a fix cycle opened, on
+    either path: None only while the cycle is open or closed on the skill as it is now (fix_cycle.governs)."""
+    import fix_cycle  # noqa: PLC0415  (fix_cycle imports this module)
+    begun, archive, cycled = started(workspace), rounds(workspace), bool(fix_cycle.cycles(workspace))
+    if len(begun) < max_rounds(workspace) and not cycled or not begun:
+        return None  # after a fix cycle no new round starts on either path, whatever rounds are left
     last = archive[-1] if archive else {"line": "", "skill": begun[-1][1], "skill_sha256": begun[-1][0]}
     try:
         current = skill_sha256(workspace, check_skill_name(begun[-1][1]))
     except GateError:
         return last
+    if cycled:
+        return None if fix_cycle.governs(workspace, current) else last
     return None if current in dict(begun) else last
 
 

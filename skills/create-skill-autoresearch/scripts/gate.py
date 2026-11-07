@@ -515,9 +515,14 @@ def _settled(ws: Path, args: argparse.Namespace) -> bool:
 
 def panel_spent(ws: Path) -> bool:
     """Metric-first: the panel's one round started (its first receipt) and the skill changed since, so no gate
-    can change the verdict and none starts. Prints the UNSHIPPED instruction check_gate.py --next gives."""
-    if not check_gate.panel.checkable(ws) or check_gate.panel.exhausted(ws) is None:
-        return False  # the panel-verdict path keeps its ITERATE re-gates up to max_panel_rounds
+    can change the verdict and none starts. Prints the UNSHIPPED instruction check_gate.py --next gives. Inside an
+    open fix cycle (scripts/fix_cycle.py) the gate re-runs only on its one valid fix commit, on either path."""
+    if refusal := check_gate.fix_cycle.gate_refusal(ws):
+        print(f"gate: not started: {refusal}. Next:", file=sys.stderr)
+        print(check_gate.next_action(ws).render())
+        return True
+    if not (check_gate.panel.checkable(ws) or check_gate.fix_cycle.cycles(ws)) or check_gate.panel.exhausted(ws) is None:
+        return False  # the panel-verdict path keeps its ITERATE re-gates up to max_panel_rounds, until a fix cycle
     print(f"gate: not started: the panel already ran its {check_gate.panel.max_rounds(ws)} round(s) and output/ "
           "changed since, so no gate run changes the verdict (5.4: edit nothing after the panel). The build ends "
           "UNSHIPPED:", file=sys.stderr)

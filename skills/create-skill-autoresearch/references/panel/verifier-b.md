@@ -30,6 +30,7 @@ real-world usability, edge cases, integration quality, developer experience.
   },
   "overall_assessment": "<2-3 sentences>",
   "top_concern": "<single most important issue>",
+  "failure_scenarios": [ { "scenario": "<concrete description>", "severity": "critical|high|medium|low", "evidence": "\"<verbatim quote>\"", "repro": "<input or command>" } ],
   "edge_cases_found": ["<list>"],
   "veto": null | { "kind": "hard_constraint|safety", "evidence": "\"<verbatim quote>\"", "repro": "<input or command>" },
   "pass_recommendation": "SHIP|SHIP_WITH_CAVEATS|ITERATE|BLOCK"

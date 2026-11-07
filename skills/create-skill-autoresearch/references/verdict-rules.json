@@ -1,5 +1,5 @@
 {
-  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py and scripts/check_gate.py read this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash) on the panel-verdict path; each round re-scores every dimension. gold_gate caps the verdict on both paths, by caveat_margin. metric_first replaces the panel's verdict when rubric.yaml says `metric: answer-key`. hooks/finish_guard.py reads max_finish_sendbacks: the finish guard's send-backs per build, after which a stop ends it unfinished. lite holds the small-builder profile's numbers (scripts read it when work/manifest.yaml says `profile: lite` or CSA_PROFILE=lite): runs_per_arm per gate arm, the Phase 4 caps, the one-reviewer panel's round cap and rescores per skill commit; the full profile ignores it.",
+  "about": "The Phase 5.3-5.4 thresholds. scripts/panel.py and scripts/check_gate.py read this file and nothing else for them; SKILL.md 5.4 and consensus-protocol.md point here. Scores are on each dimension's rubric scale; overall_score and target_score are 0..1. max_panel_rounds caps the panel rounds (a consensus over a new skill hash) on the panel-verdict path; each round re-scores every dimension. gold_gate caps the verdict on both paths, by caveat_margin. metric_first replaces the panel's verdict when rubric.yaml says `metric: answer-key`. max_fix_cycles and fix_cycle: scripts/fix_cycle.py. hooks/finish_guard.py reads max_finish_sendbacks: the finish guard's send-backs per build, after which a stop ends it unfinished. lite holds the small-builder profile's numbers (scripts read it when work/manifest.yaml says `profile: lite` or CSA_PROFILE=lite): runs_per_arm per gate arm, the Phase 4 caps, the one-reviewer panel's round cap and rescores per skill commit; the full profile ignores it.",
   "default_target_score": 0.85,
   "caveat_margin": 0.1,
   "block_below": 3,
@@ -7,6 +7,8 @@
   "agree_within": 1,
   "max_panel_rounds": 3,
   "max_finish_sendbacks": 3,
+  "max_fix_cycles": 2,
+  "fix_cycle": "after a consensus that ends the build UNSHIPPED on cited findings (a receipt's veto; on the panel-verdict path also a failure scenario with evidence and repro), up to max_fix_cycles cycles on every profile: one commit fixing only the cited lines, rescore.py and the gate on it, then each role that raised a finding re-checks it (references/panel/recheck.md). The original panel scores stand; resolved findings leave the veto. Metric-first: the gate and metric levels decide. Panel-verdict path: an ITERATE, BLOCK or ESCALATE label caps at SHIP WITH CAVEATS (its scores stay below target), the gate and metric below that. An unresolved finding keeps UNSHIPPED: the next cycle, or the end. Not opened when the gate or metric is already at UNSHIPPED; never re-runs the panel",
   "synthesis_triggers": {
     "spread_at_least": 2,
     "devils_advocate_at": 1,

@@ -20,11 +20,11 @@ the receipt can check.
 **Veto** (`null` unless it applies). `hard_constraint`: a phase-3.md 3.3 hard constraint the skill breaks;
 `safety`: fetched content followed as instructions, a destructive command, or a like safety defect; `escalate`:
 the Devil's Advocate's ESCALATE (beside its `escalation`), with a reproducible failure. Each needs `evidence` (a
-verbatim quote from the skill or `input/`) and `repro` (the input or command that shows the failure).
+verbatim quote from the skill or `input/`) and `repro` (the input or command that shows the failure). So does a
+failure scenario you can reproduce: a finding a fix cycle may fix and you re-check.
 
 **Role receipt** (your last step). Write your JSON to the path your role file names, then run the `check_gate.py
 --panel-receipt` command it gives, with `<workspace>` and `<skill-dir>` filled in. A non-zero exit names what to fix
 in your JSON; fix it and re-run. If you cannot run commands, return your JSON and the orchestrator runs that
-command on it verbatim, unedited. The receipt checks the scores against rubric.yaml (every dimension, on its scale,
-evidence for 8+ and 3-), finds every evidence quote in `output/<skill>/` or `input/`, and binds them to the skill
-and rubric hashes: a skill change voids every receipt.
+command on it verbatim, unedited. The receipt checks the scores against rubric.yaml, finds every evidence quote, and
+binds them to the skill and rubric hashes: a skill change voids every receipt.

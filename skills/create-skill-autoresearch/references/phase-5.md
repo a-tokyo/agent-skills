@@ -15,8 +15,8 @@ python3 <skill-dir>/scripts/gate.py --detach --wait --model <model> [options]   
 
 - Exit 124 (still running): re-issue the same command; never sleep, poll or restart. 0: valid. Any other exit names
   what to fix (the suite, `run-case.sh`: phase-3.md 3.6): fix it, then run what `--next` prints. A changed skill,
-  gate input or option starts a new gate, so start it only when Phase 4 and any rescore are done. Only `gate.py`
-  writes the artifact.
+  gate input or option starts a new gate, so start it only when Phase 4 and any rescore are done; after the panel,
+  only a fix cycle's commit (5.4). Only `gate.py` writes the artifact.
 - Pass `--in-sample` with 3-9 gold standards (the gate cases are training cases; `BENCHMARK.md` and the panel label
   Δ in-sample), and `--executor` on the manual path. Grant only the tools the skill needs. A Claude Code build never
   passes `--backend manual`.
