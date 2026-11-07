@@ -257,7 +257,7 @@ are created at the workspace root during the active session, then archived to
 - **Out-of-scope files**: `input/`, `work/`
 - **Constraints**: Must follow the official skill-authoring rules (< 500 lines, frontmatter format -- see 3.3)
 - **Budget**: From rubric config `max_iterations` (default 20)
-- **Checks**: If `work/evaluation/evaluate-checks.sh` exists, create `autoresearch.checks.sh` at workspace root that calls it (autoresearch skill expects this name)
+- **Checks**: If `work/evaluation/evaluate-checks.sh` exists, run it before each measurement; a failing check discards the experiment (a factory rule: the autoresearch skill has no checks file of its own)
 
 ### 4.2 Data Split
 
@@ -286,14 +286,15 @@ others' expense. Flag when any single case drops > 1.0 point while others improv
 
 ### 4.3 Let Autoresearch Run
 
-The autoresearch skill handles the loop:
+The autoresearch skill ([github/awesome-copilot](https://github.com/github/awesome-copilot)) handles the loop:
 - THINK-EDIT-COMMIT-RUN-MEASURE-DECIDE-LOG cycle (commit-first git model)
 - METRIC protocol for measurement
-- ASI fields for structured memory
 - Plateau detection
-- Results logging to `autoresearch.jsonl` and `results.tsv`
+- Results logging to `results.tsv` and `run.log`
 
-The factory adds to the autoresearch ideas backlog (`autoresearch.ideas.md`):
+The factory keeps two records of its own on top, creating them when they don't exist: one
+`autoresearch.jsonl` line per experiment (experiment, commit, metric, status, hypothesis, what was learned),
+and the ideas backlog `autoresearch.ideas.md`, seeded with:
 - Ideas from research synthesis
 - Per-dimension improvement strategies from the rubric
 - Patterns observed in gold standards that aren't yet reflected in the skill
@@ -325,7 +326,7 @@ If the autoresearch session exceeds context limits or the experiment budget:
 When `work/handoffs/state.yaml` exists: read it for the current phase, read the most recent
 `work/handoffs/HANDOFF-*.md` for context, resume at the recorded phase (re-confirm parameters on
 **interview**; synthesize if the dossier is incomplete on **research**; measure a baseline if the draft
-exists on **draft**; read `autoresearch.jsonl` for ASI history and continue with the remaining budget on
+exists on **draft**; read `autoresearch.jsonl` for the experiment history and continue with the remaining budget on
 **autoresearch**; re-run the panel if the last verdict was ITERATE on **verify**), then bump the session
 number. Per-phase detail: [references/pipeline-phases.md](references/pipeline-phases.md).
 
@@ -347,7 +348,7 @@ Spawn 3 independent verifier subagents **in parallel**. Each receives ONLY:
 - The rubric
 - The premortem risks
 
-They do NOT receive: research notes, experiment logs, builder context, or ASI.
+They do NOT receive: research notes, experiment logs or builder context.
 
 **Panel roles:**
 
