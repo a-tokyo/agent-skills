@@ -60,7 +60,7 @@ Panel members receive ONLY:
 
 Panel members do NOT receive:
 - Research notes or dossier
-- Experiment logs or ASI
+- Experiment logs
 - Builder context or conversation history
 - Previous scores from other panel members
 
