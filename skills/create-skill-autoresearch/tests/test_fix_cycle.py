@@ -218,6 +218,21 @@ class FixCycleTest(FixCycleFixture):
         self.notes(1, {"verifier-b.veto": "SKILL.md:6"})
         self.assertIn("re-run the gate on the fixed skill", self.next())
 
+    def test_a_fix_that_cannot_be_scored_ends_unshipped(self) -> None:
+        self.vetoed()
+        self.open()
+        skill = self.ws / "output" / "demo" / "SKILL.md"
+        skill.write_text(skill.read_text() + FIXED)
+        self.notes(1, {"verifier-b.veto": "SKILL.md:6"})
+        self.git("add", "-A", "output")
+        self.git("commit", "-q", "-m", "fix cycle 1")
+        with open(self.ws / "work" / "evaluation" / "gate-attempts.jsonl", "a") as fh:
+            fh.write(json.dumps({"step": "rescore", "error": "evaluate.sh printed no METRIC line",
+                                 "commit": self.git("rev-parse", "HEAD")}) + "\n")
+        nxt = self.next()
+        self.assertIn("`Verdict: UNSHIPPED` (fix cycle 1: the fixed skill cannot be scored", nxt)
+        self.assertNotIn("re-check", nxt)
+
     def test_no_cycle_when_fixing_cannot_ship_or_nothing_is_cited(self) -> None:
         self.log(0.70)  # the metric already allows only UNSHIPPED
         self.gate()

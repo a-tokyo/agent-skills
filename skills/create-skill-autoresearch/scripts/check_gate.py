@@ -834,7 +834,7 @@ def _fix_next(workspace: Path, name: str, unfinished: str | None) -> Next | None
     the fix commit, the rescore, the gate, the re-check; once closed on this skill, the next cycle or the verdict."""
     found, current = fix_cycle.cycles(workspace), skill_sha256(workspace, name)
     if found and (fixed := fix_cycle.closed(workspace, found[-1])) is None:
-        return _fix_open(workspace, name, found[-1], current)
+        return _fix_open(workspace, name, found[-1], current, unfinished)
     if found and fixed != current:
         return None  # the skill changed after its re-check: panel.exhausted ends the build
     offered = fix_cycle.offer(workspace, name)
@@ -861,7 +861,7 @@ def _fix_next(workspace: Path, name: str, unfinished: str | None) -> Next | None
                     f"fix cycle {rule.n}", unfinished, False, cycle=True)
 
 
-def _fix_open(workspace: Path, name: str, cycle: dict, current: str) -> Next:
+def _fix_open(workspace: Path, name: str, cycle: dict, current: str, unfinished: str | None) -> Next:
     n, base, out = cycle["n"], cycle["base_commit"], f"output/{name}"
     ids = ", ".join(f["id"] for f in cycle["findings"])
     notes = fix_cycle.notes_path(workspace, n).relative_to(workspace).as_posix()
@@ -882,7 +882,11 @@ def _fix_open(workspace: Path, name: str, cycle: dict, current: str) -> Next:
                                  "they fix, or undo that change and re-commit the fix as one commit:",
                     [f"git -C {_q(workspace)} reset -q --soft {base} && {commit}", then])
     rescores = [a for a in read_attempts(workspace) if a.get("step") == "rescore"]
-    if unscored_any(workspace, name) and not (rescores and rescores[-1].get("error")):
+    if unscored_any(workspace, name):
+        if rescores and rescores[-1].get("error"):  # the fix broke the scoring: no re-check can ship it
+            line = (read_json(workspace / panel.CONSENSUS) or {}).get("line")
+            return _verdict(workspace, "UNSHIPPED", [line] if line else [], f"fix cycle {n}: the fixed skill cannot "
+                            f"be scored ({rescores[-1]['error']})", unfinished, False)
         return Next("rescore", f"fix cycle {n}: score the fixed skill; then --next:",
                     [rescore_command(workspace), then])
     gate = validate(workspace, name)
