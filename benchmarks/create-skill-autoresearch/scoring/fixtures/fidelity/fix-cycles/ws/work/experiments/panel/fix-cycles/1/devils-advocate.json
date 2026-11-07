@@ -1,0 +1,10 @@
+{
+  "role": "devils-advocate",
+  "cycle": 1,
+  "results": {
+    "devils-advocate.F1": {
+      "resolved": false,
+      "regression": "breaks parsing"
+    }
+  }
+}

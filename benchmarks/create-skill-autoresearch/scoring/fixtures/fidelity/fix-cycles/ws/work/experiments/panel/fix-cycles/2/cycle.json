@@ -1,0 +1,16 @@
+{
+  "n": 2,
+  "skill": "demo",
+  "findings": [
+    {
+      "id": "devils-advocate.F1",
+      "role": "devils-advocate",
+      "kind": "finding",
+      "evidence": "\"name: demo\"",
+      "repro": "y"
+    }
+  ],
+  "roles": [
+    "devils-advocate"
+  ]
+}

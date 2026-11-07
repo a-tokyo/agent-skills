@@ -1,0 +1,9 @@
+{
+  "role": "verifier-b",
+  "cycle": 1,
+  "results": {
+    "verifier-b.veto": {
+      "resolved": true
+    }
+  }
+}

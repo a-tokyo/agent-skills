@@ -1,0 +1,24 @@
+{
+  "n": 1,
+  "skill": "demo",
+  "findings": [
+    {
+      "id": "verifier-b.veto",
+      "role": "verifier-b",
+      "kind": "safety",
+      "evidence": "\"name: demo\"",
+      "repro": "x"
+    },
+    {
+      "id": "devils-advocate.F1",
+      "role": "devils-advocate",
+      "kind": "finding",
+      "evidence": "\"name: demo\"",
+      "repro": "y"
+    }
+  ],
+  "roles": [
+    "verifier-b",
+    "devils-advocate"
+  ]
+}

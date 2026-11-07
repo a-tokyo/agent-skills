@@ -32,6 +32,10 @@ Per build (a run dir from arms/run-arm.sh):
                     consensus over a new skill hash; capped at max_panel_rounds); None before that archive
   panel_spawns      Agent/Task tool calls the builder made for the panel: a description naming a verifier,
                     the devil's advocate or the panel (session jsonl, subagents included)
+  fix_cycles        the fix cycles the build opened after the panel (v0.3.x, check_gate.py --fix-cycle;
+                    work/experiments/panel/fix-cycles/<n>/cycle.json): {count, resolved, unresolved}, the
+                    finding ids any cycle's re-check receipt resolved and the latest cycle's others (not yet
+                    re-checked included); None when no cycle opened
   finish_guard_blocks  times the finish guard (hooks/finish_guard.py, an end-of-turn hook) sent the build
                     back: lines in work/experiments/finish-guard.jsonl
 
@@ -100,6 +104,7 @@ class Build:
     finish_guard_blocks: int = 0
     panel_rounds: int | None = None
     panel_spawns: int = 0
+    fix_cycles: dict | None = None
 
 
 def workspace_of(run: Path) -> Path | None:
@@ -159,6 +164,25 @@ def panel_rounds(ws: Path) -> int | None:
     if not rounds.is_dir():
         return None
     return sum(1 for p in rounds.iterdir() if p.name.isdigit() and (p / "round.json").is_file())
+
+
+def fix_cycles(ws: Path) -> dict | None:
+    """{count, resolved, unresolved} over fix-cycles/<n>/: cycle.json lists the findings, <role>.json each re-checking
+    role's results; a finding resolved in any cycle counts once as resolved."""
+    root = ws / "work" / "experiments" / "panel" / "fix-cycles"
+    count, resolved, latest = 0, set(), []
+    while cycle := _json(root / str(count + 1) / "cycle.json"):
+        count += 1
+        results: dict = {}
+        for role in cycle.get("roles") or []:
+            got = _json(root / str(count) / f"{role}.json").get("results")
+            results.update(got if isinstance(got, dict) else {})
+        ids = [f.get("id") for f in cycle.get("findings") or [] if isinstance(f, dict)]
+        resolved |= {i for i in ids if isinstance(results.get(i), dict) and results[i].get("resolved") is True}
+        latest = ids
+    if not count:
+        return None
+    return {"count": count, "resolved": len(resolved), "unresolved": len([i for i in latest if i not in resolved])}
 
 
 def _session_entries(run: Path):
@@ -305,7 +329,7 @@ def score(run: Path, check_gate: Path) -> Build:
     return Build(run.name, ws.name, artifact, valid, reason, code, len(kills), [k[:160] for k in kills[:3]],
                  blocked, verdict, shipped_label_ok(text, verdict), verdict in SHIPPED_VERDICTS and not valid,
                  finished(ws, check_gate), roles, label, allowed, above, finish_guard_blocks(ws),
-                 panel_rounds(ws), panel_spawns(run))
+                 panel_rounds(ws), panel_spawns(run), fix_cycles(ws))
 
 
 def summary(builds: list[Build]) -> dict:
@@ -328,18 +352,23 @@ def summary(builds: list[Build]) -> dict:
         "finish_guard_blocks": sum(b.finish_guard_blocks for b in builds),
         "panel_rounds": sum(b.panel_rounds or 0 for b in builds),
         "panel_spawns": sum(b.panel_spawns for b in builds),
+        "builds_with_fix_cycles": sum(b.fix_cycles is not None for b in builds),
+        "fix_cycles": sum((b.fix_cycles or {}).get("count", 0) for b in builds),
+        "fix_findings_resolved": sum((b.fix_cycles or {}).get("resolved", 0) for b in builds),
+        "fix_findings_unresolved": sum((b.fix_cycles or {}).get("unresolved", 0) for b in builds),
     }
 
 
 def table(builds: list[Build]) -> str:
     rows = [("run", "artifact", "gate_valid", "kills", "blocked", "verdict", "shipped_ok", "ship_gate", "finished",
-             "receipts", "rounds", "spawns", "consensus", "sent_back", "gate reason")]
+             "receipts", "rounds", "spawns", "fix", "consensus", "sent_back", "gate reason")]
     rows += [(b.run, "yes" if b.artifact else "no", "yes" if b.gate_valid else "no", str(b.kill_commands),
               str(b.kill_blocked),
               b.verdict or "-", "-" if b.shipped_label_ok is None else ("yes" if b.shipped_label_ok else "NO"),
               "INVALID" if b.shipped_gate_invalid else "-",
               "-" if b.finished is None else ("yes" if b.finished else "no"), str(len(b.panel_receipts)),
               "-" if b.panel_rounds is None else str(b.panel_rounds), str(b.panel_spawns),
+              "-" if b.fix_cycles is None else "{count}:{resolved}/{unresolved}".format(**b.fix_cycles),
               (b.consensus or "-") + (" ABOVE" if b.above_consensus else ""), str(b.finish_guard_blocks),
               b.gate_reason) for b in builds]
     widths = [max(len(r[i]) for r in rows) for i in range(len(rows[0]) - 1)]
@@ -368,7 +397,9 @@ def main(argv: list[str] | None = None) -> int:
           f"consensus {totals['builds_with_consensus']}, verdicts above the consensus {totals['verdict_above_consensus']}, "
           f"sent back by the finish guard {totals['finish_guard_blocks']} times in "
           f"{totals['builds_sent_back_by_finish_guard']} builds, panel rounds archived {totals['panel_rounds']}, "
-          f"panel subagent spawns {totals['panel_spawns']}")
+          f"panel subagent spawns {totals['panel_spawns']}, fix cycles {totals['fix_cycles']} in "
+          f"{totals['builds_with_fix_cycles']} builds (findings resolved {totals['fix_findings_resolved']}, "
+          f"unresolved {totals['fix_findings_unresolved']})")
     print()
     print(json.dumps({"builds": [asdict(b) for b in builds], "summary": totals}, indent=2))
     return 0

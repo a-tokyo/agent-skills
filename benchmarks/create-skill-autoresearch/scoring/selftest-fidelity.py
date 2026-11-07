@@ -21,6 +21,8 @@ Fixtures (scoring/fixtures/fidelity/):
                     check_gate.py, a SHIP verdict (above the consensus), one finish-guard send-back and one
                     archived panel round (rounds/1/round.json; rounds/notes/ is not a round)
   panel-finished    the same with a SHIP WITH CAVEATS verdict carrying both lines: --finish passes
+  fix-cycles        two fix cycles: cycle 1 resolved verifier-b.veto and left devils-advocate.F1 (a regression);
+                    cycle 2, on that finding, has no re-check receipt yet
 """
 
 from __future__ import annotations
@@ -46,7 +48,7 @@ builds = {b.run: b for b in (fidelity.score(FIXTURES / name, fidelity.DEFAULT_CH
                              for name in ("plugin-ok", "manual-kill", "legacy-unshipped", "unshipped-draft",
                                           "unshipped-incidental", "iterate-terminal",
                                           "iterate-shipped-artifact", "stale-ship", "guard-blocked",
-                                          "cursor-blocked", "panel-above", "panel-finished"))}
+                                          "cursor-blocked", "panel-above", "panel-finished", "fix-cycles"))}
 
 ok = builds["plugin-ok"]
 expect("plugin-ok: artifact at canonical path", ok.artifact)
@@ -115,15 +117,22 @@ expect("panel-above: one archived panel round; none archived elsewhere",
 expect("panel-finished: the allowed verdict with both lines finishes", done.finished is True and not done.above_consensus)
 expect("plugin-ok: SHIP WITH CAVEATS without a panel consensus is unfinished", ok.finished is False and ok.consensus is None)
 
+cycles = builds["fix-cycles"]
+expect("fix-cycles: two cycles, one finding resolved, the re-opened one unresolved",
+       cycles.fix_cycles == {"count": 2, "resolved": 1, "unresolved": 1})
+expect("fix-cycles: none recorded where no cycle opened", ok.fix_cycles is None and done.fix_cycles is None)
+
 totals = fidelity.summary(list(builds.values()))
-expect("summary counts", totals == {"builds": 12, "artifact_at_canonical_path": 5, "gate_valid": 3,
+expect("summary counts", totals == {"builds": 13, "artifact_at_canonical_path": 5, "gate_valid": 3,
                                     "builds_with_kill_commands": 3, "kill_commands": 4,
                                     "builds_with_blocked_kills": 2, "kill_blocked": 3,
                                     "below_target_labelled_shipped": 2, "stale_gate": 1,
                                     "shipped_with_gate_invalid": 1, "finished": 1,
                                     "builds_with_three_receipts": 2, "builds_with_consensus": 2,
                                     "verdict_above_consensus": 1, "builds_sent_back_by_finish_guard": 2,
-                                    "finish_guard_blocks": 2, "panel_rounds": 1, "panel_spawns": 2})
+                                    "finish_guard_blocks": 2, "panel_rounds": 1, "panel_spawns": 2,
+                                    "builds_with_fix_cycles": 1, "fix_cycles": 2, "fix_findings_resolved": 1,
+                                    "fix_findings_unresolved": 1})
 expect("verdict: SHIP_WITH_CAVEATS spelling normalised", fidelity.verdict_of("Verdict: SHIP_WITH_CAVEATS") == "SHIP WITH CAVEATS")
 expect("verdict: none stated", fidelity.verdict_of("# notes\nno decision yet") is None)
 expect("shipped: 'never shipped' is negated", fidelity.shipped_label_ok("BLOCK. It was never shipped.", "BLOCK") is True)
