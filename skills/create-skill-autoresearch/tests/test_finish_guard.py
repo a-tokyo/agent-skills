@@ -298,7 +298,8 @@ class SubagentGuardTest(unittest.TestCase):
         out = self.guard(agent(self.ws), [SH, "-c", hook["command"].replace("${CLAUDE_PLUGIN_ROOT}", str(SKILL))])
         self.assertEqual(out.returncode, 2, out.stderr)
         manifest = json.loads((SKILL / ".cursor-plugin" / "plugin.json").read_text())
-        [cursor] = json.loads((SKILL / manifest["hooks"]).read_text())["hooks"]["preToolUse"]
+        [cursor] = [e for e in json.loads((SKILL / manifest["hooks"]).read_text())["hooks"]["preToolUse"]
+                    if "finish-guard" in e["command"]]
         self.assertEqual(cursor["matcher"], "Task|CallDynamicTool")
         cmd = [SH, "-c", cursor["command"].replace("${CURSOR_PLUGIN_ROOT}", str(SKILL))]
         self.assertEqual(json.loads(self.guard(cursor_task(self.ws, True), cmd).stdout)["permission"], "deny")
