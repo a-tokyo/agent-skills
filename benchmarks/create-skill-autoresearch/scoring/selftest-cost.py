@@ -79,6 +79,16 @@ def main() -> int:
         if "per-line" not in text or "0.571" not in text:
             failures.append(f"--recompute table lacks the per-line column or the 4/7 ratio:\n{text}")
 
+    with tempfile.TemporaryDirectory() as tmp:
+        run = Path(tmp) / "x-t2-factory-v030-haiku-1"
+        evaluation = cost._workspace(run) / "work" / "evaluation"
+        evaluation.mkdir(parents=True)
+        (evaluation / "gate.json").write_text(json.dumps({"model": "claude-haiku-5-5"}))
+        (evaluation / "plugin-eval.json").write_text(json.dumps({"costUsd": 0.5}))
+        (evaluation / "plugin-eval.prev.json").write_text(json.dumps({"costUsd": 0.25}))
+        price = cost.PRICE_PER_MTOK["haiku"] / 1e6
+        check("gate counts the replaced run too", cost.gate_plugin_units(run), 0.75 / price)
+
     for failure in failures:
         print("FAIL:", failure)
     print("SELFTEST FAIL" if failures else "SELFTEST PASS")

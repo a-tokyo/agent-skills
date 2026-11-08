@@ -87,9 +87,14 @@ def _price(model: str | None) -> float | None:
 
 def gate_plugin_units(run: Path) -> float:
     evaluation = _workspace(run) / "work" / "evaluation"
-    try:
-        cost = float(json.loads((evaluation / "plugin-eval.json").read_text())["costUsd"])
-    except (OSError, ValueError, KeyError, TypeError):
+    # plugin-eval.prev.json keeps the run a re-gate replaced; both were paid for.
+    cost = 0.0
+    for artifact in sorted(evaluation.glob("plugin-eval*.json")):
+        try:
+            cost += float(json.loads(artifact.read_text())["costUsd"])
+        except (OSError, ValueError, KeyError, TypeError):
+            continue
+    if not cost:
         return 0.0
     try:
         model = json.loads((evaluation / "gate.json").read_text()).get("model")
