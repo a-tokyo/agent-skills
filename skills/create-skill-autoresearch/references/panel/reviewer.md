@@ -30,6 +30,12 @@ Veto only a hard defect you can cite verbatim and reproduce: a phase-3.md 3.3 ha
 "ESCALATE: <reason>" only for a production-incorrect or unsafe behaviour you can show with a concrete scenario.
 Concerns short of that go in `top_concern` and `failure_scenarios`, not a veto.
 
+## Findings
+Each `failure_scenarios` entry is a finding the builder may fix in a fix cycle and you re-check, whatever your
+recommendation. List only failures you reproduced: `evidence` quotes, in double quotes, the skill line that causes
+it (`scripts/x.py "<line>"` or `SKILL.md "<line>"`), and `repro` is the exact input or command and the wrong result
+it gives. A doubt you could not run or trace to one line goes in `top_concern`, never `failure_scenarios`.
+
 ## Input
 - Skill: {{skill_md}} (its SKILL.md only; open a file under {{skill_dir}} by name only when a line you score points to it)
 - Gold standards: {{gold_standards}}

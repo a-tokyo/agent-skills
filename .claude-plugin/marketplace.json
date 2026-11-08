@@ -60,6 +60,17 @@
             ]
           },
           {
+            "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/freeze-guard\"",
+                "timeout": 10,
+                "onFailure": "continue"
+              }
+            ]
+          },
+          {
             "matcher": "Agent|Task",
             "hooks": [
               {
@@ -146,6 +157,17 @@
               {
                 "type": "command",
                 "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/read-guard\"",
+                "timeout": 10,
+                "onFailure": "continue"
+              }
+            ]
+          },
+          {
+            "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+            "hooks": [
+              {
+                "type": "command",
+                "command": "sh \"${CLAUDE_PLUGIN_ROOT}/skills/create-skill-autoresearch/hooks/freeze-guard\"",
                 "timeout": 10,
                 "onFailure": "continue"
               }

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Score the skill as it is now and log it as an experiment line, so the metric-first ship rule can read it.
 
-    rescore.py [--workspace DIR] [--skill NAME] [--wait-timeout 570]   # exit 124: issue it again, it re-attaches
+    rescore.py [--workspace DIR] [--skill NAME] [--wait-timeout 270]   # exit 124: issue it again, it re-attaches
 
 Run it whenever output/<skill>/ changed after its last scored experiment (a fix after the gate or the panel, the
 4.6 description pass) and `check_gate.py` says no kept experiment scored the skill as it is now. It:
@@ -16,7 +16,7 @@ Run it whenever output/<skill>/ changed after its last scored experiment (a fix 
      experiment log check_gate.py reads (./autoresearch.jsonl while the loop runs, else work/experiments/) and prints
      `RESCORED: ...`. It never rotates the held-out case and never edits the skill.
 
-The scoring runs as the owned job `rescore` (work/pids/, scripts/run_owned.py): the call blocks up to 570 s, under
+The scoring runs as the owned job `rescore` (work/pids/, scripts/run_owned.py): the call blocks up to 270 s, under
 the 600 s a Claude Code shell call may wait (timeout 600000), and exits 124 while it still runs. Issue the same
 command again: it re-attaches to the running job, or reports its result once it has ended, and never starts a
 second scoring run. The loop guard does not stop it: a re-score is not a loop experiment.
@@ -193,7 +193,7 @@ def score_now(workspace: Path, skill: str | None) -> int:
 
 
 def supervise(workspace: Path, skill: str | None, timeout: float = run_owned.WAIT_SECONDS) -> int:
-    """Check what needs no scoring run here; score in the owned job `rescore` and block on it (570 s). The same
+    """Check what needs no scoring run here; score in the owned job `rescore` and block on it (270 s). The same
     command again re-attaches to that job, or reports its result once, instead of scoring twice."""
     sdir = run_owned.state_dir(workspace)
     argv = [sys.executable, "-B", str(Path(__file__).resolve()), "--workspace", str(workspace)]

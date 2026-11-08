@@ -59,7 +59,7 @@ class NextTest(MetricFirstFixture):
         self.assertIn("--detach --wait --model '<model the skill targets>'", command)
         self.assertNotIn("--executor", command, "inside Claude Code a model-invoked skill runs plugin mode")
         self.assertNotIn("--runs", command, "never a 1-run smoke gate")
-        self.assertNotIn("--wait-timeout", command, "the default 570 s wait fits one 600000 ms shell call")
+        self.assertNotIn("--wait-timeout", command, "the default 270 s wait fits one 600000 ms shell call")
         self.assertIn("timeout 600000", out, "the shell call's timeout is stated with the command")
         self.assertIn("--executor <single-call|agentic>", self.next(CLAUDECODE=""), "manual mode names an executor")
 

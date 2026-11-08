@@ -3,7 +3,8 @@
 // its real path. Before every bash call it sends the command as a PreToolUse event, with the session's directory
 // (the plugin's `directory`) as cwd, to the first Python 3 that runs; exit 2 blocks the call by throwing. Before
 // every read call it sends the file to ./read_guard.py the same way (the read guard: no script or hook source;
-// OpenCode gives no transcript, so no duplicate-read check). No Python: the call goes through with a warning. OpenCode treats every export as a plugin, so this module exports
+// OpenCode gives no transcript, so no duplicate-read check), and every edit, write or patch call to ./freeze_guard.py
+// (a build's output/<skill>/ after the panel, outside a fix cycle). No Python: the call goes through with a warning. OpenCode treats every export as a plugin, so this module exports
 // only KillGuard.
 import { execFileSync } from "node:child_process";
 import { existsSync, realpathSync } from "node:fs";
@@ -12,6 +13,8 @@ import { fileURLToPath } from "node:url";
 
 const GUARD = process.env.CSA_KILL_GUARD || join(dirname(realpathSync(fileURLToPath(import.meta.url))), "kill_guard.py");
 const READ_GUARD = join(dirname(GUARD), "read_guard.py");
+const FREEZE_GUARD = join(dirname(GUARD), "freeze_guard.py");
+const WRITERS = new Set(["edit", "write", "patch", "multiedit"]);
 const PYTHONS = [["python3"], ["python"]];
 
 function check(command, cwd) {
@@ -44,6 +47,9 @@ export const KillGuard = async (ctx = {}) => {
       else if (input.tool === "read") {
         const { filePath, offset, limit } = output.args ?? {};
         reason = run(READ_GUARD, { tool_name: "Read", tool_input: { file_path: filePath ?? "", offset, limit }, cwd });
+      } else if (WRITERS.has(input.tool)) {
+        const { filePath } = output.args ?? {};
+        reason = run(FREEZE_GUARD, { tool_name: "Write", tool_input: { file_path: filePath ?? "" }, cwd });
       }
       if (reason) throw new Error(reason);
     },

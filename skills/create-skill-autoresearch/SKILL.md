@@ -48,7 +48,7 @@ Read [references/standalone-fallback.md](references/standalone-fallback.md) only
 Install skills with `npx skills add <source> --skill <name> -a <claude-code|cursor|codex|opencode>` (Windows: inside WSL).
 Read [references/hosts.md](references/hosts.md) only when the host is not Claude Code, its hooks need installing, or a panel role runs on another host's CLI.
 
-Hooks (`hooks/`) back these rules in a build (kill, loop, poll, subagent and finish guards); a denial names what to
+Hooks (`hooks/`) back these rules in a build (kill, loop, poll, freeze, subagent and finish guards); a denial names what to
 run instead.
 
 ## Subagents
@@ -162,8 +162,8 @@ changing one) and `--finish` rejects a verdict above what it allows.
   `autoresearch.ideas.md`, the scores and rationales go in `craft-decisions.md`; return to Phase 4 and fold every
   finding into one experiment, then 5.0-5.1.
 
-**Fix cycle.** When the consensus would end the build UNSHIPPED on cited findings, `--next` offers one: read
-[references/fix-cycle.md](references/fix-cycle.md) only when it does.
+**Fix cycle.** To fix a cited panel finding, or when `--next` offers it, open a fix cycle: read
+[references/fix-cycle.md](references/fix-cycle.md) only when you do.
 
 **A terminal ITERATE is `UNSHIPPED`.** ITERATE or BLOCK with no Phase 4 budget left, after the 4.3 plateau rule, a
 veto, or a skill change at `max_panel_rounds` (3 panel path, 1 metric-first), with no fix cycle left, ends the

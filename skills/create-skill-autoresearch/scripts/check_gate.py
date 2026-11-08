@@ -4,8 +4,8 @@
     check_gate.py --next     # from 3.5 on, at every phase boundary: the one next action, as the exact command
     check_gate.py --next --profile lite   # once, small or fast builder models: stored in work/manifest.yaml
     check_gate.py [--workspace DIR] [--skill NAME] [--json]
-                  [--next | --panel | --panel-receipt ROLE SCORES_JSON [--synthesis] | --consensus | --finish
-                   | --fast-path | --loop | --fix-cycle | --recheck-receipt ROLE RECHECK_JSON]
+                  [--next | --panel | --panel-receipt ROLE [SCORES_JSON|-] [--synthesis] | --consensus | --finish
+                   | --fast-path | --loop | --fix-cycle [--finding ID ...] | --recheck-receipt ROLE [RECHECK_JSON|-]]
 
 --next: runs every check that applies to the build as it is now (fast path and loop, rescore, gate, panel,
 consensus, finish) and prints `NEXT: <what>` with the exact command(s) to run, or `BUILD FINISHED: verdict <V>`.
@@ -25,8 +25,10 @@ a numeric delta per gold case and every Skill indicator passing (phase-5.md 5.0)
 `metric: answer-key` in rubric.yaml, --consensus also prints the metric-first `SHIP RULE:` line (ship_rule), else,
 with a gold delta <= 0, the `GOLD GATE:` cap --finish holds the verdict to (gate_level).
 --fix-cycle, --recheck-receipt: a fix cycle after the panel (SKILL.md 5.4, scripts/fix_cycle.py): --next offers one
-when the consensus ends the build UNSHIPPED on cited findings; --fix-cycle opens it (`FIX CYCLE <n> OPEN`); after the
-one fix commit, the rescore and the gate, each role that raised a finding runs --recheck-receipt on the fixed skill.
+when cited findings hold the verdict down or the skill changed after the panel; --fix-cycle opens it on every
+finding offered or on each --finding ID (`FIX CYCLE <n> OPEN`); after the one fix commit, the rescore and the gate,
+each role that raised a finding runs --recheck-receipt on the fixed skill. A receipt's JSON path is optional: `-`
+reads stdin (saved under work/experiments/panel/), none looks for <role>.scores.json and the names roles use for it.
 --finish: BENCHMARK.md's verdict stands (SKILL.md 5.1, 5.4): `BUILD FINISHED: ...` or `BUILD UNFINISHED: <reason>`.
 --fast-path: at the end of 3.5, may the build skip the Phase 4 loop (phase-3.md 3.5): `FAST PATH: ...` or
 `NO FAST PATH: <reason>`; it reads the baseline, its held-out score and git, never the gate.
@@ -835,14 +837,16 @@ def _fix_next(workspace: Path, name: str, unfinished: str | None) -> Next | None
     found, current = fix_cycle.cycles(workspace), skill_sha256(workspace, name)
     if found and (fixed := fix_cycle.closed(workspace, found[-1])) is None:
         return _fix_open(workspace, name, found[-1], current, unfinished)
+    offered = fix_cycle.offer(workspace, name)
+    if offered is not None and offered.pushed:
+        listed = [f"  {f['id']} ({f['kind']}): {f['evidence']}; repro: {f['repro']}" for f in offered.findings]
+        what = ("the skill changed after the panel: adopt that change as the cycle's fix, declaring its lines "
+                "under the findings it fixes" if offered.adopt else "fix only these findings")
+        return Next("fix_cycle", f"5.4 fix cycle {offered.n} of {fix_cycle.max_cycles()} ({offered.why}): instead of "
+                                 f"UNSHIPPED, {what}. Read {FIX_DOC} once, then open the cycle:",
+                    [_self(workspace, "--fix-cycle")], before=["FINDINGS:", *listed])
     if found and fixed != current:
         return None  # the skill changed after its re-check: panel.exhausted ends the build
-    offered = fix_cycle.offer(workspace, name)
-    if offered is not None:
-        listed = [f"  {f['id']} ({f['kind']}): {f['evidence']}; repro: {f['repro']}" for f in offered.findings]
-        return Next("fix_cycle", f"5.4 fix cycle {offered.n} of {fix_cycle.max_cycles()} ({offered.why}): instead of "
-                                 f"UNSHIPPED, fix only these findings. Read {FIX_DOC} once, then open the cycle:",
-                    [_self(workspace, "--fix-cycle")], before=["FINDINGS:", *listed])
     if not found:
         return None
     gate = validate(workspace, name)
@@ -931,7 +935,8 @@ def next_action(workspace: Path, skill: str | None = None) -> Next:
     if (step := _fix_next(workspace, name, unfinished)) is not None:
         return step
     if last := panel.exhausted(workspace):
-        return _verdict(workspace, "UNSHIPPED", [line for line in [last.get("line")] if line],
+        line = last.get("line") or getattr(fix_cycle.reviewed(workspace, name)[1], "line", lambda: "")()
+        return _verdict(workspace, "UNSHIPPED", [line] if line else [],
                         f"the panel ran its {panel.max_rounds(workspace)} round(s) and the skill changed since; no "
                         "gate re-run changes that", unfinished, False)
     if not (workspace / "work" / "evaluation" / "evaluate.sh").is_file():
@@ -1021,6 +1026,40 @@ def next_action(workspace: Path, skill: str | None = None) -> Next:
                     unfinished, False)
 
 
+def exhausted_line(workspace: Path, skill: str | None, exc: Exception) -> str:
+    """PANEL ROUNDS EXHAUSTED, unless a fix cycle can still take the change: then the command that opens it."""
+    try:
+        offered = fix_cycle.offer(workspace, resolve_skill(workspace, skill))
+    except GateError:
+        offered = None
+    if offered is None:
+        return f"PANEL ROUNDS EXHAUSTED: {exc}"
+    return (f"FIX CYCLE AVAILABLE: no new panel round starts, but fix cycle {offered.n} can take this change "
+            f"({offered.why}); run: {_self(workspace, '--next')}")
+
+
+def receipt_source(workspace: Path, role: str, given: list[str], kind: str, folder: Path | None) -> Path:
+    """The JSON a receipt reads: the path given; with `-`, stdin, saved as <folder>/<role><kind>.scores.json (or
+    .recheck.json); with none, the first of the names roles use for it in <folder>."""
+    stem = f"{role}{kind}" if kind != ".recheck" else role
+    suffix = "recheck" if kind == ".recheck" else "scores"
+    if given and given[0] != "-":
+        return Path(given[0])
+    if folder is None:
+        raise GateError("no fix cycle is open (check_gate.py --next opens one when the panel's findings allow it)")
+    canonical = folder / f"{stem}.{suffix}.json"
+    if given:  # `-`: the JSON on stdin
+        canonical.parent.mkdir(parents=True, exist_ok=True)
+        canonical.write_text(sys.stdin.read(), encoding="utf-8")
+        return canonical
+    for name in (f"{stem}.{suffix}.json", f"{stem}-{suffix}.json", f"{stem}_{suffix}.json",
+                 f"{suffix}-{stem}.json", f"{suffix}_{stem}.json", f"{suffix}.{stem}.json"):
+        if (folder / name).is_file():
+            return folder / name
+    raise GateError(f"no JSON given and none at {canonical.relative_to(workspace).as_posix()}: write it there, pass "
+                    "its path, or pipe it in with `-`")
+
+
 def main(argv: list[str] | None = None) -> int:
     utf8_stdio()
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -1029,7 +1068,7 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--json", action="store_true", help="print the verdict as JSON instead of a line")
     step = parser.add_mutually_exclusive_group()
     step.add_argument("--panel", action="store_true", help="5.2: validate the gate before the panel starts")
-    step.add_argument("--panel-receipt", nargs=2, metavar=("ROLE", "SCORES_JSON"),
+    step.add_argument("--panel-receipt", nargs="+", metavar=("ROLE", "SCORES_JSON"),
                       help=f"5.2: a verifier's role receipt after it scores ({', '.join(panel.ROLES)}; the "
                            f"lite profile: {', '.join(panel.LITE_ROLES)})")
     step.add_argument("--consensus", action="store_true", help="5.3: the panel's verdict from the three receipts")
@@ -1038,13 +1077,20 @@ def main(argv: list[str] | None = None) -> int:
     step.add_argument("--loop", action="store_true", help="4.3: is the Phase 4 loop over (the loop guard's check)")
     step.add_argument("--next", action="store_true", help="the build's single next action, as the exact command")
     step.add_argument("--fix-cycle", action="store_true", help="5.4: open the fix cycle --next offers (fix_cycle.py)")
-    step.add_argument("--recheck-receipt", nargs=2, metavar=("ROLE", "RECHECK_JSON"),
+    step.add_argument("--recheck-receipt", nargs="+", metavar=("ROLE", "RECHECK_JSON"),
                       help="5.4: a re-checking role's receipt on the fixed skill (references/panel/recheck.md)")
+    parser.add_argument("--finding", action="append", metavar="ID", help="with --fix-cycle: open it on this finding "
+                                                                         "only (repeatable; default: every one offered)")
     parser.add_argument("--profile", choices=PROFILES, help="with --next: store the build's profile (lite: small "
                                                              "builder models) in work/manifest.yaml")
     parser.add_argument("--synthesis", action="store_true", help="with --panel-receipt: the synthesis round (5.3)")
     parser.add_argument("--verbose", action="store_true", help="longer lines where the default is terse")
     args = parser.parse_args(argv)
+    for given in (args.panel_receipt, args.recheck_receipt):
+        if given is not None and len(given) > 2:
+            parser.error("a receipt takes ROLE and at most one JSON path ('-' reads it from stdin)")
+    if args.finding and not args.fix_cycle:
+        parser.error("--finding goes with --fix-cycle")
     if args.synthesis and not args.panel_receipt:
         parser.error("--synthesis goes with --panel-receipt")
     if args.profile and not args.next:
@@ -1074,7 +1120,7 @@ def main(argv: list[str] | None = None) -> int:
         return 0 if done else 1
     if args.fix_cycle:
         try:
-            cycle = fix_cycle.open_cycle(workspace, resolve_skill(workspace, args.skill))
+            cycle = fix_cycle.open_cycle(workspace, resolve_skill(workspace, args.skill), args.finding)
         except GateError as exc:
             print(f"NO FIX CYCLE: {exc}")
             return 1
@@ -1093,7 +1139,7 @@ def main(argv: list[str] | None = None) -> int:
         try:
             panel.check_round(workspace, skill_sha256(workspace, resolve_skill(workspace, args.skill)))
         except (panel.RoundsExhausted, GateError) as exc:
-            print(f"PANEL ROUNDS EXHAUSTED: {exc}")
+            print(exhausted_line(workspace, args.skill, exc))
             return 1
     if not (args.panel_receipt or args.consensus or args.recheck_receipt) or not verdict.valid:
         print(json.dumps(asdict(verdict)) if args.json else verdict.line())
@@ -1102,13 +1148,18 @@ def main(argv: list[str] | None = None) -> int:
     skill_sha = skill_sha256(workspace, verdict.skill)
     try:
         if args.recheck_receipt:
-            role, source = args.recheck_receipt
-            path, resolved, unresolved = fix_cycle.write_recheck(workspace, role, Path(source), verdict.skill)
+            role = args.recheck_receipt[0]
+            cycle = fix_cycle.open_now(workspace)
+            source = receipt_source(workspace, role, args.recheck_receipt[1:], ".recheck",
+                                    fix_cycle.cycle_dir(workspace, cycle["n"]) if cycle else None)
+            path, resolved, unresolved = fix_cycle.write_recheck(workspace, role, source, verdict.skill)
             print(f"RECHECK RECEIPT: {path.relative_to(workspace).as_posix()} ({role}); resolved "
                   f"{', '.join(resolved) or 'none'}; unresolved {', '.join(unresolved) or 'none'}")
         elif args.panel_receipt:
-            role, source = args.panel_receipt
-            path = panel.write_receipt(workspace, role, Path(source), verdict.skill, skill_sha, args.synthesis)
+            role = args.panel_receipt[0]
+            source = receipt_source(workspace, role, args.panel_receipt[1:],
+                                    ".synthesis" if args.synthesis else "", workspace / panel.PANEL_DIR)
+            path = panel.write_receipt(workspace, role, source, verdict.skill, skill_sha, args.synthesis)
             print(f"PANEL RECEIPT: {path.relative_to(workspace).as_posix()} ({role}, round {2 if args.synthesis else 1})"
                   + (f" binds these scores to output/{verdict.skill}/ as it is now" if args.verbose else ""))
         elif args.consensus:
@@ -1127,7 +1178,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"panel: after scoring, each verifier runs `check_gate.py --panel-receipt <role> <scores.json>` "
                   f"({', '.join(panel.roles(workspace))}); then `check_gate.py --consensus` (5.3)", file=sys.stderr)
     except panel.RoundsExhausted as exc:
-        print(f"PANEL ROUNDS EXHAUSTED: {exc}")
+        print(exhausted_line(workspace, args.skill, exc))
         return 1
     except GateError as exc:
         print(f"PANEL INCOMPLETE: {exc}")

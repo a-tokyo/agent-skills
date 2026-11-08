@@ -5,7 +5,7 @@ Inputs: `work/evaluation/data-split.yaml` and `output/<skill-name>/`.
 ## 5.0 Eval Gate
 
 Run the `gate.py --detach --wait` command `check_gate.py --next` prints, from the workspace root, as **one
-foreground shell call**: it starts the owned job `gate` and blocks up to 570 s (most gates end sooner). Claude
+foreground shell call**: it starts the owned job `gate` and blocks up to 270 s (most gates end sooner). Claude
 Code: give the Bash call `timeout: 600000` (the 120000 default cuts it off), never `run_in_background` or a smaller
 `--wait-timeout`; elsewhere keep `--wait-timeout` under the shell tool's limit.
 

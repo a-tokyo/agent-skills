@@ -81,7 +81,7 @@ class ScriptHelpTest(unittest.TestCase):
         "gate.py": ["--detach --wait --model", "record", "--restart", "--stop", "Exit codes", "124"],
         "check_gate.py": ["--next", "--profile lite", "NEXT:", "BUILD FINISHED", "--panel-receipt", "--consensus", "--finish", "--fast-path", "--loop", "--synthesis",
                           "verifier-a", "devils-advocate", "--fix-cycle", "--recheck-receipt", "Exit codes"],
-        "fix_cycle.py": ["check_gate.py --fix-cycle", "--recheck-receipt ROLE JSON", "max_fix_cycles"],
+        "fix_cycle.py": ["check_gate.py --fix-cycle", "--recheck-receipt ROLE [JSON]", "max_fix_cycles"],
         "panel.py": ["check_gate.py --panel-receipt ROLE SCORES_JSON", "--consensus", "devils-advocate"],
         "rescore.py": ["--workspace", "ALREADY SCORED", "RESCORED", "Exit codes"],
         "run_owned.py": ["start <name>", "wait <name>", "stop <name>", "status <name>", "Exit codes"],

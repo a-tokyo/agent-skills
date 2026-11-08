@@ -1,5 +1,5 @@
 {
-  "description": "create-skill-autoresearch: the kill guard blocks pattern kills (pkill, killall, pgrep-fed kill) in Bash calls, so stop owned jobs with scripts/run_owned.py, denies Monitor and sleep or poll loops while a build job it owns runs (with the command that blocks on it), gives each call to this skill's scripts or a build's work/evaluation/*.sh a 600000 ms foreground timeout (updatedInput), and (as the loop guard) a build's Phase 4 metric run once scripts/check_gate.py --loop says the loop is done; the read guard denies reading this skill's script and hook source (each script's --help says how to run it) and a second whole read of a factory reference in one context (again after a compaction), in a Read or a shell call; the subagent guard denies a background Agent dispatch inside a factory build (a headless session stops background subagents 10 minutes after its last turn), so researchers and panel roles run in the foreground; the finish guard sends a factory build back when the main session's turn ends (never a subagent's) while scripts/check_gate.py --finish fails, at most max_finish_sendbacks times per build",
+  "description": "create-skill-autoresearch: the kill guard blocks pattern kills (pkill, killall, pgrep-fed kill) in Bash calls, so stop owned jobs with scripts/run_owned.py, denies Monitor and sleep or poll loops while a build job it owns runs (with the command that blocks on it), gives each call to this skill's scripts or a build's work/evaluation/*.sh a 600000 ms foreground timeout (updatedInput), and (as the loop guard) a build's Phase 4 metric run once scripts/check_gate.py --loop says the loop is done; the read guard denies reading this skill's script and hook source (each script's --help says how to run it) and a second whole read of a factory reference in one context (again after a compaction), in a Read or a shell call; the freeze guard denies writes to a build's output/<skill>/ (Edit, Write, MultiEdit, NotebookEdit, and shell redirects or tools writing there, through the kill guard) once a panel round has its first receipt and no fix cycle is open, naming the check_gate.py --fix-cycle command for the finding; the subagent guard denies a background Agent dispatch inside a factory build (a headless session stops background subagents 10 minutes after its last turn), so researchers and panel roles run in the foreground; the finish guard sends a factory build back when the main session's turn ends (never a subagent's) while scripts/check_gate.py --finish fails, at most max_finish_sendbacks times per build",
   "hooks": {
     "PreToolUse": [
       {
@@ -30,6 +30,17 @@
           {
             "type": "command",
             "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/read-guard\"",
+            "timeout": 10,
+            "onFailure": "continue"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "sh \"${CLAUDE_PLUGIN_ROOT}/hooks/freeze-guard\"",
             "timeout": 10,
             "onFailure": "continue"
           }

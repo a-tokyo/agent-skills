@@ -14,7 +14,7 @@ For each of your findings:
 3. Cite the fixed line that resolves it as `evidence`: a verbatim quote in double quotes from `output/<skill>/`
    (whitespace aside), checked like a panel quote. An unresolved finding may leave `evidence` empty.
 
-A finding with a non-null `regression` counts as unresolved: it keeps its veto.
+A finding with a non-null `regression` counts as unresolved and holds the verdict at UNSHIPPED until a later cycle fixes it. A finding the notes mark `lines: none` was left alone: answer `"resolved": false`.
 
 ```json
 {

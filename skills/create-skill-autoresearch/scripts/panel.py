@@ -10,7 +10,7 @@ Under the lite profile (gate_common.profile) the panel is one `reviewer` (refere
 the Devil's Advocate's escalation, with no synthesis round; its receipt alone is the consensus. The full profile
 accepts only the three roles, the lite one only the reviewer.
 A receipt keeps the member's cited failure scenarios (`evidence` and `repro`) as `findings`, which a fix cycle may fix
-(scripts/fix_cycle.py); once one opened, no panel receipt is accepted.
+on either path (scripts/fix_cycle.py); once one opened, no panel receipt is accepted.
 With `metric: answer-key` the panel is a review: its consensus allows UNSHIPPED only on a veto (a hard defect a
 receipt cites), and check_gate.py decides the rest from the gate and the Phase 4 metric (verdict-rules.json
 metric_first).
@@ -365,6 +365,10 @@ def check_round(workspace: Path, skill_sha: str) -> int:
     if archive and archive[-1].get("skill_sha256") == skill_sha:
         return len(archive)  # the last round's own skill: no new round starts
     n = len(archive) + 1
+    begun = [sha for sha, _ in started(workspace)]
+    if begun and begun[-1] == skill_sha and n <= max_rounds(workspace) and \
+            all(r.get("skill_sha256") != skill_sha for r in archive):
+        return n  # the round its receipts started, whose consensus is not written yet (the skill may have moved on)
     last = exhausted(workspace)
     if n > (cap := max_rounds(workspace)) or last is not None:
         line = (last or archive[-1]).get("line")
@@ -521,7 +525,8 @@ def write_consensus(workspace: Path, skill: str, skill_sha: str) -> Consensus:
     if folder.exists():
         shutil.rmtree(folder)
     folder.mkdir(parents=True)
-    shutil.copyfile(workspace / "output" / skill / "SKILL.md", folder / "SKILL.md")
+    if skill_sha256(workspace, skill) == skill_sha:  # the round's own skill (not one changed since its receipts)
+        shutil.copyfile(workspace / "output" / skill / "SKILL.md", folder / "SKILL.md")
     for role, receipt in current_receipts(workspace, skill_sha, rubric_sha, synthesis=bool(result.disputed)).items():
         write_json(folder / f"{role}.json", receipt)
     write_json(folder / "round.json", {

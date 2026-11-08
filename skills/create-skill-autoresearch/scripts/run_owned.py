@@ -2,12 +2,12 @@
 """Run background jobs as owned process groups, and stop only those groups (references/operating-rules.md).
 
     run_owned.py start <name> [--cwd DIR] [--log FILE] -- <cmd...>
-    run_owned.py start <name> --wait [--timeout 570] -- <cmd...>  # start and block; re-issue it on exit 124
-    run_owned.py wait <name> [--timeout SECONDS]    # default 570
+    run_owned.py start <name> --wait [--timeout 270] -- <cmd...>  # start and block; re-issue it on exit 124
+    run_owned.py wait <name> [--timeout SECONDS]    # default 270
     run_owned.py stop <name> [--grace SECONDS]      # waits up to grace + 10 s for the supervisor
     run_owned.py status <name>
 
-`start --wait` is the one command for a long run (an evaluate.sh): it blocks up to 570 s (under the 600 s a Claude
+`start --wait` is the one command for a long run (an evaluate.sh): it blocks up to 270 s (under the 600 s a Claude
 Code shell call may wait, with timeout 600000), then prints the job's log and exits with its code, or exits 124
 while it still runs. Re-issue the same command on 124: while that job runs it re-attaches to it, and once it has
 ended it reports that result once instead of starting another run.
@@ -52,7 +52,7 @@ START_LOCK_SECONDS = 30.0  # a start waits this long for a concurrent start of t
 READY_SECONDS = 15.0  # for the supervisor to start Python and fork the command
 GO_SECONDS = 30.0  # the forked command waits this long for `start` to write the record
 STOP_MARGIN_SECONDS = 10.0  # beyond the grace, for the supervisor to KILL, reap and reply
-WAIT_SECONDS = 570.0  # under the 600 s a Claude Code shell call may wait (timeout 600000), so a wait returns first
+WAIT_SECONDS = 270.0  # under the 5-minute prompt cache, so the turn after a wait reads its context from cache
 SUPERVISE = "_supervise"
 NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
 TERM, KILL = signal.SIGTERM, signal.SIGKILL

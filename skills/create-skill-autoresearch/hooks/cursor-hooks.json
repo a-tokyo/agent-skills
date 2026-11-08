@@ -18,6 +18,11 @@
         "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/finish-guard\" --subagent",
         "matcher": "Task|CallDynamicTool",
         "timeout": 10
+      },
+      {
+        "command": "sh \"${CURSOR_PLUGIN_ROOT}/hooks/freeze-guard\"",
+        "matcher": "Write|Edit|StrReplace|MultiEdit|Delete|EditNotebook",
+        "timeout": 10
       }
     ],
     "stop": [

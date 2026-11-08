@@ -214,8 +214,9 @@ class FixCycleTest(FixCycleFixture):
         self.open()
         record = json.loads((self.ws / "work/experiments/panel/fix-cycles/1/cycle.json").read_text())
         self.assertEqual(record["base_commit"], self.commit, "the base is the reviewed skill's commit")
-        self.assertIn("declares no `lines:` for verifier-b.veto", self.next())
-        self.notes(1, {"verifier-b.veto": "SKILL.md:6"})
+        self.assertTrue(record["adopted"])
+        notes = (self.ws / "work" / "experiments" / "fix-cycle-1.md").read_text()
+        self.assertIn("lines: SKILL.md:6-6", notes, "the adopted commit's lines, under the finding citing that file")
         self.assertIn("re-run the gate on the fixed skill", self.next())
 
     def test_a_fix_that_cannot_be_scored_ends_unshipped(self) -> None:
@@ -249,6 +250,188 @@ class FixCycleTest(FixCycleFixture):
         self.assertEqual(out.returncode, 3)
         self.assertIn("the panel already ran its 1 round(s)", out.stderr)
         self.assertIn("NO FIX CYCLE", self.run_script("check_gate.py", "--fix-cycle").stdout)
+
+
+class AnyVerdictFixCycleTest(FixCycleFixture):
+    """r22: any cited finding may open a cycle, whatever the verdict; the verdict never rises above the original
+    consensus, and resolved findings only lift vetoes (r21-t2-haiku-3: a SHIP review with two real findings)."""
+
+    def shipped_with_findings(self) -> None:
+        """Metric-first at 0.95 and a lite reviewer's SHIP review citing two findings, no veto."""
+        self.log(0.95)
+        self.gate()
+        self.score("reviewer", (9, 9), [SCENARIO, {**SCENARIO, "scenario": "a number word is dropped"}])
+        self.assertIn("PANEL CONSENSUS: SHIP (review; veto: none)", self.run_script("check_gate.py", "--consensus").stdout)
+
+    env = {"CSA_PROFILE": "lite"}
+
+    def test_a_ship_review_is_not_pushed_into_a_cycle_but_may_open_one(self) -> None:
+        self.shipped_with_findings()
+        head, _ = self.verdict_lines()
+        self.assertIn("`Verdict: SHIP`", head, "--next does not push a cycle no finding holds down")
+        out = self.run_script("check_gate.py", "--fix-cycle", "--finding", "reviewer.F9")
+        self.assertIn("not an open finding", out.stdout)
+        out = self.run_script("check_gate.py", "--fix-cycle", "--finding", "reviewer.F1")
+        self.assertIn("FIX CYCLE 1 OPEN: findings reviewer.F1;", out.stdout)
+        self.fix(findings=("reviewer.F1",))
+        self.gate()
+        self.recheck("reviewer", {"reviewer.F1": {"resolved": False, "evidence": None, "regression": None}})
+        head, lines = self.verdict_lines()
+        self.assertIn("`Verdict: SHIP`", head, "an unresolved plain finding changes nothing")
+        self.assertTrue(lines[-1].startswith("SHIP RULE: SHIP (fix cycle 1)") and lines[-1].endswith("veto: none"),
+                        lines[-1])
+        self.assertTrue(self.finish("SHIP", *lines[1:])["finished"])
+
+    def test_a_regression_holds_the_verdict_down_and_lines_none_leaves_a_finding_alone(self) -> None:
+        self.shipped_with_findings()
+        self.open()
+        self.fix(findings=("reviewer.F1",))
+        self.notes(1, {"reviewer.F2": "none"})
+        self.gate()
+        out = self.recheck("reviewer", {"reviewer.F1": self.resolved(regression="drops the last line"),
+                                        "reviewer.F2": {"resolved": False, "evidence": None, "regression": None}})
+        self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
+        offer = self.next()
+        self.assertIn("5.4 fix cycle 2 of 2", offer, "a regression is pushed into the next cycle")
+        self.open(2)
+        self.fix(2, body="Keep every line.\n", spans="SKILL.md:7-7", findings=("reviewer.F1",))
+        self.notes(2, {"reviewer.F2": "none"})
+        self.gate()
+        self.recheck("reviewer", {"reviewer.F1": self.resolved('"Keep every line."'),
+                                  "reviewer.F2": {"resolved": False, "evidence": None, "regression": None}})
+        head, lines = self.verdict_lines()
+        self.assertIn("`Verdict: SHIP`", head, "fixed in cycle 2: the regression no longer holds")
+
+    def test_an_unfixed_regression_ends_unshipped(self) -> None:
+        self.shipped_with_findings()
+        self.open()
+        self.fix(findings=("reviewer.F1", "reviewer.F2"))
+        self.gate()
+        self.recheck("reviewer", {"reviewer.F1": self.resolved(regression="drops the last line"),
+                                  "reviewer.F2": self.resolved()})
+        self.open(2)
+        self.fix(2, body="Still.\n", spans="SKILL.md:7-7", findings=("reviewer.F1",))
+        self.gate()
+        self.recheck("reviewer", {"reviewer.F1": self.resolved(regression="still drops it")})
+        head, lines = self.verdict_lines()
+        self.assertIn("`Verdict: UNSHIPPED`", head)
+        self.assertTrue(lines[-1].endswith("veto: reviewer.F1"), lines[-1])
+
+    def test_a_ship_with_caveats_label_stays_at_most_caveats(self) -> None:
+        self.rubric("llm-judge")
+        self.log(0.95)
+        self.gate()
+        self.score("reviewer", (8, 8), [SCENARIO])
+        self.assertIn("PANEL CONSENSUS: SHIP WITH CAVEATS", self.run_script("check_gate.py", "--consensus").stdout)
+        self.assertIn("`Verdict: SHIP WITH CAVEATS`", self.verdict_lines()[0])
+        self.open()
+        self.fix(findings=("reviewer.F1",))
+        self.gate()
+        self.recheck("reviewer", {"reviewer.F1": self.resolved()})
+        head, lines = self.verdict_lines()
+        self.assertIn("`Verdict: SHIP WITH CAVEATS`", head, "never above the original label")
+        self.assertIn("allows at most SHIP WITH CAVEATS", self.finish("SHIP", *lines[1:])["reason"])
+
+    def test_receipt_json_from_stdin_or_a_name_roles_use(self) -> None:
+        """r21 Haiku named the scores file reviewer.scores.json, reviewer-scores.json and scores-reviewer.json."""
+        import sys  # noqa: PLC0415
+        self.log(0.95)
+        self.gate()
+        body = json.dumps({"scores": {"correctness": {"score": 9, "confidence": 0.9, "evidence": '"name: demo"'},
+                                      "clarity": {"score": 9, "confidence": 0.9, "evidence": '"name: demo"'}},
+                           "pass_recommendation": "SHIP", "failure_scenarios": [SCENARIO]})
+        panel = self.ws / "work" / "experiments" / "panel"
+        panel.mkdir(parents=True, exist_ok=True)
+        (panel / "scores-reviewer.json").write_text(body)
+        out = self.run_script("check_gate.py", "--panel-receipt", "reviewer")
+        self.assertIn("PANEL RECEIPT: work/experiments/panel/reviewer.json", out.stdout, out.stdout + out.stderr)
+        (panel / "scores-reviewer.json").unlink()
+        out = self.run_script("check_gate.py", "--panel-receipt", "reviewer")
+        self.assertIn("none at work/experiments/panel/reviewer.scores.json", out.stdout)
+        out = subprocess.run([sys.executable, "-B", str(self.scripts / "check_gate.py"), "--workspace", str(self.ws),
+                              "--panel-receipt", "reviewer", "-"], input=body, capture_output=True, text=True,
+                             env={**__import__("os").environ, "CSA_PROFILE": "lite"})
+        self.assertIn("PANEL RECEIPT", out.stdout, out.stdout + out.stderr)
+        self.assertTrue((panel / "reviewer.scores.json").is_file(), "stdin is kept under its canonical name")
+        self.run_script("check_gate.py", "--consensus")
+        self.open()
+        self.fix(findings=("reviewer.F1",))
+        self.gate()
+        cycle = panel / "fix-cycles" / "1"
+        (cycle / "reviewer-recheck.json").write_text(json.dumps({"findings": {"reviewer.F1": self.resolved()}}))
+        out = self.run_script("check_gate.py", "--recheck-receipt", "reviewer")
+        self.assertIn("resolved reviewer.F1", out.stdout, out.stdout + out.stderr)
+
+
+class AdoptTest(FixCycleFixture):
+    """r22 item 3: a fix the builder committed after the panel, before any cycle, is adopted by a cycle instead of
+    ending the build with PANEL ROUNDS EXHAUSTED (r21-t3-haiku-5, r21-t2-haiku-3)."""
+
+    env = {"CSA_PROFILE": "lite"}
+
+    def edit_and_commit(self, body: str, message: str) -> str:
+        skill = self.ws / "output" / "demo" / "SKILL.md"
+        skill.write_text(skill.read_text() + body)
+        self.git("add", "-A", "output")
+        self.git("commit", "-q", "-m", message)
+        return self.git("rev-parse", "HEAD")
+
+    def test_receipt_without_consensus_then_a_committed_fix_is_adopted(self) -> None:
+        """r21-t3-haiku-5: the reviewer's receipt was in, the consensus never written, the fix committed."""
+        self.log(0.95)
+        self.gate()
+        self.score("reviewer", (9, 9), [SCENARIO])
+        commit = self.edit_and_commit(FIXED, "fix homelessness date parsing")
+        self.relog(commit, 0.95)
+        nxt = self.next()
+        self.assertIn("5.4 fix cycle 1 of 2", nxt)
+        self.assertIn("adopt that change", nxt)
+        self.assertNotIn("UNSHIPPED`", nxt)
+        out = self.run_script("check_gate.py", "--consensus")
+        self.assertIn("FIX CYCLE AVAILABLE", out.stdout, "not PANEL ROUNDS EXHAUSTED while a cycle can take it")
+        self.open()
+        self.assertTrue((self.ws / "work/experiments/panel/consensus.json").is_file(), "the round's record is written")
+        record = json.loads((self.ws / "work/experiments/panel/fix-cycles/1/cycle.json").read_text())
+        self.assertEqual(record["base_commit"], self.commit)
+        self.assertIn("re-run the gate on the fixed skill", self.next(), "the adopted commit's lines are declared")
+        self.gate()
+        self.recheck("reviewer", {"reviewer.F1": self.resolved()})
+        head, lines = self.verdict_lines()
+        self.assertIn("`Verdict: SHIP`", head)
+        self.assertTrue(lines[1].startswith("PANEL CONSENSUS: SHIP (review; veto: none)"), lines)
+        self.assertTrue(self.finish("SHIP", *lines[1:])["finished"])
+
+    def test_two_post_panel_commits_off_the_log_are_found_and_folded(self) -> None:
+        """r21-t2-haiku-3: a SHIP review, then two fix commits; the reviewed commit is not in the experiment log."""
+        self.edit_and_commit("Reviewed.\n", "record gate cases")
+        reviewed = self.git("rev-parse", "HEAD")
+        self.log(0.95)  # experiment 0 names the baseline commit, not the reviewed one
+        self.gate()
+        self.score("reviewer", (9, 9), [SCENARIO])
+        self.run_script("check_gate.py", "--consensus")
+        self.edit_and_commit(FIXED, "fix override spelling")
+        last = self.edit_and_commit("Guard the empty order.\n", "guard empty orders")
+        self.relog(last, 0.95)
+        self.assertIn("adopt that change", self.next())
+        self.open()
+        record = json.loads((self.ws / "work/experiments/panel/fix-cycles/1/cycle.json").read_text())
+        self.assertEqual(record["base_commit"], reviewed, "found by walking the commits that touched output/")
+        nxt = self.next()
+        self.assertIn("2 commits touch output/demo/ since", nxt)
+        self.assertIn(f"reset -q --soft {reviewed}", nxt)
+        self.git("reset", "-q", "--soft", reviewed)
+        self.git("commit", "-q", "-m", "fix cycle 1")
+        self.relog(self.git("rev-parse", "HEAD"), 0.95)
+        self.assertIn("re-run the gate on the fixed skill", self.next())
+
+    def test_a_post_panel_edit_with_no_finding_still_ends_unshipped_with_the_consensus_line(self) -> None:
+        self.log(0.95)
+        self.gate()
+        self.score("reviewer", (9, 9))
+        self.edit_and_commit("Unreviewed.\n", "tweak")
+        nxt = self.next()
+        self.assertIn("`Verdict: UNSHIPPED`", nxt)
+        self.assertIn("PANEL CONSENSUS: SHIP (review; veto: none)", nxt, "the lines to copy are never empty")
 
 
 class PanelPathFixCycleTest(FixCycleFixture):

@@ -2,9 +2,9 @@
 """Run the Phase 5.0 eval gate as the owned job `gate` and write its canonical artifact.
 
     gate.py record [--skill NAME] [--backend plugin|manual [--force-manual '<host>: <reason>']]
-    gate.py --detach --wait --model <model> [options]  # start the job and block (570 s); exit 124: re-issue it
+    gate.py --detach --wait --model <model> [options]  # start the job and block (270 s); exit 124: re-issue it
     gate.py --detach --model <model> [options]    # check preconditions, start the job, return
-    gate.py --wait [--wait-timeout 570]           # block; exit 124 = still running: call --wait again
+    gate.py --wait [--wait-timeout 270]           # block; exit 124 = still running: call --wait again
     gate.py --restart --model <model> [options]   # stop only the recorded `gate` group, start it detached
     gate.py --stop                                # stop it and the eval runs it started
 
@@ -59,10 +59,13 @@ LOAD_CHECK_TIMEOUT = 120  # the zero-cost load check parses every case file and 
 POLL_SECONDS = 0.5  # how often the gate checks its runs and the stop request
 STOP_GRACE = 30  # --stop/--restart grace for the gate job: CHILD_GRACE for its eval runs, plus its record
 CHILD_GRACE = 10  # an eval run's time to exit after TERM before KILL
-WAIT_SECONDS = 570  # under the 600 s a Claude Code shell call may wait (with timeout: 600000), so --wait returns first;
-# r18: every gate but one ended inside it, so one call is enough when the shell call is given that timeout
+WAIT_SECONDS = 270  # under the 5-minute prompt cache: the turn after a wait reads the context from cache instead of
+# rewriting it (r21: 9 rewrites after 570 s gate waits cost the Sonnet task-2 cell 0.87M); a longer gate takes another call
 ATTEMPTS = 2  # one retry absorbs a transient failure; a second leaves the artifact partial
 DEFAULT_JOBS = 8  # concurrent eval runs: plugin eval's -j cap; every run shares the account's one rate limit
+# Each manual run's `claude -p` output cap (both arms alike; a non-empty value in the environment wins): r21 Haiku executors
+# with `--tools ""` wrote invented tool calls up to the 128000-token cap, 4 sessions a build costing 3.1-3.8M.
+EXECUTOR_MAX_OUTPUT = "32000"
 EVAL_TIMEOUT, CASE_TIMEOUT = 5400, 1200  # a whole plugin eval, one manual run: past these a run is hung
 NOT_PROBED = "not-probed"
 SCORE_RE = re.compile(r"^SCORE=(\S+)\s*$", re.MULTILINE)
@@ -286,7 +289,8 @@ def _one_run(ws: Path, idx: int, case: str, arm: str, run: int, args: argparse.N
     """One manual run, retried once: {case, arm, run, score (None on failure), error, log}."""
     # CSA_EXECUTOR: an executor or judge run-case.sh starts with --plugin-dir keeps the finish and subagent guards inert
     env = {**os.environ, "GATE_MODEL": args.model, "GATE_RUN": str(run), "GATE_EXECUTOR": args.executor,
-           "CSA_EXECUTOR": "1"}
+           "CSA_EXECUTOR": "1",
+           "CLAUDE_CODE_MAX_OUTPUT_TOKENS": os.environ.get("CLAUDE_CODE_MAX_OUTPUT_TOKENS") or EXECUTOR_MAX_OUTPUT}
     error, log = "not run", ""
     for attempt in range(1, ATTEMPTS + 1):
         rc, log = run_owned_job(run_owned.state_dir(ws), f"gate-c{idx:02d}-{arm}-r{run}-a{attempt}",
