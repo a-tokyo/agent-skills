@@ -181,12 +181,12 @@ On the panel-verdict path the skill is not frozen while the Phase 4 loop is open
 back to it). `work/` and `input/` always write; `CSA_EXECUTOR`, input it cannot read or an error of its own allows
 the write. Shell writes (a redirect, `tee`, `cp`/`mv`/`install`/`ln`/`rsync` destinations, `rm`, `touch`, `sed -i`,
 `perl -i`, `dd of=`) reach it through the kill guard; like the kill guard it is a tripwire, not a sandbox (a heredoc
-fed to an interpreter or `python -c` is not parsed). Why: r21 Haiku builders fixed the panel's findings in ordinary
+fed to an interpreter or `python -c` is not parsed; `__pycache__`, `*.pyc` and `.DS_Store` are not frozen). Why: r21 Haiku builders fixed the panel's findings in ordinary
 commits after the panel, which ended 8 builds UNSHIPPED.
 
 | Host | Ships as | Status |
 |---|---|---|
-| Claude Code | `hooks/hooks.json` `PreToolUse`, matcher `Edit\|Write\|MultiEdit\|NotebookEdit` (`file_path`, `notebook_path`; exit 2, reason on stderr); shell writes via the kill guard | offline-tested; unverified live |
+| Claude Code | `hooks/hooks.json` `PreToolUse`, matcher `Edit\|Write\|MultiEdit\|NotebookEdit` (`file_path`, `notebook_path`; exit 2, reason on stderr); shell writes via the kill guard | offline-tested; on a copy of an r21 build the deny path took 0.3 s (hook timeout 10 s); unverified live |
 | Cursor | `hooks/cursor-hooks.json` `preToolUse`, matcher `Write\|Edit\|StrReplace\|MultiEdit\|Delete\|EditNotebook` (`file_path`, `path` or `target_file`; `{"permission": "deny", ...}`); shell writes via `beforeShellExecution` | contract offline-tested; Cursor's edit-tool names and payload are unverified live |
 | Codex | shell writes via the kill guard's `PreToolUse` script | contract tested offline; untested in Codex |
 | OpenCode | `hooks/opencode-kill-guard.js` on `edit`, `write`, `patch` (`filePath`) and `bash` | plugin syntax-checked with node; untested in OpenCode |

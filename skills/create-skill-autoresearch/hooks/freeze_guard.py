@@ -180,6 +180,9 @@ def check(paths: list[tuple[str, str | None]], cwd: str | None) -> str | None:
     if os.environ.get("CSA_EXECUTOR"):
         return None
     for path, at in paths:
+        if any(part == "__pycache__" or part == ".DS_Store" or part.endswith(".pyc")
+               for part in str(path).replace("\\", "/").split("/")):
+            continue  # not part of the skill: gate_common's hashes skip them
         found = build_of(path, at or cwd)
         if found is None:
             continue

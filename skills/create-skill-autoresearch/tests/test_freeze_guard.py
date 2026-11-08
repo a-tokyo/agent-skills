@@ -59,7 +59,8 @@ class FreezeGuardTest(FixCycleFixture):
             self.assertEqual(out.returncode, 2, command)
             self.assertIn("freeze guard", out.stderr, command)
         for command in ("cat output/demo/SKILL.md", "grep -n demo output/demo/SKILL.md 2>/dev/null",
-                        "echo x > work/notes.md", "cp output/demo/SKILL.md work/reviewed.md"):
+                        "echo x > work/notes.md", "cp output/demo/SKILL.md work/reviewed.md",
+                        "rm -rf output/demo/scripts/__pycache__", "rm -f output/demo/.DS_Store"):
             self.assertEqual(self.shell(command).returncode, 0, command)
         cursor = hook(FREEZE, {"hook_event_name": "preToolUse", "tool_name": "Write", "workspace_roots": [str(self.ws)],
                                "tool_input": {"file_path": "output/demo/SKILL.md"}})

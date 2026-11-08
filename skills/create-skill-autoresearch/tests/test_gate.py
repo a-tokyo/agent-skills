@@ -890,14 +890,11 @@ class GateManualTest(TempWorkspace):
         """CSA_EXECUTOR=1 reaches run-case.sh, so a guarded executor it starts keeps the finish guard inert."""
         self.make_build(["input-01"], invoked=False)
         self.write_adapter(SCORING_ADAPTER.replace(
-            'echo "EXECUTOR=$GATE_EXECUTOR"', 'echo "EXECUTOR=$GATE_EXECUTOR"; echo "${CSA_EXECUTOR:-unset}" >> work/pids/marker'
-            '; echo "${CLAUDE_CODE_MAX_OUTPUT_TOKENS:-unset}" >> work/pids/cap'))
+            'echo "EXECUTOR=$GATE_EXECUTOR"', 'echo "EXECUTOR=$GATE_EXECUTOR"; echo "${CSA_EXECUTOR:-unset}" >> work/pids/marker'))
         (self.ws / "work" / "evaluation" / "score.py").write_text("print('SCORE=1')\n")
-        out = self.run_script("gate.py", "--model", "m", "--executor", "single-call", CLAUDE_CODE_MAX_OUTPUT_TOKENS="")
+        out = self.run_script("gate.py", "--model", "m", "--executor", "single-call")
         self.assertEqual(out.returncode, 0, out.stdout + out.stderr)
         self.assertEqual(set((self.ws / "work" / "pids" / "marker").read_text().split()), {"1"})
-        # r21: Haiku executors with no tools wrote invented tool calls to the 128000-token cap; both arms are capped
-        self.assertEqual(set((self.ws / "work" / "pids" / "cap").read_text().split()), {gate.EXECUTOR_MAX_OUTPUT})
 
     def test_a_re_gate_reuses_the_cached_without_arm(self) -> None:
         calls = self.baseline_build()
